@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#10151b" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Virtual Family — Core</title>
+  </head>
+  <body>
+    <div id="game"></div>
+    <div id="hud">
+      <div id="brand">VIRTUAL FAMILY <span>CORE</span></div>
+      <div id="status">Generating world…</div>
+      <div id="prompt"></div>
+      <div id="controls">WASD / arrows · drag to orbit · wheel/pinch to zoom · F = first person · C = third person</div>
+    </div>
+    <div id="touch">
+      <div id="stick"><div id="knob"></div></div>
+      <div id="lookZone"></div>
+      <div class="actions">
+        <button id="modeBtn">FPP</button>
+        <button id="jumpBtn">JUMP</button>
+        <button id="interactBtn">USE</button>
+      </div>
+    </div>
+    <div id="orientation">Rotate your device to landscape to play.</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
