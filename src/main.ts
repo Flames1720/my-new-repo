@@ -3,7 +3,7 @@ import './style.css';
 
 type Mode='tpp'|'fpp';
 type Save={version:1;player:{x:number;y:number;z:number;ry:number;mode:Mode};camera:{yaw:number;pitch:number;distance:number};changes:Record<string,string[]>};
-const SAVE_KEY='virtual-family-core-v1',SEED=847231,SIZE=32,RADIUS=2;
+const SAVE_KEY='virtual-family-core-v1',SEED=847231,SIZE=32,RADIUS=3;
 const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
 const lerp=(a:number,b:number,t:number)=>a+(b-a)*t;
 const angleLerp=(a:number,b:number,t:number)=>a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*Math.min(1,t);
@@ -87,7 +87,7 @@ function update(dt:number){
  const forward=new THREE.Vector3(Math.sin(camYaw),0,Math.cos(camYaw)),right=new THREE.Vector3(Math.cos(camYaw),0,-Math.sin(camYaw));
  const dir=new THREE.Vector3().addScaledVector(right,iv.x).addScaledVector(forward,-iv.y);
  const sprinting=(keys.has('shift')||sprintToggle)&&moving;
- if(dir.lengthSq()){dir.normalize();const desired=Math.atan2(dir.x,dir.z);player.root.rotation.y=angleLerp(player.root.rotation.y,desired,Math.min(1,dt*12));const speed=sprinting?9:6.2;player.velocity.x=dir.x*speed;player.velocity.z=dir.z*speed;if(mode==='tpp')targetYaw=angleLerp(targetYaw,player.root.rotation.y+Math.PI,Math.min(1,dt*2.2))}
+ if(dir.lengthSq()){dir.normalize();const desired=Math.atan2(dir.x,dir.z);player.root.rotation.y=angleLerp(player.root.rotation.y,desired,Math.min(1,dt*12));const speed=sprinting?9:6.2;player.velocity.x=dir.x*speed;player.velocity.z=dir.z*speed}
  else{player.velocity.x=lerp(player.velocity.x,0,Math.min(1,dt*10));player.velocity.z=lerp(player.velocity.z,0,Math.min(1,dt*10))}
  if(keys.has(' ')&&player.onGround)jump();
  player.velocity.y-=18*dt;player.root.position.y+=player.velocity.y*dt;if(player.root.position.y<=0){player.root.position.y=0;player.velocity.y=0;player.onGround=true}
