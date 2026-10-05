@@ -63,10 +63,13 @@ let joy={x:0,y:0},joyActive=false;
 const moveJoy=(e:PointerEvent)=>{if(!joyActive)return;const r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;let x=e.clientX-cx,y=e.clientY-cy,l=Math.hypot(x,y),m=43;if(l>m){x=x/l*m;y=y/l*m}joy={x:x/m,y:y/m};knob.style.transform=`translate(${x}px,${y}px)`};
 stick.addEventListener('pointerdown',e=>{e.stopPropagation();joyActive=true;stick.setPointerCapture(e.pointerId);moveJoy(e)});stick.addEventListener('pointermove',moveJoy);stick.addEventListener('pointerup',()=>{joyActive=false;joy={x:0,y:0};knob.style.transform='translate(0,0)'});
 
-(document.querySelector('#modeBtn') as HTMLButtonElement).onclick=()=>mode=mode==='tpp'?'fpp':'tpp';
-(document.querySelector('#jumpBtn') as HTMLButtonElement).onclick=jump;
-(document.querySelector('#runBtn') as HTMLButtonElement).onclick=()=>sprintToggle=!sprintToggle;
-(document.querySelector('#interactBtn') as HTMLButtonElement).onclick=interact;
+function bindAction(el:HTMLElement,fn:()=>void){
+ el.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();fn()});
+}
+bindAction(document.querySelector('#modeBtn') as HTMLButtonElement,()=>mode=mode==='tpp'?'fpp':'tpp');
+bindAction(document.querySelector('#jumpBtn') as HTMLButtonElement,jump);
+bindAction(document.querySelector('#runBtn') as HTMLButtonElement,()=>sprintToggle=!sprintToggle);
+bindAction(document.querySelector('#interactBtn') as HTMLButtonElement,interact);
 const prompt=document.querySelector('#prompt') as HTMLDivElement,status=document.querySelector('#status')!,target=document.querySelector('#target') as HTMLDivElement;
 let promptTimer=0,sprintToggle=false;
 function say(t:string){prompt.textContent=t;prompt.classList.add('show');promptTimer=1.2}
