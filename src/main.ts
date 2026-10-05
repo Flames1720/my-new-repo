@@ -3,7 +3,10 @@ import './style.css';
 
 type Mode='tpp'|'fpp';
 type Save={version:1;player:{x:number;y:number;z:number;ry:number;mode:Mode};camera:{yaw:number;pitch:number;distance:number};changes:Record<string,string[]>};
-const SAVE_KEY='virtual-family-core-v1',SEED=847231,SIZE=32,RADIUS=3;
+const SAVE_KEY='virtual-family-core-v1',SEED=847231,SIZE=32,RADIUS=3,WORLD_RADIUS=12;
+const WORLD_DIAMETER=WORLD_RADIUS*2+1;
+const terrainHeightAt=(x:number,z:number)=>{const broad=Math.sin(x*.018+SEED*.001)*1.7+Math.cos(z*.021-SEED*.0007)*1.35;const hills=Math.sin((x+z)*.045)*.75+Math.cos((x-z)*.032)*.55;return Math.max(0,broad+hills+.9)};
+const waterAt=(x:number,z:number)=>{const a=Math.sin(x*.011+z*.017+SEED*.00003),b=Math.cos(x*.019-z*.009-SEED*.00002);return a+b>1.72};
 const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
 const lerp=(a:number,b:number,t:number)=>a+(b-a)*t;
 const angleLerp=(a:number,b:number,t:number)=>a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*Math.min(1,t);
@@ -33,20 +36,22 @@ class Chunks{
  key(x:number,z:number){return`${x},${z}`}coord(v:number){return Math.floor(v/SIZE)}
  build(cx:number,cz:number){
   const key=this.key(cx,cz),g=new THREE.Group();g.name=`chunk:${key}`;
-  const ground=new THREE.Mesh(new THREE.BoxGeometry(SIZE,.35,SIZE),new THREE.MeshStandardMaterial({color:0x73975f,roughness:1}));ground.position.set(cx*SIZE+SIZE/2,-.18,cz*SIZE+SIZE/2);ground.receiveShadow=true;g.add(ground);
+  const roadSeed=Math.abs(cx)%4===0||Math.abs(cz)%4===0;
+  const terrain=new THREE.PlaneGeometry(SIZE,SIZE,16,16);terrain.rotateX(-Math.PI/2);const pos=terrain.getAttribute('position');for(let i=0;i<pos.count;i++){const lx=pos.getX(i)+cx*SIZE+SIZE/2,lz=pos.getZ(i)+cz*SIZE+SIZE/2;pos.setY(i,terrainHeightAt(lx,lz));}terrain.computeVertexNormals();const ground=new THREE.Mesh(terrain,new THREE.MeshStandardMaterial({color:0x73975f,roughness:1}));ground.position.set(0,0,0);ground.receiveShadow=true;ground.name='terrain';g.add(ground);
+  if(waterAt(cx*SIZE+SIZE/2,cz*SIZE+SIZE/2)){const water=new THREE.Mesh(new THREE.PlaneGeometry(SIZE,SIZE),new THREE.MeshStandardMaterial({color:0x4d91b5,transparent:true,opacity:.78,roughness:.15,metalness:.05}));water.rotation.x=-Math.PI/2;water.position.set(cx*SIZE+SIZE/2,.72,cz*SIZE+SIZE/2);water.name='water';water.receiveShadow=false;g.add(water);g.userData.water=true;}
   const xRoad=Math.abs(cx)%4===0,zRoad=Math.abs(cz)%4===0,road=xRoad||zRoad;if(road){const roadMat=new THREE.MeshStandardMaterial({color:0x3d4348});if(xRoad){const r=new THREE.Mesh(new THREE.BoxGeometry(5,.04,SIZE),roadMat);r.position.set(cx*SIZE+SIZE/2,.02,cz*SIZE+SIZE/2);r.name='road-x';g.add(r)}if(zRoad){const r=new THREE.Mesh(new THREE.BoxGeometry(SIZE,.04,5),roadMat);r.position.set(cx*SIZE+SIZE/2,.021,cz*SIZE+SIZE/2);r.name='road-z';g.add(r)}}
   const removed=this.changes[key]||[];
   for(let i=0;i<9;i++){if(hash(cx*17+i,cz*23-i)<=.56||road||removed.includes(`tree-${i}`))continue;const tree=new THREE.Group();tree.name=`tree-${i}`;tree.userData.colliderRadius=.72;tree.position.set(cx*SIZE+4+hash(cx+i,cz-i)*24,0,cz*SIZE+4+hash(cx-i,cz+i)*24);const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.18,.23,1.7,8),new THREE.MeshStandardMaterial({color:0x694b35}));trunk.position.y=.85;const crown=new THREE.Mesh(new THREE.SphereGeometry(1.15,9,7),new THREE.MeshStandardMaterial({color:0x3d7148}));crown.position.y=2.05;tree.add(trunk,crown);tree.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(tree)}
   if(cx===0&&cz===0)this.home(g);world.add(g);this.loaded.set(key,g);
  }
  home(g:THREE.Group){const h=new THREE.Group();h.name='home';h.position.set(10,0,10);const wall=new THREE.MeshStandardMaterial({color:0xe6ded0}),roofMat=new THREE.MeshStandardMaterial({color:0x7c4d3d}),dark=new THREE.MeshStandardMaterial({color:0x253746});const base=new THREE.Mesh(new THREE.BoxGeometry(9,3.6,7),wall);base.position.y=1.8;h.userData.collider={minX:5.5,maxX:14.5,minZ:6.5,maxZ:13.5};const roof=new THREE.Mesh(new THREE.ConeGeometry(6.4,2.4,4),roofMat);roof.rotation.y=Math.PI/4;roof.position.y=4.8;const door=new THREE.Mesh(new THREE.BoxGeometry(1.1,2.1,.08),dark);door.position.set(0,1.05,3.54);door.name='front-door';const win=new THREE.Mesh(new THREE.BoxGeometry(1.5,1.1,.08),dark);win.position.set(-2.3,1.7,3.54);win.name='window';h.add(base,roof,door,win);h.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(h)}
- stream(px:number,pz:number){const cx=this.coord(px),cz=this.coord(pz);for(const[k,g]of this.loaded){const[a,b]=k.split(',').map(Number);if(Math.abs(a-cx)>RADIUS||Math.abs(b-cz)>RADIUS){world.remove(g);this.loaded.delete(k)}}for(let x=cx-RADIUS;x<=cx+RADIUS;x++)for(let z=cz-RADIUS;z<=cz+RADIUS;z++)if(!this.loaded.has(this.key(x,z)))this.build(x,z)}
+ stream(px:number,pz:number){const cx=this.coord(px),cz=this.coord(pz);for(const[k,g]of this.loaded){const[a,b]=k.split(',').map(Number);if(Math.abs(a-cx)>RADIUS||Math.abs(b-cz)>RADIUS){world.remove(g);this.loaded.delete(k)}}const minX=Math.max(-WORLD_RADIUS,cx-RADIUS),maxX=Math.min(WORLD_RADIUS,cx+RADIUS),minZ=Math.max(-WORLD_RADIUS,cz-RADIUS),maxZ=Math.min(WORLD_RADIUS,cz+RADIUS);for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++)if(!this.loaded.has(this.key(x,z)))this.build(x,z)}
  harvestTree(tree:THREE.Object3D){const q=tree.getWorldPosition(new THREE.Vector3()),cx=this.coord(q.x),cz=this.coord(q.z),g=this.loaded.get(this.key(cx,cz));if(!g)return;this.changes[this.key(cx,cz)]??=[];this.changes[this.key(cx,cz)].push(tree.name);g.remove(tree);saveNow()}
 }
 const chunks=new Chunks();
 let save:Save={version:1,player:{x:0,y:0,z:5,ry:0,mode:'tpp'},camera:{yaw:0,pitch:-.28,distance:7},changes:{}};
 try{const raw=localStorage.getItem(SAVE_KEY);if(raw)save=JSON.parse(raw)}catch{}
-chunks.changes=save.changes;chunks.stream(save.player.x,save.player.z);player.root.position.set(save.player.x,save.player.y,save.player.z);player.root.rotation.y=save.player.ry;
+chunks.changes=save.changes;chunks.stream(save.player.x,save.player.z);player.root.position.set(save.player.x,save.player.y,save.player.z);if(!Number.isFinite(player.root.position.y)||player.root.position.y<terrainHeightAt(player.root.position.x,player.root.position.z))player.root.position.y=terrainHeightAt(player.root.position.x,player.root.position.z);player.root.rotation.y=save.player.ry;
 let mode:Mode=save.player.mode,camYaw=save.camera.yaw,camPitch=save.camera.pitch,camDistance=save.camera.distance,targetYaw=camYaw,targetPitch=camPitch,targetDistance=camDistance;
 function saveNow(){save={version:1,player:{x:player.root.position.x,y:player.root.position.y,z:player.root.position.z,ry:player.root.rotation.y,mode},camera:{yaw:camYaw,pitch:camPitch,distance:camDistance},changes:chunks.changes};localStorage.setItem(SAVE_KEY,JSON.stringify(save))}
 
@@ -71,6 +76,14 @@ bindAction(document.querySelector('#jumpBtn') as HTMLButtonElement,jump);
 bindAction(document.querySelector('#runBtn') as HTMLButtonElement,()=>sprintToggle=!sprintToggle);
 bindAction(document.querySelector('#interactBtn') as HTMLButtonElement,interact);
 const prompt=document.querySelector('#prompt') as HTMLDivElement,status=document.querySelector('#status')!,target=document.querySelector('#target') as HTMLDivElement;
+const compass=document.querySelector('#compass') as HTMLDivElement;
+const mapOverlay=document.querySelector('#mapOverlay') as HTMLDivElement;
+const mapCanvas=document.querySelector('#mapCanvas') as HTMLCanvasElement;const mapCtx=mapCanvas.getContext('2d')!;
+const mapBtn=document.querySelector('#mapBtn') as HTMLButtonElement, mapClose=document.querySelector('#mapClose') as HTMLButtonElement;
+function openMap(open:boolean){mapOverlay.classList.toggle('show',open);if(open)drawMap();}
+bindAction(mapBtn,()=>openMap(true));bindAction(mapClose,()=>openMap(false));
+function drawMap(){const w=mapCanvas.width=mapCanvas.clientWidth*devicePixelRatio,h=mapCanvas.height=mapCanvas.clientHeight*devicePixelRatio;mapCtx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);const cw=mapCanvas.clientWidth,ch=mapCanvas.clientHeight;mapCtx.clearRect(0,0,cw,ch);mapCtx.fillStyle='#18232b';mapCtx.fillRect(0,0,cw,ch);const pad=18,cell=Math.min((cw-pad*2)/WORLD_DIAMETER,(ch-pad*2)/WORLD_DIAMETER);for(let cz=-WORLD_RADIUS;cz<=WORLD_RADIUS;cz++)for(let cx=-WORLD_RADIUS;cx<=WORLD_RADIUS;cx++){const sx=pad+(cx+WORLD_RADIUS)*cell,sy=pad+(WORLD_RADIUS-cz)*cell;const road=Math.abs(cx)%4===0||Math.abs(cz)%4===0;mapCtx.fillStyle=waterAt(cx*SIZE+SIZE/2,cz*SIZE+SIZE/2)?'#4b86a4':road?'#555b60':'#657f57';mapCtx.fillRect(sx,sy,Math.ceil(cell)+.5,Math.ceil(cell)+.5);if(road){mapCtx.fillStyle='#777b7e';if(Math.abs(cx)%4===0)mapCtx.fillRect(sx+cell*.38,sy,cell*.24,cell);if(Math.abs(cz)%4===0)mapCtx.fillRect(sx,sy+cell*.38,cell,cell*.24)}}const px=pad+(thisCoord(player.root.position.x)+WORLD_RADIUS+.5)*cell,py=pad+(WORLD_RADIUS-thisCoord(player.root.position.z)+.5)*cell;mapCtx.fillStyle='#fff';mapCtx.beginPath();mapCtx.arc(px,py,Math.max(4,cell*.32),0,Math.PI*2);mapCtx.fill();const hx=pad+(0+WORLD_RADIUS+.5)*cell,hy=pad+(WORLD_RADIUS-0+.5)*cell;mapCtx.fillStyle='#f0c674';mapCtx.fillRect(hx-cell*.25,hy-cell*.25,cell*.5,cell*.5);mapCtx.strokeStyle='#ffffff66';mapCtx.strokeRect(pad,pad,WORLD_DIAMETER*cell,WORLD_DIAMETER*cell);}
+
 const fullscreenBtn=document.querySelector('#fullscreenBtn') as HTMLButtonElement;
 function updateFullscreenButton(){fullscreenBtn.textContent=document.fullscreenElement?'⛶':'⛶';fullscreenBtn.title=document.fullscreenElement?'Exit fullscreen':'Fullscreen'}
 fullscreenBtn.addEventListener('pointerdown',async e=>{e.preventDefault();e.stopPropagation();try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch{}});
@@ -88,12 +101,15 @@ function getAimTarget():THREE.Object3D|null{
 function interact(){const o=getAimTarget();if(!o){say('Aim at something within reach');return}if(o.name.startsWith('tree-')){chunks.harvestTree(o);say('Tree harvested — change saved')}else if(o.name==='front-door')say('Front door — interior system attaches here');else say('Interactable detected')}
 
 const clock=new THREE.Clock();let autosave=0,lastCx=999,lastCz=999,walkTime=0;
+function thisCoord(v:number){return Math.floor(v/SIZE)}
 function canOccupy(x:number,z:number){
  const playerRadius=.34;
+ if(waterAt(x,z))return false;
+ if(Math.abs(thisCoord(x))>WORLD_RADIUS||Math.abs(thisCoord(z))>WORLD_RADIUS)return false;
  for(const g of chunks.loaded.values()){
   const home=g.getObjectByName('home');
   const box=home?.userData.collider as {minX:number;maxX:number;minZ:number;maxZ:number}|undefined;
-  if(box && x+playerRadius>box.minX && x-playerRadius<box.maxX && z+playerRadius>box.minZ && z-playerRadius<box.maxZ)return false;
+  if(box && x+playerRadius>box.minX && x-playerRadius<box.maxX && z+playerRadius<box.maxZ && z-playerRadius>box.minZ){const atDoor=x>9.35&&x<10.65&&z>13.0; if(!atDoor)return false;}
   for(const o of g.children){
    if(!o.name.startsWith('tree-'))continue;
    const r=Number(o.userData.colliderRadius||.72)+playerRadius;
@@ -120,7 +136,7 @@ function update(dt:number){
  if(dir.lengthSq()){dir.normalize();const desired=Math.atan2(dir.x,dir.z);player.root.rotation.y=angleLerp(player.root.rotation.y,desired,Math.min(1,dt*12));const speed=sprinting?9:6.2;player.velocity.x=dir.x*speed;player.velocity.z=dir.z*speed}
  else{player.velocity.x=lerp(player.velocity.x,0,Math.min(1,dt*10));player.velocity.z=lerp(player.velocity.z,0,Math.min(1,dt*10))}
  if(keys.has(' ')&&player.onGround)jump();
- player.velocity.y-=18*dt;player.root.position.y+=player.velocity.y*dt;if(player.root.position.y<=0){player.root.position.y=0;player.velocity.y=0;player.onGround=true}
+ player.velocity.y-=18*dt;player.root.position.y+=player.velocity.y*dt;const groundY=terrainHeightAt(player.root.position.x,player.root.position.z);if(player.root.position.y<=groundY){player.root.position.y=groundY;player.velocity.y=0;player.onGround=true}
  moveWithCollisions(player.velocity.x*dt,player.velocity.z*dt);
  const cx=chunks.coord(player.root.position.x),cz=chunks.coord(player.root.position.z);if(cx!==lastCx||cz!==lastCz){chunks.stream(player.root.position.x,player.root.position.z);lastCx=cx;lastCz=cz}
  camYaw=angleLerp(camYaw,targetYaw,Math.min(1,dt*12));camPitch=lerp(camPitch,targetPitch,Math.min(1,dt*12));camDistance=lerp(camDistance,targetDistance,Math.min(1,dt*12));
@@ -132,7 +148,7 @@ function update(dt:number){
  const aimed=getAimTarget();target.classList.toggle('active',!!aimed);target.textContent=aimed?(aimed.name.startsWith('tree-')?'✚':'•'):'✚';
  if(aimed&&!moving&&!promptTimer)say(`USE · ${aimed.name.replace('front-door','Front door').replace('tree-','Tree ')}`);
  if(promptTimer>0){promptTimer-=dt;if(promptTimer<=0)prompt.classList.remove('show')}
- (document.querySelector('#modeBtn') as HTMLButtonElement).textContent=mode.toUpperCase();
+ (document.querySelector('#modeBtn') as HTMLButtonElement).textContent=mode.toUpperCase();compass.style.transform=`translateX(-50%) rotate(${-camYaw*180/Math.PI}deg)`;if(mapOverlay.classList.contains('show'))drawMap();
  (document.querySelector('#runBtn') as HTMLButtonElement).textContent=sprintToggle?'RUN':'WALK';
  autosave+=dt;if(autosave>2){autosave=0;saveNow()}status.textContent=`${mode.toUpperCase()} · ${sprinting?'RUN':'WALK'} · chunk ${cx},${cz} · ${chunks.loaded.size} loaded`;
 }
