@@ -34,12 +34,12 @@ class Chunks{
  build(cx:number,cz:number){
   const key=this.key(cx,cz),g=new THREE.Group();g.name=`chunk:${key}`;
   const ground=new THREE.Mesh(new THREE.BoxGeometry(SIZE,.35,SIZE),new THREE.MeshStandardMaterial({color:0x73975f,roughness:1}));ground.position.set(cx*SIZE+SIZE/2,-.18,cz*SIZE+SIZE/2);ground.receiveShadow=true;g.add(ground);
-  const road=Math.abs(cx)%4===0||Math.abs(cz)%4===0;if(road){const r=new THREE.Mesh(new THREE.BoxGeometry(Math.abs(cx)%4===0?5:SIZE,.04,Math.abs(cz)%4===0?5:SIZE),new THREE.MeshStandardMaterial({color:0x3d4348}));r.position.set(cx*SIZE+SIZE/2,.02,cz*SIZE+SIZE/2);g.add(r)}
+  const xRoad=Math.abs(cx)%4===0,zRoad=Math.abs(cz)%4===0,road=xRoad||zRoad;if(road){const roadMat=new THREE.MeshStandardMaterial({color:0x3d4348});if(xRoad){const r=new THREE.Mesh(new THREE.BoxGeometry(5,.04,SIZE),roadMat);r.position.set(cx*SIZE+SIZE/2,.02,cz*SIZE+SIZE/2);r.name='road-x';g.add(r)}if(zRoad){const r=new THREE.Mesh(new THREE.BoxGeometry(SIZE,.04,5),roadMat);r.position.set(cx*SIZE+SIZE/2,.021,cz*SIZE+SIZE/2);r.name='road-z';g.add(r)}}
   const removed=this.changes[key]||[];
-  for(let i=0;i<9;i++){if(hash(cx*17+i,cz*23-i)<=.56||road||removed.includes(`tree-${i}`))continue;const tree=new THREE.Group();tree.name=`tree-${i}`;tree.position.set(cx*SIZE+4+hash(cx+i,cz-i)*24,0,cz*SIZE+4+hash(cx-i,cz+i)*24);const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.18,.23,1.7,8),new THREE.MeshStandardMaterial({color:0x694b35}));trunk.position.y=.85;const crown=new THREE.Mesh(new THREE.SphereGeometry(1.15,9,7),new THREE.MeshStandardMaterial({color:0x3d7148}));crown.position.y=2.05;tree.add(trunk,crown);tree.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(tree)}
+  for(let i=0;i<9;i++){if(hash(cx*17+i,cz*23-i)<=.56||road||removed.includes(`tree-${i}`))continue;const tree=new THREE.Group();tree.name=`tree-${i}`;tree.userData.colliderRadius=.72;tree.position.set(cx*SIZE+4+hash(cx+i,cz-i)*24,0,cz*SIZE+4+hash(cx-i,cz+i)*24);const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.18,.23,1.7,8),new THREE.MeshStandardMaterial({color:0x694b35}));trunk.position.y=.85;const crown=new THREE.Mesh(new THREE.SphereGeometry(1.15,9,7),new THREE.MeshStandardMaterial({color:0x3d7148}));crown.position.y=2.05;tree.add(trunk,crown);tree.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(tree)}
   if(cx===0&&cz===0)this.home(g);world.add(g);this.loaded.set(key,g);
  }
- home(g:THREE.Group){const h=new THREE.Group();h.name='home';h.position.set(10,0,10);const wall=new THREE.MeshStandardMaterial({color:0xe6ded0}),roofMat=new THREE.MeshStandardMaterial({color:0x7c4d3d}),dark=new THREE.MeshStandardMaterial({color:0x253746});const base=new THREE.Mesh(new THREE.BoxGeometry(9,3.6,7),wall);base.position.y=1.8;const roof=new THREE.Mesh(new THREE.ConeGeometry(6.4,2.4,4),roofMat);roof.rotation.y=Math.PI/4;roof.position.y=4.8;const door=new THREE.Mesh(new THREE.BoxGeometry(1.1,2.1,.08),dark);door.position.set(0,1.05,3.54);door.name='front-door';const win=new THREE.Mesh(new THREE.BoxGeometry(1.5,1.1,.08),dark);win.position.set(-2.3,1.7,3.54);win.name='window';h.add(base,roof,door,win);h.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(h)}
+ home(g:THREE.Group){const h=new THREE.Group();h.name='home';h.position.set(10,0,10);const wall=new THREE.MeshStandardMaterial({color:0xe6ded0}),roofMat=new THREE.MeshStandardMaterial({color:0x7c4d3d}),dark=new THREE.MeshStandardMaterial({color:0x253746});const base=new THREE.Mesh(new THREE.BoxGeometry(9,3.6,7),wall);base.position.y=1.8;h.userData.collider={minX:5.5,maxX:14.5,minZ:6.5,maxZ:13.5};const roof=new THREE.Mesh(new THREE.ConeGeometry(6.4,2.4,4),roofMat);roof.rotation.y=Math.PI/4;roof.position.y=4.8;const door=new THREE.Mesh(new THREE.BoxGeometry(1.1,2.1,.08),dark);door.position.set(0,1.05,3.54);door.name='front-door';const win=new THREE.Mesh(new THREE.BoxGeometry(1.5,1.1,.08),dark);win.position.set(-2.3,1.7,3.54);win.name='window';h.add(base,roof,door,win);h.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(h)}
  stream(px:number,pz:number){const cx=this.coord(px),cz=this.coord(pz);for(const[k,g]of this.loaded){const[a,b]=k.split(',').map(Number);if(Math.abs(a-cx)>RADIUS||Math.abs(b-cz)>RADIUS){world.remove(g);this.loaded.delete(k)}}for(let x=cx-RADIUS;x<=cx+RADIUS;x++)for(let z=cz-RADIUS;z<=cz+RADIUS;z++)if(!this.loaded.has(this.key(x,z)))this.build(x,z)}
  harvestTree(tree:THREE.Object3D){const q=tree.getWorldPosition(new THREE.Vector3()),cx=this.coord(q.x),cz=this.coord(q.z),g=this.loaded.get(this.key(cx,cz));if(!g)return;this.changes[this.key(cx,cz)]??=[];this.changes[this.key(cx,cz)].push(tree.name);g.remove(tree);saveNow()}
 }
@@ -84,6 +84,29 @@ function getAimTarget():THREE.Object3D|null{
 function interact(){const o=getAimTarget();if(!o){say('Aim at something within reach');return}if(o.name.startsWith('tree-')){chunks.harvestTree(o);say('Tree harvested — change saved')}else if(o.name==='front-door')say('Front door — interior system attaches here');else say('Interactable detected')}
 
 const clock=new THREE.Clock();let autosave=0,lastCx=999,lastCz=999,walkTime=0;
+function canOccupy(x:number,z:number){
+ const playerRadius=.34;
+ for(const g of chunks.loaded.values()){
+  const home=g.getObjectByName('home');
+  const box=home?.userData.collider as {minX:number;maxX:number;minZ:number;maxZ:number}|undefined;
+  if(box && x+playerRadius>box.minX && x-playerRadius<box.maxX && z+playerRadius>box.minZ && z-playerRadius<box.maxZ)return false;
+  for(const o of g.children){
+   if(!o.name.startsWith('tree-'))continue;
+   const r=Number(o.userData.colliderRadius||.72)+playerRadius;
+   const dx=x-o.position.x,dz=z-o.position.z;
+   if(dx*dx+dz*dz<r*r)return false;
+  }
+ }
+ return true;
+}
+function moveWithCollisions(dx:number,dz:number){
+ const p=player.root.position;
+ const nx=p.x+dx,nz=p.z+dz;
+ if(canOccupy(nx,nz)){p.x=nx;p.z=nz;return}
+ if(canOccupy(nx,p.z))p.x=nx;
+ if(canOccupy(p.x,nz))p.z=nz;
+}
+
 function input(){let x=joy.x,y=joy.y;if(keys.has('a')||keys.has('arrowleft'))x-=1;if(keys.has('d')||keys.has('arrowright'))x+=1;if(keys.has('w')||keys.has('arrowup'))y-=1;if(keys.has('s')||keys.has('arrowdown'))y+=1;const l=Math.hypot(x,y);return l>1?{x:x/l,y:y/l}:{x,y}}
 function update(dt:number){
  const iv=input(),moving=Math.hypot(iv.x,iv.y)>.08;
@@ -94,9 +117,10 @@ function update(dt:number){
  else{player.velocity.x=lerp(player.velocity.x,0,Math.min(1,dt*10));player.velocity.z=lerp(player.velocity.z,0,Math.min(1,dt*10))}
  if(keys.has(' ')&&player.onGround)jump();
  player.velocity.y-=18*dt;player.root.position.y+=player.velocity.y*dt;if(player.root.position.y<=0){player.root.position.y=0;player.velocity.y=0;player.onGround=true}
- player.root.position.x+=player.velocity.x*dt;player.root.position.z+=player.velocity.z*dt;
+ moveWithCollisions(player.velocity.x*dt,player.velocity.z*dt);
  const cx=chunks.coord(player.root.position.x),cz=chunks.coord(player.root.position.z);if(cx!==lastCx||cz!==lastCz){chunks.stream(player.root.position.x,player.root.position.z);lastCx=cx;lastCz=cz}
  camYaw=angleLerp(camYaw,targetYaw,Math.min(1,dt*12));camPitch=lerp(camPitch,targetPitch,Math.min(1,dt*12));camDistance=lerp(camDistance,targetDistance,Math.min(1,dt*12));
+ player.root.visible=mode!=='fpp';
  const focus=player.root.position.clone();focus.y+=1.05;
  if(mode==='tpp'){const h=Math.cos(camPitch)*camDistance,pos=focus.clone();pos.x-=Math.sin(camYaw)*h;pos.y+=Math.sin(camPitch)*camDistance;pos.z-=Math.cos(camYaw)*h;const rayDir=pos.clone().sub(focus).normalize(),hits=new THREE.Raycaster(focus,rayDir,0,camDistance).intersectObjects(world.children,true),hit=hits.find(h=>h.object.name!=='ground');if(hit)pos.copy(focus).add(rayDir.multiplyScalar(Math.max(1.35,hit.distance-.2)));camera.position.lerp(pos,Math.min(1,dt*14));camera.lookAt(focus)}
  else{const eye=player.root.position.clone();eye.y+=1.55;camera.position.lerp(eye,Math.min(1,dt*18));const look=eye.clone();look.x+=Math.sin(targetYaw)*Math.cos(targetPitch)*8;look.y+=Math.sin(targetPitch)*8;look.z+=Math.cos(targetYaw)*Math.cos(targetPitch)*8;camera.lookAt(look)}
@@ -104,7 +128,7 @@ function update(dt:number){
  const aimed=getAimTarget();target.classList.toggle('active',!!aimed);target.textContent=aimed?(aimed.name.startsWith('tree-')?'✚':'•'):'✚';
  if(aimed&&!moving&&!promptTimer)say(`USE · ${aimed.name.replace('front-door','Front door').replace('tree-','Tree ')}`);
  if(promptTimer>0){promptTimer-=dt;if(promptTimer<=0)prompt.classList.remove('show')}
- (document.querySelector('#modeBtn') as HTMLButtonElement).textContent=mode==='tpp'?'FPP':'TPP';
+ (document.querySelector('#modeBtn') as HTMLButtonElement).textContent=mode.toUpperCase();
  (document.querySelector('#runBtn') as HTMLButtonElement).textContent=sprintToggle?'RUN':'WALK';
  autosave+=dt;if(autosave>2){autosave=0;saveNow()}status.textContent=`${mode.toUpperCase()} · ${sprinting?'RUN':'WALK'} · chunk ${cx},${cz} · ${chunks.loaded.size} loaded`;
 }
