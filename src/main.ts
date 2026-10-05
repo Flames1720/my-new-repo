@@ -53,7 +53,7 @@ function saveNow(){save={version:1,player:{x:player.root.position.x,y:player.roo
 const keys=new Set<string>();addEventListener('keydown',e=>{keys.add(e.key.toLowerCase());if(e.key.toLowerCase()==='f')mode='fpp';if(e.key.toLowerCase()==='c')mode='tpp'});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
 let pointer:number|null=null,lastX=0,lastY=0;
 renderer.domElement.addEventListener('pointerdown',e=>{pointer=e.pointerId;lastX=e.clientX;lastY=e.clientY;renderer.domElement.setPointerCapture(e.pointerId)});
-renderer.domElement.addEventListener('pointermove',e=>{if(pointer!==e.pointerId)return;const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;targetYaw+=dx*.008;targetPitch=clamp(targetPitch-dy*.006,-1.15,.9)});
+renderer.domElement.addEventListener('pointermove',e=>{if(pointer!==e.pointerId)return;const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;targetYaw-=dx*.008;targetPitch=clamp(targetPitch-dy*.006,-1.15,.9)});
 renderer.domElement.addEventListener('pointerup',()=>pointer=null);
 renderer.domElement.addEventListener('pointercancel',()=>pointer=null);
 renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();targetDistance=clamp(targetDistance+e.deltaY*.008,2.2,13)},{passive:false});
@@ -84,7 +84,7 @@ const clock=new THREE.Clock();let autosave=0,lastCx=999,lastCz=999,walkTime=0;
 function input(){let x=joy.x,y=joy.y;if(keys.has('a')||keys.has('arrowleft'))x-=1;if(keys.has('d')||keys.has('arrowright'))x+=1;if(keys.has('w')||keys.has('arrowup'))y-=1;if(keys.has('s')||keys.has('arrowdown'))y+=1;const l=Math.hypot(x,y);return l>1?{x:x/l,y:y/l}:{x,y}}
 function update(dt:number){
  const iv=input(),moving=Math.hypot(iv.x,iv.y)>.08;
- const forward=new THREE.Vector3(Math.sin(camYaw),0,Math.cos(camYaw)),right=new THREE.Vector3(Math.cos(camYaw),0,-Math.sin(camYaw));
+ const forward=new THREE.Vector3(Math.sin(camYaw),0,Math.cos(camYaw)),right=new THREE.Vector3(-Math.cos(camYaw),0,Math.sin(camYaw));
  const dir=new THREE.Vector3().addScaledVector(right,iv.x).addScaledVector(forward,-iv.y);
  const sprinting=(keys.has('shift')||sprintToggle)&&moving;
  if(dir.lengthSq()){dir.normalize();const desired=Math.atan2(dir.x,dir.z);player.root.rotation.y=angleLerp(player.root.rotation.y,desired,Math.min(1,dt*12));const speed=sprinting?9:6.2;player.velocity.x=dir.x*speed;player.velocity.z=dir.z*speed}
