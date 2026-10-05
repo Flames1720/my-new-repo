@@ -1,0 +1,12 @@
+Player character asset provenance
+
+Source: Quaternius — Universal Base Characters
+Official pack: https://quaternius.itch.io/universal-base-characters
+License: Creative Commons Zero v1.0 Universal (CC0)
+Source distribution: Standard pack
+Runtime source file: Superhero_Male_FullBody.gltf
+
+The project currently obtains a prepared GLB at build time from:
+https://github.com/programasweights/avatar
+
+That repository documents the bundled character as the Quaternius Superhero Male Universal Base Character and preserves the CC0 dedication. The runtime copy is used as an asset only; this project's game code remains separately licensed.
