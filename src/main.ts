@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import './style.css';
 
 type Mode='tpp'|'fpp';
@@ -18,16 +19,93 @@ const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-per
 scene.add(new THREE.HemisphereLight(0xdceeff,0x405044,2.2));const sun=new THREE.DirectionalLight(0xfff0d0,3);sun.position.set(35,70,25);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-90;sun.shadow.camera.right=90;sun.shadow.camera.top=90;sun.shadow.camera.bottom=-90;scene.add(sun);
 const world=new THREE.Group(),actors=new THREE.Group();scene.add(world,actors);
 
+const characterLoader=new GLTFLoader();
+
 class Player{
- root=new THREE.Group();velocity=new THREE.Vector3();onGround=true;head:THREE.Object3D;torso:THREE.Object3D;leftLeg:THREE.Object3D;rightLeg:THREE.Object3D;leftArm:THREE.Object3D;rightArm:THREE.Object3D;
+ root=new THREE.Group();
+ velocity=new THREE.Vector3();
+ onGround=true;
+ head:THREE.Object3D;
+ torso:THREE.Object3D;
+ leftLeg:THREE.Object3D;
+ rightLeg:THREE.Object3D;
+ leftArm:THREE.Object3D;
+ rightArm:THREE.Object3D;
+ visual:THREE.Object3D|null=null;
+
  constructor(){
   const skin=new THREE.MeshStandardMaterial({color:0xc58f72,roughness:.8}),shirt=new THREE.MeshStandardMaterial({color:0x2d4962}),pants=new THREE.MeshStandardMaterial({color:0x24303a});
   this.head=new THREE.Mesh(new THREE.SphereGeometry(.28,16,12),skin);this.head.position.y=1.72;
   this.torso=new THREE.Mesh(new THREE.CapsuleGeometry(.34,.65,5,10),shirt);this.torso.position.y=1.1;this.root.add(this.head,this.torso);
-  for(const s of[-1,1]){const leg=new THREE.Mesh(new THREE.CapsuleGeometry(.11,.7,4,8),pants);leg.position.set(.14*s,.43,0);const arm=new THREE.Mesh(new THREE.CapsuleGeometry(.09,.58,4,8),skin);arm.position.set(.43*s,1.1,0);arm.rotation.z=-.12*s;this.root.add(leg,arm);if(s<0){this.leftLeg=leg;this.leftArm=arm}else{this.rightLeg=leg;this.rightArm=arm}}
-  this.root.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});actors.add(this.root);
+  for(const s of[-1,1]){
+   const leg=new THREE.Mesh(new THREE.CapsuleGeometry(.11,.7,4,8),pants);leg.position.set(.14*s,.43,0);
+   const arm=new THREE.Mesh(new THREE.CapsuleGeometry(.09,.58,4,8),skin);arm.position.set(.43*s,1.1,0);arm.rotation.z=-.12*s;
+   this.root.add(leg,arm);
+   if(s<0){this.leftLeg=leg;this.leftArm=arm}else{this.rightLeg=leg;this.rightArm=arm}
+  }
+  this.root.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});
+  actors.add(this.root);
+  this.loadCharacter();
  }
- animate(t:number,moving:boolean,sprinting:boolean){const swing=moving?Math.sin(t*(sprinting?14:10))*.55:0;this.leftLeg.rotation.x=swing;this.rightLeg.rotation.x=-swing;this.leftArm.rotation.x=-swing*.75;this.rightArm.rotation.x=swing*.75}
+
+ async loadCharacter(){
+  try{
+   const gltf=await characterLoader.loadAsync('/assets/player-character.glb');
+   const model=gltf.scene;
+   model.traverse(o=>{
+    if(o instanceof THREE.Mesh){
+     o.castShadow=true;
+     o.receiveShadow=true;
+     if(Array.isArray(o.material))o.material.forEach(m=>{m.side=THREE.FrontSide});
+     else o.material.side=THREE.FrontSide;
+    }
+   });
+
+   const box=new THREE.Box3().setFromObject(model);
+   const height=Math.max(.001,box.max.y-box.min.y);
+   const scale=1.95/height;
+   model.scale.setScalar(scale);
+   const scaledBox=new THREE.Box3().setFromObject(model);
+   model.position.y=-scaledBox.min.y;
+
+   // A restrained silhouette shell gives the character a readable outline in TPP
+   // without adding a post-processing pipeline to the mobile build.
+   const outline=new THREE.Group();
+   model.traverse(o=>{
+    if(!(o instanceof THREE.Mesh))return;
+    const shell=new THREE.Mesh(
+     o.geometry,
+     new THREE.MeshBasicMaterial({color:0x18212a,side:THREE.BackSide,transparent:true,opacity:.72})
+    );
+    shell.scale.setScalar(1.025);
+    shell.renderOrder=-1;
+    outline.add(shell);
+   });
+   model.add(outline);
+
+   this.root.add(model);
+   this.visual=model;
+   this.head.visible=false;
+   this.torso.visible=false;
+   this.leftLeg.visible=false;
+   this.rightLeg.visible=false;
+   this.leftArm.visible=false;
+   this.rightArm.visible=false;
+  }catch(error){
+   console.warn('Player character asset failed to load; using procedural fallback.',error);
+  }
+ }
+
+ animate(t:number,moving:boolean,sprinting:boolean){
+  if(this.visual){
+   const pulse=moving?1+Math.sin(t*(sprinting?8:6))*.006:1+Math.sin(t*1.8)*.003;
+   this.visual.scale.y=1.95/Math.max(.001,new THREE.Box3().setFromObject(this.visual).max.y)*pulse;
+   return;
+  }
+  const swing=moving?Math.sin(t*(sprinting?14:10))*.55:0;
+  this.leftLeg.rotation.x=swing;this.rightLeg.rotation.x=-swing;
+  this.leftArm.rotation.x=-swing*.75;this.rightArm.rotation.x=swing*.75;
+ }
 }
 const player=new Player();
 
