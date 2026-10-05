@@ -32,6 +32,7 @@ class Player{
  leftArm:THREE.Object3D;
  rightArm:THREE.Object3D;
  visual:THREE.Object3D|null=null;
+ visualBaseScale=1;
 
  constructor(){
   const skin=new THREE.MeshStandardMaterial({color:0xc58f72,roughness:.8}),shirt=new THREE.MeshStandardMaterial({color:0x2d4962}),pants=new THREE.MeshStandardMaterial({color:0x24303a});
@@ -65,6 +66,7 @@ class Player{
    const height=Math.max(.001,box.max.y-box.min.y);
    const scale=1.95/height;
    model.scale.setScalar(scale);
+   this.visualBaseScale=scale;
    const scaledBox=new THREE.Box3().setFromObject(model);
    model.position.y=-scaledBox.min.y;
 
@@ -99,7 +101,7 @@ class Player{
  animate(t:number,moving:boolean,sprinting:boolean){
   if(this.visual){
    const pulse=moving?1+Math.sin(t*(sprinting?8:6))*.006:1+Math.sin(t*1.8)*.003;
-   this.visual.scale.y=1.95/Math.max(.001,new THREE.Box3().setFromObject(this.visual).max.y)*pulse;
+   this.visual.scale.y=this.visualBaseScale*pulse;
    return;
   }
   const swing=moving?Math.sin(t*(sprinting?14:10))*.55:0;
