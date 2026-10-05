@@ -7,9 +7,11 @@ canvas { display:block; width:100%; height:100%; }
 #brand { position:absolute; top:12px; left:14px; font-size:12px; font-weight:800; letter-spacing:1.7px; text-shadow:0 2px 8px #0008; }
 #brand span { opacity:.55; font-size:9px; }
 #status { position:absolute; top:32px; left:14px; font-size:11px; opacity:.72; text-shadow:0 2px 8px #000; }
-#prompt { position:absolute; left:50%; bottom:18%; transform:translateX(-50%); padding:9px 13px; border-radius:12px; background:#111a22d9; border:1px solid #ffffff22; font-size:12px; opacity:0; transition:.15s; }
+#target { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:18px; height:18px; display:grid; place-items:center; font-size:17px; line-height:1; opacity:.55; text-shadow:0 1px 5px #000; transition:opacity .12s, transform .12s; }
+#target.active { opacity:1; transform:translate(-50%,-50%) scale(1.2); }
+#prompt { position:absolute; left:50%; bottom:18%; transform:translateX(-50%); padding:9px 13px; border-radius:12px; background:#111a22d9; border:1px solid #ffffff22; font-size:12px; opacity:0; transition:.15s; white-space:nowrap; }
 #prompt.show { opacity:1; }
-#controls { position:absolute; right:14px; top:14px; font-size:9px; opacity:.45; max-width:280px; text-align:right; }
+#controls { position:absolute; right:14px; top:14px; font-size:9px; opacity:.45; max-width:320px; text-align:right; }
 #touch { position:fixed; inset:0; pointer-events:none; display:none; }
 #stick { pointer-events:auto; position:absolute; left:22px; bottom:24px; width:112px; height:112px; border-radius:50%; background:#ffffff12; border:1px solid #ffffff25; }
 #knob { position:absolute; left:50%; top:50%; width:48px; height:48px; margin:-24px; border-radius:50%; background:#ffffff32; border:1px solid #ffffff40; }
