@@ -48,9 +48,9 @@ class Chunks{
   for(let k=-WORLD_RADIUS;k<=WORLD_RADIUS;k++){const center=k*ROAD_SPACING;
    if(center>=cx*SIZE-ROAD_WIDTH/2&&center<=(cx+1)*SIZE+ROAD_WIDTH/2){
     const rx=new THREE.Mesh(new THREE.PlaneGeometry(SIZE,ROAD_WIDTH,16,2),roadMat);rx.rotation.x=-Math.PI/2;const xp=rx.geometry.getAttribute('position');
-    for(let i=0;i<xp.count;i++){const lx=xp.getX(i)+cx*SIZE+SIZE/2,lz=xp.getY(i)+center;xp.setZ(i,terrainHeightAt(lx,lz)+.055)}rx.geometry.computeVertexNormals();rx.position.set(cx*SIZE+SIZE/2,0,0);rx.name='road-x';g.add(rx);
+    for(let i=0;i<xp.count;i++){const lx=xp.getX(i)+cx*SIZE+SIZE/2,lz=xp.getZ(i)+center;xp.setY(i,terrainHeightAt(lx,lz)+.055)}rx.geometry.computeVertexNormals();rx.position.set(cx*SIZE+SIZE/2,0,0);rx.name='road-x';g.add(rx);
     const rz=new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH,SIZE,2,16),roadMat);rz.rotation.x=-Math.PI/2;const zp=rz.geometry.getAttribute('position');
-    for(let i=0;i<zp.count;i++){const lx=zp.getX(i)+center,lz=zp.getY(i)+cz*SIZE+SIZE/2;zp.setZ(i,terrainHeightAt(lx,lz)+.055)}rz.geometry.computeVertexNormals();rz.position.set(0,0,cz*SIZE+SIZE/2);rz.name='road-z';g.add(rz);
+    for(let i=0;i<zp.count;i++){const lx=zp.getX(i)+center,lz=zp.getZ(i)+cz*SIZE+SIZE/2;zp.setY(i,terrainHeightAt(lx,lz)+.055)}rz.geometry.computeVertexNormals();rz.position.set(0,0,cz*SIZE+SIZE/2);rz.name='road-z';g.add(rz);
    }}
   const waterGeom=new THREE.PlaneGeometry(SIZE,SIZE,8,8);waterGeom.rotateX(-Math.PI/2);const wp=waterGeom.getAttribute('position');let waterCells=0;
   for(let i=0;i<wp.count;i++){const lx=wp.getX(i)+cx*SIZE+SIZE/2,lz=wp.getZ(i)+cz*SIZE+SIZE/2;if(waterAt(lx,lz))waterCells++;wp.setY(i,WATER_LEVEL)}
