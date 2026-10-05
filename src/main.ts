@@ -71,6 +71,10 @@ bindAction(document.querySelector('#jumpBtn') as HTMLButtonElement,jump);
 bindAction(document.querySelector('#runBtn') as HTMLButtonElement,()=>sprintToggle=!sprintToggle);
 bindAction(document.querySelector('#interactBtn') as HTMLButtonElement,interact);
 const prompt=document.querySelector('#prompt') as HTMLDivElement,status=document.querySelector('#status')!,target=document.querySelector('#target') as HTMLDivElement;
+const fullscreenBtn=document.querySelector('#fullscreenBtn') as HTMLButtonElement;
+function updateFullscreenButton(){fullscreenBtn.textContent=document.fullscreenElement?'⛶':'⛶';fullscreenBtn.title=document.fullscreenElement?'Exit fullscreen':'Fullscreen'}
+fullscreenBtn.addEventListener('pointerdown',async e=>{e.preventDefault();e.stopPropagation();try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch{}});
+document.addEventListener('fullscreenchange',updateFullscreenButton);updateFullscreenButton();
 let promptTimer=0,sprintToggle=false;
 function say(t:string){prompt.textContent=t;prompt.classList.add('show');promptTimer=1.2}
 function jump(){if(player.onGround){player.velocity.y=7.2;player.onGround=false}}
