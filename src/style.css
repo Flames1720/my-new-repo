@@ -1,1 +1,37 @@
-PLACEHOLDER
+:root { font-family: Inter, system-ui, sans-serif; color: #fff; background: #0b1015; }
+html { width:100%; height:100%; min-height:100dvh; background:#0b1015; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body, #game { width:100%; height:100%; min-height:100dvh; margin:0; overflow:hidden; }
+body { min-height:100dvh; }
+body { touch-action:none; overscroll-behavior:none; }
+canvas { display:block; width:100%; height:100%; }
+#hud { position:fixed; inset:0; width:100%; height:100%; min-height:100dvh; pointer-events:none; padding:calc(10px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left)); }
+#brand { position:absolute; top:calc(8px + env(safe-area-inset-top)); left:calc(10px + env(safe-area-inset-left)); font-size:12px; font-weight:800; letter-spacing:1.7px; text-shadow:0 2px 8px #0008; }
+#brand span { opacity:.55; font-size:9px; }
+#status { position:absolute; top:calc(28px + env(safe-area-inset-top)); left:calc(10px + env(safe-area-inset-left)); font-size:11px; opacity:.72; text-shadow:0 2px 8px #000; }
+#target { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:18px; height:18px; display:grid; place-items:center; font-size:17px; line-height:1; opacity:.55; text-shadow:0 1px 5px #000; transition:opacity .12s, transform .12s; }
+#target.active { opacity:1; transform:translate(-50%,-50%) scale(1.2); }
+#prompt { position:absolute; left:50%; bottom:18%; transform:translateX(-50%); padding:9px 13px; border-radius:12px; background:#111a22d9; border:1px solid #ffffff22; font-size:12px; opacity:0; transition:.15s; white-space:nowrap; }
+#prompt.show { opacity:1; }
+#controls { position:absolute; right:calc(10px + env(safe-area-inset-right)); top:calc(10px + env(safe-area-inset-top)); font-size:9px; opacity:.45; max-width:320px; text-align:right; }
+#touch { position:fixed; inset:0; width:100%; height:100%; min-height:100dvh; pointer-events:none; display:none; }
+#fullscreenBtn { position:absolute; right:calc(10px + env(safe-area-inset-right)); top:calc(10px + env(safe-area-inset-top)); width:42px; height:36px; border:1px solid #ffffff2b; border-radius:10px; color:#fff; background:#111a22c9; font-size:16px; pointer-events:auto; }
+#fullscreenBtn.hidden { display:none; }
+#stick { pointer-events:auto; position:absolute; left:calc(16px + env(safe-area-inset-left)); bottom:calc(16px + env(safe-area-inset-bottom)); width:112px; height:112px; border-radius:50%; background:#ffffff12; border:1px solid #ffffff25; }
+#knob { position:absolute; left:50%; top:50%; width:48px; height:48px; margin:-24px; border-radius:50%; background:#ffffff32; border:1px solid #ffffff40; }
+#lookZone { pointer-events:none; position:absolute; left:22%; right:0; top:0; bottom:0; }
+.actions { position:absolute; right:calc(14px + env(safe-area-inset-right)); bottom:calc(14px + env(safe-area-inset-bottom)); display:flex; gap:9px; pointer-events:auto; }
+.actions button { border:1px solid #ffffff2b; color:white; background:#111a22c9; width:64px; height:64px; border-radius:50%; font-weight:800; font-size:10px; }
+#orientation { display:none; position:fixed; inset:0; z-index:20; place-items:center; text-align:center; background:#0b1015; padding:40px; font-weight:700; }
+@media (orientation: portrait) and (max-width: 900px) { #orientation { display:grid; } }
+@media (max-width: 900px) { #fullscreenBtn { display:block; } }
+@media (min-width: 901px) { #fullscreenBtn { display:none; } }
+:fullscreen #fullscreenBtn { display:block; }
+@media (display-mode: fullscreen) { #fullscreenBtn { display:block; } }
+@media (max-width: 900px) { #touch { display:block; } #controls { display:none; } }
+#compass{position:absolute;left:50%;top:calc(8px + env(safe-area-inset-top));width:48px;text-align:center;font-size:11px;font-weight:900;letter-spacing:2px;text-shadow:0 2px 8px #000;transform-origin:center;}
+#mapBtn{position:absolute;right:calc(60px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));height:36px;padding:0 12px;border:1px solid #ffffff2b;border-radius:10px;color:#fff;background:#111a22c9;font-size:10px;font-weight:800;pointer-events:auto}
+#mapOverlay{position:fixed;inset:0;z-index:30;background:#0b1015ed;display:none;padding:calc(20px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));}
+#mapOverlay.show{display:block}#mapCanvas{position:absolute;left:5%;top:12%;width:90%;height:72%;image-rendering:auto;border:1px solid #ffffff28;border-radius:14px}#mapTitle{position:absolute;left:6%;top:5%;font-weight:900;letter-spacing:2px}#mapTitle span{font-size:9px;opacity:.5;margin-left:8px;letter-spacing:1px}#mapClose{position:absolute;right:6%;top:5%;z-index:2;border:1px solid #ffffff2b;border-radius:10px;background:#111a22;color:#fff;padding:9px 13px;font-weight:800}#mapLegend{position:absolute;left:6%;bottom:6%;font-size:10px;opacity:.65}
+@media (max-width:900px){#compass{top:calc(7px + env(safe-area-inset-top));}}
+/* Map button now visible on both mobile and desktop */
