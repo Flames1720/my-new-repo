@@ -3,7 +3,7 @@ import './style.css';
 
 type Mode='tpp'|'fpp';
 type Save={version:1;player:{x:number;y:number;z:number;ry:number;mode:Mode};camera:{yaw:number;pitch:number;distance:number};changes:Record<string,string[]>};
-const SAVE_KEY='virtual-family-core-v1',SEED=847231,SIZE=32,RADIUS=5,WORLD_RADIUS=12;
+const SAVE_KEY='virtual-family-core-v1',SEED=847231,SIZE=16,RADIUS=7,WORLD_RADIUS=18;
 const WORLD_DIAMETER=WORLD_RADIUS*2+1;
 const WATER_LEVEL=1.25,ROAD_SPACING=128,ROAD_WIDTH=5.5;
 const terrainHeightAt=(x:number,z:number)=>{const broad=Math.sin(x*.018+SEED*.001)*1.7+Math.cos(z*.021-SEED*.0007)*1.35;const hills=Math.sin((x+z)*.045)*.75+Math.cos((x-z)*.032)*.55;return Math.max(0,broad+hills+.9)};
@@ -14,7 +14,7 @@ const lerp=(a:number,b:number,t:number)=>a+(b-a)*t;
 const angleLerp=(a:number,b:number,t:number)=>a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*Math.min(1,t);
 const hash=(x:number,z:number)=>{let n=Math.imul(x,374761393)^Math.imul(z,668265263)^Math.imul(SEED,1442695041);n=Math.imul(n^(n>>>13),1274126177);return((n^(n>>>16))>>>0)/4294967296};
 
-const scene=new THREE.Scene();scene.background=new THREE.Color(0x9fc7df);scene.fog=new THREE.Fog(0x9fc7df,75,190);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x9fc7df);scene.fog=new THREE.Fog(0x9fc7df,60,160);
 const camera=new THREE.PerspectiveCamera(62,innerWidth/innerHeight,.05,500);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.querySelector('#game')!.appendChild(renderer.domElement);
 scene.add(new THREE.HemisphereLight(0xdceeff,0x405044,2.2));const sun=new THREE.DirectionalLight(0xfff0d0,3);sun.position.set(35,70,25);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-90;sun.shadow.camera.right=90;sun.shadow.camera.top=90;sun.shadow.camera.bottom=-90;scene.add(sun);
@@ -24,25 +24,57 @@ class Player{
  root=new THREE.Group(); velocity=new THREE.Vector3(); onGround=true;
  head:THREE.Object3D; torso:THREE.Object3D; leftLeg:THREE.Object3D; rightLeg:THREE.Object3D; leftArm:THREE.Object3D; rightArm:THREE.Object3D;
  constructor(){
-  const skin=new THREE.MeshStandardMaterial({color:0xb9795f,roughness:.9}),shirt=new THREE.MeshStandardMaterial({color:0x416a82,roughness:1}),pants=new THREE.MeshStandardMaterial({color:0x34404a,roughness:1}),hairMat=new THREE.MeshStandardMaterial({color:0x2b211d,roughness:1}),eyeMat=new THREE.MeshBasicMaterial({color:0x111820});
-  this.head=new THREE.Mesh(new THREE.SphereGeometry(.29,10,7),skin);this.head.position.y=1.72;this.root.add(this.head);
-  const hair=new THREE.Mesh(new THREE.SphereGeometry(.30,10,5,0,Math.PI*2,0,Math.PI*.55),hairMat);hair.position.y=1.80;this.root.add(hair);
-  const fringe=new THREE.Mesh(new THREE.BoxGeometry(.28,.10,.10),hairMat);fringe.position.set(0,1.72,.255);this.root.add(fringe);
-  for(const x of[-.085,.085]){const eye=new THREE.Mesh(new THREE.SphereGeometry(.027,6,5),eyeMat);eye.position.set(x,1.73,.272);this.root.add(eye)}
-  this.torso=new THREE.Mesh(new THREE.CapsuleGeometry(.34,.64,4,8),shirt);this.torso.position.y=1.10;this.root.add(this.torso);
-  for(const side of[-1,1]){const leg=new THREE.Mesh(new THREE.CapsuleGeometry(.11,.70,3,6),pants);leg.position.set(.14*side,.43,0);const arm=new THREE.Mesh(new THREE.CapsuleGeometry(.09,.58,3,6),shirt);arm.position.set(.43*side,1.10,0);arm.rotation.z=-.12*side;this.root.add(leg,arm);if(side<0){this.leftLeg=leg;this.leftArm=arm}else{this.rightLeg=leg;this.rightArm=arm}}
-  this.root.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});actors.add(this.root);
+  const skin=new THREE.MeshStandardMaterial({color:0xc68642,roughness:.85,metalness:.05});
+  const shirt=new THREE.MeshStandardMaterial({color:0x2a5f8f,roughness:.9});
+  const pants=new THREE.MeshStandardMaterial({color:0x2c3540,roughness:1});
+  const hairMat=new THREE.MeshStandardMaterial({color:0x1a1410,roughness:1});
+  const shoeMat=new THREE.MeshStandardMaterial({color:0x1c1c1c,roughness:.7});
+  const eyeMat=new THREE.MeshBasicMaterial({color:0x111820});
+  const white=new THREE.MeshBasicMaterial({color:0xf5f5f5});
+
+  // Head
+  this.head=new THREE.Mesh(new THREE.SphereGeometry(.27,12,10),skin);this.head.position.y=1.68;this.root.add(this.head);
+  // Hair
+  const hair=new THREE.Mesh(new THREE.SphereGeometry(.29,12,8,0,Math.PI*2,0,Math.PI*.58),hairMat);hair.position.y=1.76;this.root.add(hair);
+  const fringe=new THREE.Mesh(new THREE.BoxGeometry(.26,.09,.09),hairMat);fringe.position.set(0,1.68,.24);this.root.add(fringe);
+  // Eyes
+  for(const x of[-.08,.08]){
+    const eyeWhite=new THREE.Mesh(new THREE.SphereGeometry(.035,8,6),white);eyeWhite.position.set(x,1.70,.25);this.root.add(eyeWhite);
+    const pupil=new THREE.Mesh(new THREE.SphereGeometry(.018,6,5),eyeMat);pupil.position.set(x,1.70,.275);this.root.add(pupil);
+  }
+  // Torso
+  this.torso=new THREE.Mesh(new THREE.CapsuleGeometry(.32,.58,6,10),shirt);this.torso.position.y=1.08;this.root.add(this.torso);
+  // Neck
+  const neck=new THREE.Mesh(new THREE.CylinderGeometry(.09,.11,.12,8),skin);neck.position.y=1.42;this.root.add(neck);
+  // Legs + shoes
+  for(const side of[-1,1]){
+    const leg=new THREE.Mesh(new THREE.CapsuleGeometry(.10,.68,4,8),pants);leg.position.set(.13*side,.42,0);this.root.add(leg);
+    const shoe=new THREE.Mesh(new THREE.BoxGeometry(.14,.09,.26),shoeMat);shoe.position.set(.13*side,.05,.04);this.root.add(shoe);
+    const arm=new THREE.Mesh(new THREE.CapsuleGeometry(.08,.55,4,8),shirt);arm.position.set(.40*side,1.10,0);arm.rotation.z=-.10*side;this.root.add(arm);
+    if(side<0){this.leftLeg=leg;this.leftArm=arm}else{this.rightLeg=leg;this.rightArm=arm}
+  }
+  this.root.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});
+  actors.add(this.root);
  }
- animate(t:number,moving:boolean,sprinting:boolean){const swing=moving?Math.sin(t*(sprinting?14:10))*.55:0;this.leftLeg.rotation.x=swing;this.rightLeg.rotation.x=-swing;this.leftArm.rotation.x=-swing*.75;this.rightArm.rotation.x=swing*.75}
+ animate(t:number,moving:boolean,sprinting:boolean){
+  const speed=sprinting?15:11;
+  const swing=moving?Math.sin(t*speed)*.6:0;
+  this.leftLeg.rotation.x=swing;this.rightLeg.rotation.x=-swing;
+  this.leftArm.rotation.x=-swing*.7;this.rightArm.rotation.x=swing*.7;
+  // Subtle torso lean when moving
+  this.torso.rotation.x=moving?(sprinting?.08:.04):0;
+ }
 }
 const player=new Player();
 
 class Chunks{
  loaded=new Map<string,THREE.Group>();changes:Record<string,string[]>={};
  key(x:number,z:number){return`${x},${z}`}coord(v:number){return Math.floor(v/SIZE)}
- build(cx:number,cz:number){
-  const key=this.key(cx,cz),g=new THREE.Group();g.name=`chunk:${key}`;
-  const terrain=new THREE.PlaneGeometry(SIZE,SIZE,16,16);terrain.rotateX(-Math.PI/2);const pos=terrain.getAttribute('position');for(let i=0;i<pos.count;i++){const lx=pos.getX(i)+cx*SIZE+SIZE/2,lz=pos.getZ(i)+cz*SIZE+SIZE/2;pos.setY(i,terrainHeightAt(lx,lz));}terrain.computeVertexNormals();const ground=new THREE.Mesh(terrain,new THREE.MeshStandardMaterial({color:0x73975f,roughness:1}));ground.position.set(cx*SIZE+SIZE/2,0,cz*SIZE+SIZE/2);ground.receiveShadow=true;ground.name='terrain';g.add(ground);
+ build(cx:number,cz:number,lod:number=0){
+  const key=this.key(cx,cz),g=new THREE.Group();g.name=`chunk:${key}`;g.userData.lod=lod;
+  // LOD 0 = high (near), 1 = medium, 2 = low (far)
+  const segs = lod===0 ? 12 : lod===1 ? 6 : 3;
+  const terrain=new THREE.PlaneGeometry(SIZE,SIZE,segs,segs);terrain.rotateX(-Math.PI/2);const pos=terrain.getAttribute('position');for(let i=0;i<pos.count;i++){const lx=pos.getX(i)+cx*SIZE+SIZE/2,lz=pos.getZ(i)+cz*SIZE+SIZE/2;pos.setY(i,terrainHeightAt(lx,lz));}terrain.computeVertexNormals();const ground=new THREE.Mesh(terrain,new THREE.MeshStandardMaterial({color:0x73975f,roughness:1}));ground.position.set(cx*SIZE+SIZE/2,0,cz*SIZE+SIZE/2);ground.receiveShadow=lod===0;ground.name='terrain';g.add(ground);
   const roadMat=new THREE.MeshStandardMaterial({color:0x3d4348,roughness:1});
   // Horizontal roads (along X, fixed Z = center)
   for(let k=-WORLD_RADIUS;k<=WORLD_RADIUS;k++){const center=k*ROAD_SPACING;
@@ -60,11 +92,14 @@ class Chunks{
   for(let i=0;i<wp.count;i++){const lx=wp.getX(i)+cx*SIZE+SIZE/2,lz=wp.getZ(i)+cz*SIZE+SIZE/2;if(waterAt(lx,lz))waterCells++;wp.setY(i,WATER_LEVEL)}
   if(waterCells>8){const water=new THREE.Mesh(waterGeom,new THREE.MeshStandardMaterial({color:0x4d91b5,transparent:true,opacity:.72,roughness:.15,metalness:.05}));water.position.set(cx*SIZE+SIZE/2,0,cz*SIZE+SIZE/2);water.name='water';g.add(water);g.userData.water=true}
   const removed=this.changes[key]||[];
-  for(let i=0;i<9;i++){if(hash(cx*17+i,cz*23-i)<=.56||roadAt(cx*SIZE+SIZE/2,cz*SIZE+SIZE/2)||removed.includes(`tree-${i}`))continue;const tree=new THREE.Group();tree.name=`tree-${i}`;tree.userData.colliderRadius=.72;const tx=cx*SIZE+4+hash(cx+i,cz-i)*24,tz=cz*SIZE+4+hash(cx-i,cz+i)*24;tree.position.set(tx,terrainHeightAt(tx,tz),tz);const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.18,.23,1.7,8),new THREE.MeshStandardMaterial({color:0x694b35}));trunk.position.y=.85;const crown=new THREE.Mesh(new THREE.SphereGeometry(1.15,9,7),new THREE.MeshStandardMaterial({color:0x3d7148}));crown.position.y=2.05;tree.add(trunk,crown);tree.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(tree)}
+  if(lod < 2){ // no trees on far LOD
+    const maxTrees = lod===0 ? 9 : 4;
+    for(let i=0;i<maxTrees;i++){if(hash(cx*17+i,cz*23-i)<=.56||roadAt(cx*SIZE+SIZE/2,cz*SIZE+SIZE/2)||removed.includes(`tree-${i}`))continue;const tree=new THREE.Group();tree.name=`tree-${i}`;tree.userData.colliderRadius=.72;const tx=cx*SIZE+2+hash(cx+i,cz-i)*(SIZE-4),tz=cz*SIZE+2+hash(cx-i,cz+i)*(SIZE-4);tree.position.set(tx,terrainHeightAt(tx,tz),tz);const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.16,.20,1.6,lod===0?8:5),new THREE.MeshStandardMaterial({color:0x694b35}));trunk.position.y=.8;const crown=new THREE.Mesh(new THREE.SphereGeometry(1.05,lod===0?9:5,lod===0?7:4),new THREE.MeshStandardMaterial({color:0x3d7148}));crown.position.y=1.95;tree.add(trunk,crown);if(lod===0)tree.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(tree)}
+  }
   if(cx===0&&cz===0)this.home(g);world.add(g);this.loaded.set(key,g);
  }
  home(g:THREE.Group){
- const h=new THREE.Group();h.name='home';const HOME_X=20,HOME_Z=20;const hy=terrainHeightAt(HOME_X,HOME_Z);h.position.set(HOME_X,hy,HOME_Z);
+ const h=new THREE.Group();h.name='home';const HOME_X=8,HOME_Z=8;const hy=terrainHeightAt(HOME_X,HOME_Z);h.position.set(HOME_X,hy,HOME_Z);
  const wallMat=new THREE.MeshStandardMaterial({color:0xe6ded0,roughness:.9}),floorMat=new THREE.MeshStandardMaterial({color:0x9b8065,roughness:1}),roofMat=new THREE.MeshStandardMaterial({color:0x7c4d3d,roughness:.9}),dark=new THREE.MeshStandardMaterial({color:0x253746,roughness:.7});
  const floor=new THREE.Mesh(new THREE.BoxGeometry(9,.18,7),floorMat);floor.position.y=.09;floor.name='home-floor';h.add(floor);
  const wallH=3.6,th=.25,halfW=4.5,halfD=3.5;
@@ -86,7 +121,7 @@ class Chunks{
  h.userData.doorOpen=(this.changes['0,0']||[]).includes('door-open');doorPivot.rotation.y=h.userData.doorOpen?-Math.PI/2:0;
  h.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(h)
 }
- stream(px:number,pz:number){const cx=this.coord(px),cz=this.coord(pz);for(const[k,g]of this.loaded){const[a,b]=k.split(',').map(Number);if(Math.abs(a-cx)>RADIUS||Math.abs(b-cz)>RADIUS){world.remove(g);this.loaded.delete(k)}}const minX=Math.max(-WORLD_RADIUS,cx-RADIUS),maxX=Math.min(WORLD_RADIUS,cx+RADIUS),minZ=Math.max(-WORLD_RADIUS,cz-RADIUS),maxZ=Math.min(WORLD_RADIUS,cz+RADIUS);for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++)if(!this.loaded.has(this.key(x,z)))this.build(x,z)}
+ stream(px:number,pz:number){const cx=this.coord(px),cz=this.coord(pz);for(const[k,g]of this.loaded){const[a,b]=k.split(',').map(Number);if(Math.abs(a-cx)>RADIUS||Math.abs(b-cz)>RADIUS){world.remove(g);this.loaded.delete(k)}}const minX=Math.max(-WORLD_RADIUS,cx-RADIUS),maxX=Math.min(WORLD_RADIUS,cx+RADIUS),minZ=Math.max(-WORLD_RADIUS,cz-RADIUS),maxZ=Math.min(WORLD_RADIUS,cz+RADIUS);for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++){const dist=Math.max(Math.abs(x-cx),Math.abs(z-cz));const lod=dist<=2?0:dist<=4?1:2;if(!this.loaded.has(this.key(x,z)))this.build(x,z,lod)}}
  harvestTree(tree:THREE.Object3D){const q=tree.getWorldPosition(new THREE.Vector3()),cx=this.coord(q.x),cz=this.coord(q.z),g=this.loaded.get(this.key(cx,cz));if(!g)return;this.changes[this.key(cx,cz)]??=[];this.changes[this.key(cx,cz)].push(tree.name);g.remove(tree);saveNow()}
 }
 const chunks=new Chunks();
