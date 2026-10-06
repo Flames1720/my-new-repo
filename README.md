@@ -4,9 +4,10 @@ A single-player survival-world prototype built with Three.js. The game uses a se
 
 ## Character and water
 
-- **Articulated adventurer:** a custom procedural low-poly character with a distinct head and face, layered jacket and trousers, belt, boots, pack and bedroll. Shoulder, elbow, hip and knee pivots drive walk/run cycles and a blended swimming stroke. No Blender asset is required.
+- **Rigged adventurer:** the player is a small, skinned GLB character (about 268 KB, 826 polygons) with an embedded texture atlas and 58-bone rig. It is converted from Kenney's free **CC0 Animated Characters 3** pack; the original license is included at `public/models/Kenney-CC0-License.txt`. The source model and animations are credited at [Kenney Animated Characters 3](https://kenney-assets.itch.io/animated-characters-3). Three.js loads it locally—no generation API, Blender runtime, or remote asset request is needed.
+- **Animation clips:** authored **Idle**, **Run**, and **Jump** clips crossfade with movement; the existing swim state rotates the lightweight rig into a horizontal pose and reuses a slower run stride for paddling/kicking. A minimal capsule remains as a loading/error fallback.
 - **Carved lake basins:** freshwater lakes depress the underlying terrain rather than sitting on grass. Sloped banks transition to sand and silt-colored lakebeds, with water depth reflected in the animated, rippling surface.
-- **Swimming:** enter a sufficiently deep lake to float into a swim pose. Movement slows in water; buoyancy returns the character to the surface by default. Rise above the waterline or dive below it, with underwater camera fog when the view is submerged.
+- **Swimming:** enter a sufficiently deep lake to float into a horizontal swim pose near the waterline. Movement slows in water; buoyancy keeps the character near the surface by default. Rise above the waterline or dive below it, with underwater camera fog when the view is submerged.
 - **Touch support:** the existing virtual stick handles swimming movement. The **JUMP** button becomes **RISE**, and a **DIVE** button appears while swimming.
 
 ## World and wildlife

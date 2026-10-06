@@ -124,67 +124,36 @@ function waterSplash(x:number,z:number){splashAge=0;splashRing.position.set(x,WA
 function updateSplash(dt:number){if(splashAge>=.65)return;splashAge+=dt;splashRing.scale.setScalar(.65+splashAge*4);splashMaterial.opacity=clamp(1-splashAge/.65,0,.8);if(splashAge>=.65)splashRing.visible=false}
 
 class Player{
-	root=new THREE.Group();velocity=new THREE.Vector3();onGround=true;swimming=false;private swimBlend=0;
-	head:THREE.Group;torso:THREE.Group;legRig:THREE.Group;leftLeg:THREE.Group;rightLeg:THREE.Group;leftKnee:THREE.Group;rightKnee:THREE.Group;leftArm:THREE.Group;rightArm:THREE.Group;
+	root=new THREE.Group();velocity=new THREE.Vector3();onGround=true;swimming=false;
+	private fallback:THREE.Group;private avatar:THREE.Group|null=null;private mixer:THREE.AnimationMixer|null=null;private actions=new Map<string,THREE.AnimationAction>();private activeAction:THREE.AnimationAction|null=null;private oneShot=false;
+	private leftUpperArm:THREE.Object3D|null=null;private rightUpperArm:THREE.Object3D|null=null;
 	constructor(){
-	 this.root.name='player-adventurer';
-	 const skin=new THREE.MeshStandardMaterial({color:0xc98f67,roughness:.86}),jacket=new THREE.MeshStandardMaterial({color:0x315b6d,roughness:.94}),shirt=new THREE.MeshStandardMaterial({color:0xd8d1bd,roughness:.95}),pants=new THREE.MeshStandardMaterial({color:0x35414b,roughness:1}),hairMat=new THREE.MeshStandardMaterial({color:0x30251f,roughness:1}),bootMat=new THREE.MeshStandardMaterial({color:0x49372b,roughness:.9}),leather=new THREE.MeshStandardMaterial({color:0x8a603a,roughness:.95}),trim=new THREE.MeshStandardMaterial({color:0xd2a75e,roughness:.8}),eyeWhite=new THREE.MeshBasicMaterial({color:0xf7f2e9}),eyeDark=new THREE.MeshBasicMaterial({color:0x28303a}),mouthMat=new THREE.MeshBasicMaterial({color:0x754c40});
-	 const add=(parent:THREE.Object3D,geometry:THREE.BufferGeometry,material:THREE.Material,p:[number,number,number],s?:[number,number,number])=>{const m=new THREE.Mesh(geometry,material);m.position.set(...p);if(s)m.scale.set(...s);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m};
-	 this.torso=new THREE.Group();this.torso.position.y=.91;this.root.add(this.torso);
-	 this.legRig=new THREE.Group();this.legRig.position.y=.79;this.root.add(this.legRig);
-	 add(this.torso,new THREE.CapsuleGeometry(.24,.12,4,8),pants,[0,-.08,0]);
-	 add(this.torso,new THREE.CylinderGeometry(.245,.26,.11,10),leather,[0,.015,0]);
-	 add(this.torso,new THREE.CapsuleGeometry(.275,.43,5,10),jacket,[0,.37,0]);
-	 add(this.torso,new THREE.BoxGeometry(.115,.38,.025),shirt,[0,.39,.273]);
-	 add(this.torso,new THREE.BoxGeometry(.025,.39,.032),trim,[0,.39,.291]);
-	 for(const side of[-1,1]){
-	  add(this.torso,new THREE.BoxGeometry(.135,.13,.035),leather,[side*.155,.16,.255]);
-	  add(this.torso,new THREE.BoxGeometry(.145,.035,.045),trim,[side*.155,.235,.275]);
-	  const collar=add(this.torso,new THREE.BoxGeometry(.12,.15,.08),shirt,[side*.09,.69,.12]);collar.rotation.z=-side*.35;
-	  add(this.torso,new THREE.BoxGeometry(.045,.39,.035),leather,[side*.215,.43,-.17]);
-	 }
-	 // A compact field pack and rolled bedroll give the silhouette a readable survival-adventure profile.
-	 add(this.torso,new THREE.BoxGeometry(.39,.46,.19),leather,[0,.34,-.31]);
-	 add(this.torso,new THREE.BoxGeometry(.31,.2,.025),bootMat,[0,.19,-.414]);
-	 add(this.torso,new THREE.CylinderGeometry(.075,.075,.38,8),trim,[0,.64,-.31],[1,1,.82]).rotation.z=Math.PI/2;
-	 add(this.torso,new THREE.CylinderGeometry(.09,.1,.13,8),skin,[0,.72,0]);
-	 this.head=new THREE.Group();this.head.position.set(0,.79,0);this.torso.add(this.head);
-	 add(this.head,new THREE.SphereGeometry(.235,14,12),skin,[0,.11,0]);
-	 add(this.head,new THREE.SphereGeometry(.247,12,8,0,Math.PI*2,0,Math.PI*.57),hairMat,[0,.17,-.015]);
-	 add(this.head,new THREE.BoxGeometry(.27,.075,.105),hairMat,[0,.105,.205]);
-	 for(const side of[-1,1]){
-	  add(this.head,new THREE.SphereGeometry(.052,8,6),skin,[side*.229,.085,0]);
-	  add(this.head,new THREE.SphereGeometry(.036,8,6),eyeWhite,[side*.078,.12,.207]);
-	  add(this.head,new THREE.SphereGeometry(.018,6,5),eyeDark,[side*.078,.12,.239]);
-	  const brow=add(this.head,new THREE.BoxGeometry(.075,.022,.025),hairMat,[side*.078,.176,.222]);brow.rotation.z=-side*.08;
-	 }
-	 add(this.head,new THREE.SphereGeometry(.042,8,6),skin,[0,.07,.231],[.78,.8,.75]);
-	 add(this.head,new THREE.BoxGeometry(.07,.018,.018),mouthMat,[0,.005,.223]);
-	 // Articulated shoulders, elbows, hips and knees; pivots drive the walk and swim cycles.
-	 for(const side of[-1,1]){
-	  const arm=new THREE.Group();arm.position.set(side*.325,.62,0);this.torso.add(arm);
-	  add(arm,new THREE.CapsuleGeometry(.105,.29,4,8),jacket,[0,-.19,0]);
-	  const elbow=new THREE.Group();elbow.position.y=-.39;arm.add(elbow);
-	  add(elbow,new THREE.CylinderGeometry(.082,.087,.055,8),trim,[0,0,0]);
-	  add(elbow,new THREE.CapsuleGeometry(.08,.27,4,8),shirt,[0,-.17,0]);
-	  add(elbow,new THREE.SphereGeometry(.085,8,6),skin,[0,-.36,.025]);
-	  if(side<0)this.leftArm=arm;else this.rightArm=arm;
-	  const leg=new THREE.Group();leg.position.set(side*.13,0,0);this.legRig.add(leg);
-	  add(leg,new THREE.CapsuleGeometry(.115,.29,4,8),pants,[0,-.17,0]);
-	  const knee=new THREE.Group();knee.position.y=-.34;leg.add(knee);
-	  add(knee,new THREE.BoxGeometry(.2,.16,.15),pants,[0,0,.015]);
-	  add(knee,new THREE.CapsuleGeometry(.095,.29,4,8),pants,[0,-.17,0]);
-	  add(knee,new THREE.BoxGeometry(.2,.14,.31),bootMat,[0,-.36,.09]);
-	  add(knee,new THREE.BoxGeometry(.2,.035,.28),leather,[0,-.43,.09]);
-	  if(side<0){this.leftLeg=leg;this.leftKnee=knee}else{this.rightLeg=leg;this.rightKnee=knee}
-	 }
-	 actors.add(this.root);
+	 this.root.name='player-adventurer';this.fallback=new THREE.Group();this.fallback.name='player-fallback';
+	 const mat=new THREE.MeshStandardMaterial({color:0x507486,roughness:.92});const body=new THREE.Mesh(new THREE.CapsuleGeometry(.25,.68,3,7),mat);body.position.y=.78;const head=new THREE.Mesh(new THREE.SphereGeometry(.19,8,6),mat);head.position.y=1.42;
+	 for(const mesh of[body,head]){mesh.castShadow=!LOW_POWER_MODE;mesh.receiveShadow=true;this.fallback.add(mesh)}this.root.add(this.fallback);actors.add(this.root);
+	 import('three/addons/loaders/GLTFLoader.js').then(({GLTFLoader})=>new GLTFLoader().load('/models/kenney-adventurer.glb',gltf=>{
+	  const avatar=gltf.scene;avatar.name='kenney-human-adventurer';avatar.scale.setScalar(.45);
+	  this.leftUpperArm=avatar.getObjectByName('LeftArm')??null;this.rightUpperArm=avatar.getObjectByName('RightArm')??null;
+	  avatar.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=!LOW_POWER_MODE;o.receiveShadow=true}});this.root.add(avatar);this.avatar=avatar;
+	  this.fallback.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();const list=Array.isArray(o.material)?o.material:[o.material];for(const m of list)m.dispose()}});this.root.remove(this.fallback);
+	  this.mixer=new THREE.AnimationMixer(avatar);this.mixer.addEventListener('finished',event=>{if(event.action===this.activeAction){this.activeAction=null;this.oneShot=false}});
+	  for(const clip of gltf.animations){const n=clip.name.toLowerCase(),key=n.startsWith('idle')?'Idle':n.startsWith('run')?'Run':n.startsWith('jump')?'Jump':null;if(key)this.actions.set(key,this.mixer.clipAction(clip))}
+	  this.setAction('Idle',true,.01);
+	 },undefined,error=>console.warn('Player model could not load; keeping the lightweight fallback.',error))).catch(error=>console.warn('Player model loader could not be imported; keeping the lightweight fallback.',error));
+	}
+	private setAction(name:string,loop:boolean,fade=.16){
+	 const next=this.actions.get(name);if(!next||next===this.activeAction)return;
+	 this.activeAction?.fadeOut(fade);next.reset();next.enabled=true;next.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);next.clampWhenFinished=!loop;next.fadeIn(fade).play();this.activeAction=next;
+	}
+	playJump(){
+	 const next=this.actions.get('Jump');if(!next)return;this.activeAction?.fadeOut(.08);this.oneShot=true;next.reset();next.enabled=true;next.setLoop(THREE.LoopOnce,1);next.clampWhenFinished=true;next.fadeIn(.08).play();this.activeAction=next;
 	}
 	animate(t:number,moving:boolean,sprinting:boolean,swimming:boolean,dt:number){
-	 const blend=this.swimBlend=lerp(this.swimBlend,swimming?1:0,Math.min(1,dt*4)),speed=sprinting?15:11,swing=moving?Math.sin(t*speed)*(sprinting?.68:.52):0,stroke=t*7,breath=Math.sin(t*1.8)*.008;
-	 this.torso.rotation.x=lerp(moving?(sprinting?.075:.035):0,1.12,blend);this.head.rotation.x=lerp(Math.sin(t*1.5)*.018,-1.02,blend);this.torso.position.y=lerp(.91+(moving?Math.abs(Math.sin(t*speed))*.025:breath),.91,blend);
-	 this.legRig.rotation.x=1.12*blend;this.leftLeg.rotation.x=lerp(swing,Math.sin(stroke+Math.PI)*.34,blend);this.rightLeg.rotation.x=lerp(-swing,Math.sin(stroke)*.34,blend);this.leftKnee.rotation.x=lerp(moving?Math.max(0,-swing)*.55:0,.38+Math.max(0,Math.sin(stroke))*.28,blend);this.rightKnee.rotation.x=lerp(moving?Math.max(0,swing)*.55:0,.38+Math.max(0,Math.sin(stroke+Math.PI))*.28,blend);
-	 this.leftArm.rotation.x=lerp(-swing*.72,Math.sin(stroke)*.55-.2,blend);this.rightArm.rotation.x=lerp(swing*.72,Math.sin(stroke+Math.PI)*.55-.2,blend);this.leftArm.rotation.z=lerp(.04,.16,blend);this.rightArm.rotation.z=lerp(-.04,-.16,blend);
+	 this.mixer?.update(dt);
+	 if(swimming&&this.oneShot){this.activeAction?.fadeOut(.1);this.activeAction=null;this.oneShot=false}
+	 if(!this.oneShot){const state=moving?'Run':'Idle';this.setAction(state,true);this.actions.get(state)?.setEffectiveTimeScale(state==='Run'?(swimming?.66:sprinting?1.18:.82):1)}
+	 if(this.leftUpperArm)this.leftUpperArm.rotation.x-=.65;if(this.rightUpperArm)this.rightUpperArm.rotation.x+=.65;
+	 if(this.avatar){const target=swimming?1.38:0;this.avatar.rotation.x=lerp(this.avatar.rotation.x,target,Math.min(1,dt*5));this.avatar.position.y=swimming?Math.sin(t*2.6)*.018:0}
 	}
 }
 const player=new Player();
@@ -372,7 +341,7 @@ fullscreenBtn.addEventListener('pointerdown',async e=>{e.preventDefault();e.stop
 document.addEventListener('fullscreenchange',updateFullscreenButton);updateFullscreenButton();
 let promptTimer=0,sprintToggle=false,mapAccumulator=0,uiAccumulator=0;
 function say(t:string){prompt.textContent=t;prompt.classList.add('show');promptTimer=1.2}
-function jump(){if(player.swimming){player.velocity.y=1.8;return}if(player.onGround){player.velocity.y=7.2;player.onGround=false}}
+function jump(){if(player.swimming){player.velocity.y=1.8;return}if(player.onGround){player.velocity.y=7.2;player.onGround=false;player.playJump()}}
 function addItem(item:string,qty:number){inventory[item]=(inventory[item]||0)+qty;renderInventory();saveNow()}
 function renderInventory(){inventoryEl.innerHTML=Object.entries(inventory).filter(([,v])=>v>0).map(([k,v])=>`<span class="invItem">${ITEM_ICONS[k]||'•'} ${v}</span>`).join('')}
 renderInventory();
@@ -456,8 +425,8 @@ function update(dt:number){
 	moveWithCollisions(player.velocity.x*dt,player.velocity.z*dt);
 	player.swimming=waterAt(p.x,p.z)&&WATER_LEVEL-terrainHeightAt(p.x,p.z)>.65;
 	if(player.swimming){
-	 const bedY=terrainHeightAt(p.x,p.z),minY=bedY+.22,maxY=WATER_LEVEL-.14;
-	 const targetY=keys.has('control')?WATER_LEVEL-1.9:keys.has(' ')?WATER_LEVEL-.43:WATER_LEVEL-1.04;
+	 const bedY=terrainHeightAt(p.x,p.z),minY=bedY+.22,maxY=keys.has(' ')?WATER_LEVEL+.22:WATER_LEVEL-.08;
+	 const targetY=keys.has('control')?WATER_LEVEL-1.9:keys.has(' ')?WATER_LEVEL+.14:WATER_LEVEL-.08;
 	 const buoyancyTarget=clamp(targetY,minY,maxY);player.velocity.y=lerp(player.velocity.y,(buoyancyTarget-p.y)*4,Math.min(1,dt*3.5));p.y=clamp(p.y+player.velocity.y*dt,minY,maxY);player.onGround=false;
 	}else{
 	 player.velocity.y-=18*dt;p.y+=player.velocity.y*dt;
@@ -469,9 +438,9 @@ function update(dt:number){
 	if(player.swimming!==wasSwimming){hud.classList.toggle('swimming',player.swimming);touchControls.classList.toggle('swimming',player.swimming);waterSplash(p.x,p.z);say(player.swimming?'Swimming · hold Space / RISE to surface; Ctrl / DIVE to submerge.':'Back on land.');}
 	fauna?.update(dt,p,sprinting);
 	camYaw=angleLerp(camYaw,targetYaw,Math.min(1,dt*12));camPitch=lerp(camPitch,targetPitch,Math.min(1,dt*12));camDistance=lerp(camDistance,targetDistance,Math.min(1,dt*12));player.root.visible=mode!=='fpp';
-	const focus=cameraFocus.copy(p);focus.y+=player.swimming?.92:1.05;
+	const focus=cameraFocus.copy(p);focus.y+=player.swimming?.28:1.05;
 	if(mode==='tpp'){cameraProbeTimer-=dt;if(cameraProbeTimer<=0){cameraProbeTimer=LOW_POWER_MODE?.12:.075;cameraBlockerObjects.length=0;for(const o of chunks.cameraBlockers)cameraBlockerObjects.push(o);const pcx=chunks.coord(p.x),pcz=chunks.coord(p.z);for(let ox=-1;ox<=1;ox++)for(let oz=-1;oz<=1;oz++){const terrain=chunks.loaded.get(chunks.key(pcx+ox,pcz+oz))?.getObjectByName('terrain');if(terrain)cameraBlockerObjects.push(terrain)}cameraDirection.set(-Math.sin(camYaw)*Math.cos(camPitch),Math.sin(camPitch),-Math.cos(camYaw)*Math.cos(camPitch));cameraRay.near=0;cameraRay.far=camDistance;cameraRay.set(focus,cameraDirection);cameraHits.length=0;const hit=cameraRay.intersectObjects(cameraBlockerObjects,true,cameraHits)[0];cameraClearance=hit?Math.max(1.35,hit.distance-.25):camDistance}const distance=Math.min(camDistance,cameraClearance),h=Math.cos(camPitch)*distance,pos=cameraPosition.copy(focus);pos.x-=Math.sin(camYaw)*h;pos.y+=Math.sin(camPitch)*distance;pos.z-=Math.cos(camYaw)*h;if(player.swimming&&!keys.has('control'))pos.y=Math.max(pos.y,WATER_LEVEL+.8);camera.position.lerp(pos,Math.min(1,dt*14));camera.lookAt(focus)}
-	else{const eye=cameraEye.copy(p);eye.y+=player.swimming?1.16:1.55;camera.position.lerp(eye,Math.min(1,dt*18));const look=cameraLook.copy(eye);look.x+=Math.sin(targetYaw)*Math.cos(targetPitch)*8;look.y+=Math.sin(targetPitch)*8;look.z+=Math.cos(targetYaw)*Math.cos(targetPitch)*8;camera.lookAt(look)}
+	else{const eye=cameraEye.copy(p);eye.y+=player.swimming?.22:1.55;camera.position.lerp(eye,Math.min(1,dt*18));const look=cameraLook.copy(eye);look.x+=Math.sin(targetYaw)*Math.cos(targetPitch)*8;look.y+=Math.sin(targetPitch)*8;look.z+=Math.cos(targetYaw)*Math.cos(targetPitch)*8;camera.lookAt(look)}
 	const cameraUnderwater=player.swimming&&camera.position.y<WATER_LEVEL-.04;if(cameraUnderwater!==underwater){underwater=cameraUnderwater;hud.classList.toggle('underwater',underwater);if(scene.fog){const fog=scene.fog as THREE.Fog;fog.color.copy(underwater?underwaterFogColor:skyColor);fog.near=underwater?1.5:60;fog.far=underwater?18:160}}
 	player.animate(walkTime+=dt,moving,sprinting,player.swimming,dt);
 	const aimed=getAimTarget();if(aimed&&!moving&&!promptTimer){const r=aimed.userData.resource as {kind:string;hits:number;maxHits:number}|undefined,animal=aimed.userData.animal as {species:string}|undefined;say(animal?`E · observe ${animal.species}${inventory.Fruit?' or offer fruit':''}`:r?`USE · ${r.kind[0].toUpperCase()+r.kind.slice(1)} (${r.maxHits-r.hits}/${r.maxHits})`:`USE · ${aimed.name.replace('front-door','Front door').replace('tree-','Tree ')}`)}
