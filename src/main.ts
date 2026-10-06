@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import './style.css';
 
 type Mode='tpp'|'fpp';
-type Save={version:1;player:{x:number;y:number;z:number;ry:number;mode:Mode};camera:{yaw:number;pitch:number;distance:number};changes:Record<string,string[]>};
+type Save={version:1;player:{x:number;y:number;z:number;ry:number;mode:Mode};camera:{yaw:number;pitch:number;distance:number};changes:Record<string,string[]>;inventory:Record<string,number>};
 const SAVE_KEY='virtual-family-core-v1',SEED=847231,SIZE=16,RADIUS=7,WORLD_RADIUS=18;
 const WORLD_DIAMETER=WORLD_RADIUS*2+1;
 const WATER_LEVEL=1.25,ROAD_SPACING=128,ROAD_WIDTH=5.5;
@@ -16,6 +16,42 @@ const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
 const lerp=(a:number,b:number,t:number)=>a+(b-a)*t;
 const angleLerp=(a:number,b:number,t:number)=>a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*Math.min(1,t);
 const hash=(x:number,z:number)=>{let n=Math.imul(x,374761393)^Math.imul(z,668265263)^Math.imul(SEED,1442695041);n=Math.imul(n^(n>>>13),1274126177);return((n^(n>>>16))>>>0)/4294967296};
+
+// --- Resource model: every harvestable thing is data, not a special case ---
+type ResourceKind='oak'|'pine'|'fruit'|'palm';
+interface ResourceDef{hitsToFell:number;regrowSeconds:number;colliderRadius:number;yieldItem:string;yieldQty:[number,number];bonusItem?:string;bonusQty?:[number,number];trunkColor:number;crownColor:number;fruitColor?:number}
+const RESOURCE_DEFS:Record<ResourceKind,ResourceDef>={
+ oak:{hitsToFell:3,regrowSeconds:180,colliderRadius:.72,yieldItem:'Wood',yieldQty:[2,4],trunkColor:0x694b35,crownColor:0x3d7148},
+ pine:{hitsToFell:2,regrowSeconds:140,colliderRadius:.6,yieldItem:'Pine Wood',yieldQty:[1,3],trunkColor:0x5b4330,crownColor:0x2e5c3e},
+ fruit:{hitsToFell:4,regrowSeconds:220,colliderRadius:.72,yieldItem:'Wood',yieldQty:[1,3],bonusItem:'Fruit',bonusQty:[2,5],trunkColor:0x6b4a32,crownColor:0x4a7a3f,fruitColor:0xcc4433},
+ palm:{hitsToFell:3,regrowSeconds:200,colliderRadius:.55,yieldItem:'Palm Wood',yieldQty:[1,2],trunkColor:0x8a6a3f,crownColor:0x4f8a3d}
+};
+const ITEM_ICONS:Record<string,string>={Wood:'🪵','Pine Wood':'🪵','Palm Wood':'🪵',Fruit:'🍎'};
+function pickTreeKind(cx:number,cz:number,i:number,tx:number,tz:number):ResourceKind{
+ const nearShore=waterAt(tx+3,tz)||waterAt(tx-3,tz)||waterAt(tx,tz+3)||waterAt(tx,tz-3);
+ if(nearShore)return 'palm';
+ const pineChunk=hash(cx*31+7,cz*37-7)<.35; // whole chunks lean pine, so they read as clusters
+ const roll=hash(cx*53+i*11,cz*59-i*13);
+ if(pineChunk)return roll<.82?'pine':(roll<.92?'fruit':'oak');
+ return roll<.14?'fruit':(roll<.22?'pine':'oak');
+}
+function buildTree(kind:ResourceKind,lod:number):THREE.Group{
+ const g=new THREE.Group();const def=RESOURCE_DEFS[kind];
+ const trunkMat=new THREE.MeshStandardMaterial({color:def.trunkColor}),crownMat=new THREE.MeshStandardMaterial({color:def.crownColor});
+ if(kind==='palm'){
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.12,.18,2.6,lod===0?8:5),trunkMat);trunk.position.y=1.3;g.add(trunk);
+  for(let f=0;f<5;f++){const frond=new THREE.Mesh(new THREE.ConeGeometry(.22,1.6,4),crownMat);const a=f*(Math.PI*2/5);frond.position.set(Math.cos(a)*.5,2.6,Math.sin(a)*.5);frond.rotation.z=Math.PI/2.1;frond.rotation.y=a;g.add(frond)}
+ }else if(kind==='pine'){
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.14,.2,1.5,lod===0?8:5),trunkMat);trunk.position.y=.75;g.add(trunk);
+  for(let t=0;t<3;t++){const tier=new THREE.Mesh(new THREE.ConeGeometry(.9-t*.22,1.1,lod===0?8:5),crownMat);tier.position.y=1.6+t*.75;g.add(tier)}
+ }else{
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.16,.2,1.6,lod===0?8:5),trunkMat);trunk.position.y=.8;g.add(trunk);
+  const crown=new THREE.Mesh(new THREE.SphereGeometry(1.05,lod===0?9:5,lod===0?7:4),crownMat);crown.position.y=1.95;g.add(crown);
+  if(kind==='fruit'){const fruitMat=new THREE.MeshStandardMaterial({color:def.fruitColor});for(let f=0;f<6;f++){const fr=new THREE.Mesh(new THREE.SphereGeometry(.11,6,5),fruitMat);const a=f*(Math.PI*2/6);fr.position.set(Math.cos(a)*.85,1.95+Math.sin(f)*.3,Math.sin(a)*.85);g.add(fr)}}
+ }
+ if(lod===0)g.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});
+ return g;
+}
 
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x9fc7df);scene.fog=new THREE.Fog(0x9fc7df,60,160);
 const camera=new THREE.PerspectiveCamera(62,innerWidth/innerHeight,.05,500);
@@ -98,14 +134,26 @@ class Chunks{
   if(lod < 2){ // no trees on far LOD
     const maxTrees = lod===0 ? 9 : 4;
     for(let i=0;i<maxTrees;i++){
-     if(hash(cx*17+i,cz*23-i)<=.56||removed.includes(`tree-${i}`))continue;
+     if(hash(cx*17+i,cz*23-i)<=.56)continue;
      const tx=cx*SIZE+2+hash(cx+i,cz-i)*(SIZE-4),tz=cz*SIZE+2+hash(cx-i,cz+i)*(SIZE-4);
      if(roadAt(tx,tz)||waterAt(tx,tz))continue; // check the tree's own spot, not the chunk center
-     const tree=new THREE.Group();tree.name=`tree-${i}`;tree.userData.colliderRadius=.72;
+     const kind=pickTreeKind(cx,cz,i,tx,tz),def=RESOURCE_DEFS[kind],name=`tree-${i}`;
+     const entry=removed.find(e=>e===name||e.startsWith(name+'@'));
+     if(entry){
+      const at=entry.includes('@')?Number(entry.split('@')[1]):0,elapsed=(Date.now()-at)/1000;
+      if(elapsed<def.regrowSeconds){
+       const stump=new THREE.Mesh(new THREE.CylinderGeometry(.18,.22,.28,6),new THREE.MeshStandardMaterial({color:0x5c4028}));
+       stump.name=`stump-${i}`;stump.position.set(tx,terrainHeightAt(tx,tz)+.14,tz);
+       if(lod===0){stump.castShadow=true;stump.receiveShadow=true}
+       g.add(stump);continue;
+      }
+      const idx=removed.indexOf(entry);if(idx>=0)removed.splice(idx,1); // fully regrown — clear the record
+     }
+     const tree=buildTree(kind,lod);tree.name=name;
+     tree.userData.resource={kind,hits:def.hitsToFell,maxHits:def.hitsToFell};
+     tree.userData.colliderRadius=def.colliderRadius;
      tree.position.set(tx,terrainHeightAt(tx,tz),tz);
-     const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.16,.20,1.6,lod===0?8:5),new THREE.MeshStandardMaterial({color:0x694b35}));trunk.position.y=.8;
-     const crown=new THREE.Mesh(new THREE.SphereGeometry(1.05,lod===0?9:5,lod===0?7:4),new THREE.MeshStandardMaterial({color:0x3d7148}));crown.position.y=1.95;
-     tree.add(trunk,crown);if(lod===0)tree.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(tree)
+     g.add(tree);
     }
   }
   if(cx===0&&cz===0)this.home(g);world.add(g);this.loaded.set(key,g);
@@ -145,14 +193,14 @@ class Chunks{
    else if(existing.userData.lod>lod){world.remove(existing);this.loaded.delete(key);this.build(x,z,lod)} // upgrade detail as player gets closer
   }
  }
- harvestTree(tree:THREE.Object3D){const q=tree.getWorldPosition(new THREE.Vector3()),cx=this.coord(q.x),cz=this.coord(q.z),g=this.loaded.get(this.key(cx,cz));if(!g)return;this.changes[this.key(cx,cz)]??=[];this.changes[this.key(cx,cz)].push(tree.name);g.remove(tree);saveNow()}
 }
 const chunks=new Chunks();
-let save:Save={version:1,player:{x:0,y:0,z:5,ry:0,mode:'tpp'},camera:{yaw:0,pitch:-.28,distance:7},changes:{}};
+let save:Save={version:1,player:{x:0,y:0,z:5,ry:0,mode:'tpp'},camera:{yaw:0,pitch:-.28,distance:7},changes:{},inventory:{}};
 try{const raw=localStorage.getItem(SAVE_KEY);if(raw)save=JSON.parse(raw)}catch{}
 chunks.changes=save.changes;chunks.stream(save.player.x,save.player.z);player.root.position.set(save.player.x,save.player.y,save.player.z);if(!Number.isFinite(player.root.position.y)||player.root.position.y<terrainHeightAt(player.root.position.x,player.root.position.z))player.root.position.y=terrainHeightAt(player.root.position.x,player.root.position.z);player.root.rotation.y=save.player.ry;
 let mode:Mode=save.player.mode,camYaw=save.camera.yaw,camPitch=save.camera.pitch,camDistance=save.camera.distance,targetYaw=camYaw,targetPitch=camPitch,targetDistance=camDistance;
-function saveNow(){save={version:1,player:{x:player.root.position.x,y:player.root.position.y,z:player.root.position.z,ry:player.root.rotation.y,mode},camera:{yaw:camYaw,pitch:camPitch,distance:camDistance},changes:chunks.changes};localStorage.setItem(SAVE_KEY,JSON.stringify(save))}
+let inventory:Record<string,number>=save.inventory||{};
+function saveNow(){save={version:1,player:{x:player.root.position.x,y:player.root.position.y,z:player.root.position.z,ry:player.root.rotation.y,mode},camera:{yaw:camYaw,pitch:camPitch,distance:camDistance},changes:chunks.changes,inventory};localStorage.setItem(SAVE_KEY,JSON.stringify(save))}
 
 const keys=new Set<string>();addEventListener('keydown',e=>{keys.add(e.key.toLowerCase());if(e.key.toLowerCase()==='f')mode='fpp';if(e.key.toLowerCase()==='c')mode='tpp'});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
 let pointer:number|null=null,lastX=0,lastY=0;
@@ -175,6 +223,7 @@ bindAction(document.querySelector('#jumpBtn') as HTMLButtonElement,jump);
 bindAction(document.querySelector('#runBtn') as HTMLButtonElement,()=>sprintToggle=!sprintToggle);
 bindAction(document.querySelector('#interactBtn') as HTMLButtonElement,interact);
 const prompt=document.querySelector('#prompt') as HTMLDivElement,status=document.querySelector('#status')!,target=document.querySelector('#target') as HTMLDivElement;
+const inventoryEl=document.querySelector('#inventory') as HTMLDivElement;
 const compass=document.querySelector('#compass') as HTMLDivElement;
 const mapOverlay=document.querySelector('#mapOverlay') as HTMLDivElement;
 const mapCanvas=document.querySelector('#mapCanvas') as HTMLCanvasElement;const mapCtx=mapCanvas.getContext('2d')!;
@@ -190,6 +239,29 @@ document.addEventListener('fullscreenchange',updateFullscreenButton);updateFulls
 let promptTimer=0,sprintToggle=false;
 function say(t:string){prompt.textContent=t;prompt.classList.add('show');promptTimer=1.2}
 function jump(){if(player.onGround){player.velocity.y=7.2;player.onGround=false}}
+function addItem(item:string,qty:number){inventory[item]=(inventory[item]||0)+qty;renderInventory();saveNow()}
+function renderInventory(){inventoryEl.innerHTML=Object.entries(inventory).filter(([,v])=>v>0).map(([k,v])=>`<span class="invItem">${ITEM_ICONS[k]||'•'} ${v}</span>`).join('')}
+renderInventory();
+function hitTree(tree:THREE.Object3D){
+ const res=tree.userData.resource as {kind:ResourceKind;hits:number;maxHits:number};
+ res.hits--;
+ tree.scale.setScalar(Math.max(.72,1-.09*(res.maxHits-res.hits)));
+ if(res.hits>0){say(`Hit ${res.kind} (${res.maxHits-res.hits}/${res.maxHits})`);return}
+ const def=RESOURCE_DEFS[res.kind];
+ const roll=hash(Math.round(tree.position.x*97),Math.round(tree.position.z*131));
+ const qty=def.yieldQty[0]+Math.floor(roll*(def.yieldQty[1]-def.yieldQty[0]+1));
+ addItem(def.yieldItem,qty);
+ let msg=`Harvested ${qty} ${def.yieldItem}`;
+ if(def.bonusItem&&def.bonusQty){const bq=def.bonusQty[0]+Math.floor(hash(Math.round(tree.position.z*97),Math.round(tree.position.x*131))*(def.bonusQty[1]-def.bonusQty[0]+1));addItem(def.bonusItem,bq);msg+=` + ${bq} ${def.bonusItem}`}
+ const q=tree.getWorldPosition(new THREE.Vector3()),cx=chunks.coord(q.x),cz=chunks.coord(q.z),key=chunks.key(cx,cz),g=chunks.loaded.get(key);
+ if(g){
+  chunks.changes[key]??=[];chunks.changes[key].push(`${tree.name}@${Date.now()}`);
+  g.remove(tree);
+  const stump=new THREE.Mesh(new THREE.CylinderGeometry(.18,.22,.28,6),new THREE.MeshStandardMaterial({color:0x5c4028}));
+  stump.name=tree.name.replace('tree-','stump-');stump.position.copy(tree.position);stump.position.y+=.14;stump.castShadow=true;stump.receiveShadow=true;g.add(stump);
+ }
+ say(msg);saveNow();
+}
 function getAimTarget():THREE.Object3D|null{
  const ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2(0,mode==='tpp'?0.15:0),camera);const objects:THREE.Object3D[]=[];
  world.traverse(o=>{
@@ -201,7 +273,7 @@ function getAimTarget():THREE.Object3D|null{
 }
 function interact(){
  const o=getAimTarget();if(!o){say('Aim at something within reach');return}
- if(o.name.startsWith('tree-')){chunks.harvestTree(o);say('Tree harvested — change saved');return}
+ if(o.userData.resource){hitTree(o);return}
  const data=o.userData.interactable as {action:string;label:string}|undefined;if(!data){say('Nothing to use here');return}
  if(data.action==='toggleDoor'){const h=chunks.loaded.get('0,0')?.getObjectByName('home') as THREE.Group|null;if(!h){say('Door unavailable');return}const open=!Boolean(h.userData.doorOpen);h.userData.doorOpen=open;const changes=chunks.changes['0,0']??(chunks.changes['0,0']=[]),i=changes.indexOf('door-open');if(open&&i<0)changes.push('door-open');if(!open&&i>=0)changes.splice(i,1);o.rotation.y=open?-Math.PI/2:0;saveNow();say(open?'Door opened':'Door closed');return}
  if(data.action==='rest'){say('Bed — rest system attaches here');return}
@@ -251,7 +323,10 @@ function update(dt:number){
  else{const eye=player.root.position.clone();eye.y+=1.55;camera.position.lerp(eye,Math.min(1,dt*18));const look=eye.clone();look.x+=Math.sin(targetYaw)*Math.cos(targetPitch)*8;look.y+=Math.sin(targetPitch)*8;look.z+=Math.cos(targetYaw)*Math.cos(targetPitch)*8;camera.lookAt(look)}
  player.animate(walkTime+=dt,moving,sprinting);
  target.style.top=mode==='tpp'?'40%':'50%';const aimed=getAimTarget();target.classList.toggle('active',!!aimed);target.textContent=aimed?(aimed.name.startsWith('tree-')?'✚':'•'):'✚';
- if(aimed&&!moving&&!promptTimer)say(`USE · ${aimed.name.replace('front-door','Front door').replace('tree-','Tree ')}`);
+ if(aimed&&!moving&&!promptTimer){
+  const r=aimed.userData.resource as {kind:string;hits:number;maxHits:number}|undefined;
+  say(r?`USE · ${r.kind[0].toUpperCase()+r.kind.slice(1)} (${r.maxHits-r.hits}/${r.maxHits})`:`USE · ${aimed.name.replace('front-door','Front door').replace('tree-','Tree ')}`);
+ }
  if(promptTimer>0){promptTimer-=dt;if(promptTimer<=0)prompt.classList.remove('show')}
  (document.querySelector('#modeBtn') as HTMLButtonElement).textContent=mode.toUpperCase();compass.style.transform=`translateX(-50%) rotate(${-camYaw*180/Math.PI}deg)`;if(mapOverlay.classList.contains('show'))drawMap();
  (document.querySelector('#runBtn') as HTMLButtonElement).textContent=sprintToggle?'RUN':'WALK';
