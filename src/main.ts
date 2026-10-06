@@ -127,9 +127,20 @@ class Chunks{
     const rz=new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH,SIZE,2,16),roadMat);rz.rotation.x=-Math.PI/2;const zp=rz.geometry.getAttribute('position');
     for(let i=0;i<zp.count;i++){const lx=zp.getX(i)+center,lz=zp.getZ(i)+cz*SIZE+SIZE/2;zp.setY(i,terrainHeightAt(lx,lz)+.055)}rz.geometry.computeVertexNormals();rz.position.set(center,0,cz*SIZE+SIZE/2);rz.name='road-z';g.add(rz);
    }}
-  const waterGeom=new THREE.PlaneGeometry(SIZE,SIZE,8,8);waterGeom.rotateX(-Math.PI/2);const wp=waterGeom.getAttribute('position');let waterCells=0;
-  for(let i=0;i<wp.count;i++){const lx=wp.getX(i)+cx*SIZE+SIZE/2,lz=wp.getZ(i)+cz*SIZE+SIZE/2;if(waterAt(lx,lz))waterCells++;wp.setY(i,WATER_LEVEL)}
-  if(waterCells>8){const water=new THREE.Mesh(waterGeom,new THREE.MeshStandardMaterial({color:0x4d91b5,transparent:true,opacity:.72,roughness:.15,metalness:.05}));water.position.set(cx*SIZE+SIZE/2,0,cz*SIZE+SIZE/2);water.name='water';g.add(water);g.userData.water=true}
+  // Water is built from only the cells that are actually water. A full-chunk plane
+  // makes shorelines look like invisible walls and can cover dry ground.
+  const waterMat=new THREE.MeshStandardMaterial({color:0x4d91b5,transparent:true,opacity:.72,roughness:.15,metalness:.05,depthWrite:false});
+  const waterGroup=new THREE.Group();waterGroup.name='water';
+  const waterSegs=lod===0?8:lod===1?4:2,step=SIZE/waterSegs;
+  for(let iz=0;iz<waterSegs;iz++)for(let ix=0;ix<waterSegs;ix++){
+   const x0=cx*SIZE+ix*step,x1=x0+step,z0=cz*SIZE+iz*step,z1=z0+step;
+   const samples=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]];
+   if(!samples.every(([x,z])=>waterAt(x,z)))continue;
+   const geom=new THREE.BufferGeometry();const verts=new Float32Array([0,WATER_LEVEL,0,step,WATER_LEVEL,0,step,WATER_LEVEL,step,0,WATER_LEVEL,step]);
+   geom.setAttribute('position',new THREE.BufferAttribute(verts,3));geom.setIndex([0,2,1,0,3,2]);geom.computeVertexNormals();
+   const water=new THREE.Mesh(geom,waterMat);water.position.set(x0,0,z0);water.name='water-cell';waterGroup.add(water);
+  }
+  if(waterGroup.children.length){g.add(waterGroup);g.userData.water=true}
   const removed=this.changes[key]||[];
   if(lod < 2){ // no trees on far LOD
     const maxTrees = lod===0 ? 9 : 4;
@@ -230,7 +241,7 @@ const mapCanvas=document.querySelector('#mapCanvas') as HTMLCanvasElement;const 
 const mapBtn=document.querySelector('#mapBtn') as HTMLButtonElement, mapClose=document.querySelector('#mapClose') as HTMLButtonElement;
 function openMap(open:boolean){mapOverlay.classList.toggle('show',open);if(open)drawMap();}
 bindAction(mapBtn,()=>openMap(true));bindAction(mapClose,()=>openMap(false));
-function drawMap(){const w=mapCanvas.width=mapCanvas.clientWidth*devicePixelRatio,h=mapCanvas.height=mapCanvas.clientHeight*devicePixelRatio;mapCtx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);const cw=mapCanvas.clientWidth,ch=mapCanvas.clientHeight;mapCtx.clearRect(0,0,cw,ch);mapCtx.fillStyle='#18232b';mapCtx.fillRect(0,0,cw,ch);const pad=18,cell=Math.min((cw-pad*2)/WORLD_DIAMETER,(ch-pad*2)/WORLD_DIAMETER);for(let cz=-WORLD_RADIUS;cz<=WORLD_RADIUS;cz++)for(let cx=-WORLD_RADIUS;cx<=WORLD_RADIUS;cx++){const sx=pad+(cx+WORLD_RADIUS)*cell,sy=pad+(WORLD_RADIUS-cz)*cell;const road=roadAt(cx*SIZE+SIZE/2,cz*SIZE+SIZE/2);mapCtx.fillStyle=waterAt(cx*SIZE+SIZE/2,cz*SIZE+SIZE/2)?'#4b86a4':road?'#555b60':'#657f57';mapCtx.fillRect(sx,sy,Math.ceil(cell)+.5,Math.ceil(cell)+.5);if(road){mapCtx.fillStyle='#777b7e';if(Math.abs((((cx*SIZE+SIZE/2+ROAD_SPACING/2)%ROAD_SPACING)+ROAD_SPACING)%ROAD_SPACING-ROAD_SPACING/2)<ROAD_WIDTH/2)mapCtx.fillRect(sx+cell*.38,sy,cell*.24,cell);if(Math.abs((((cz*SIZE+SIZE/2+ROAD_SPACING/2)%ROAD_SPACING)+ROAD_SPACING)%ROAD_SPACING-ROAD_SPACING/2)<ROAD_WIDTH/2)mapCtx.fillRect(sx,sy+cell*.38,cell,cell*.24)}}const px=pad+(thisCoord(player.root.position.x)+WORLD_RADIUS+.5)*cell,py=pad+(WORLD_RADIUS-thisCoord(player.root.position.z)+.5)*cell;mapCtx.fillStyle='#fff';mapCtx.beginPath();mapCtx.arc(px,py,Math.max(4,cell*.32),0,Math.PI*2);mapCtx.fill();const hx=pad+(0+WORLD_RADIUS+.5)*cell,hy=pad+(WORLD_RADIUS-0+.5)*cell;mapCtx.fillStyle='#f0c674';mapCtx.fillRect(hx-cell*.25,hy-cell*.25,cell*.5,cell*.5);mapCtx.strokeStyle='#ffffff66';mapCtx.strokeRect(pad,pad,WORLD_DIAMETER*cell,WORLD_DIAMETER*cell);}
+function drawMap(){const w=mapCanvas.width=mapCanvas.clientWidth*devicePixelRatio,h=mapCanvas.height=mapCanvas.clientHeight*devicePixelRatio;mapCtx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);const cw=mapCanvas.clientWidth,ch=mapCanvas.clientHeight;mapCtx.clearRect(0,0,cw,ch);mapCtx.fillStyle='#18232b';mapCtx.fillRect(0,0,cw,ch);const pad=18,cell=Math.min((cw-pad*2)/WORLD_DIAMETER,(ch-pad*2)/WORLD_DIAMETER);for(let cz=-WORLD_RADIUS;cz<=WORLD_RADIUS;cz++)for(let cx=-WORLD_RADIUS;cx<=WORLD_RADIUS;cx++){const sx=pad+(cx+WORLD_RADIUS)*cell,sy=pad+(WORLD_RADIUS-cz)*cell;const road=roadAt(cx*SIZE+SIZE/2,cz*SIZE+SIZE/2);mapCtx.fillStyle=waterAt(cx*SIZE+SIZE/2,cz*SIZE+SIZE/2)?'#4b86a4':road?'#555b60':'#657f57';mapCtx.fillRect(sx,sy,Math.ceil(cell)+.5,Math.ceil(cell)+.5);if(road){mapCtx.fillStyle='#777b7e';if(Math.abs((((cx*SIZE+SIZE/2+ROAD_SPACING/2)%ROAD_SPACING)+ROAD_SPACING)%ROAD_SPACING-ROAD_SPACING/2)<ROAD_WIDTH/2)mapCtx.fillRect(sx+cell*.38,sy,cell*.24,cell);if(Math.abs((((cz*SIZE+SIZE/2+ROAD_SPACING/2)%ROAD_SPACING)+ROAD_SPACING)%ROAD_SPACING-ROAD_SPACING/2)<ROAD_WIDTH/2)mapCtx.fillRect(sx,sy+cell*.38,cell,cell*.24)}}const px=pad+(thisCoord(player.root.position.x)+WORLD_RADIUS+.5)*cell,py=pad+(WORLD_RADIUS-thisCoord(player.root.position.z)+.5)*cell;mapCtx.fillStyle='#fff';mapCtx.beginPath();mapCtx.arc(px,py,Math.max(4,cell*.32),0,Math.PI*2);mapCtx.fill();const hx=pad+(Math.floor(HOME_X/SIZE)+WORLD_RADIUS+.5)*cell,hy=pad+(WORLD_RADIUS-Math.floor(HOME_Z/SIZE)+.5)*cell;mapCtx.fillStyle='#f0c674';mapCtx.fillRect(hx-cell*.25,hy-cell*.25,cell*.5,cell*.5);mapCtx.strokeStyle='#ffffff66';mapCtx.strokeRect(pad,pad,WORLD_DIAMETER*cell,WORLD_DIAMETER*cell);}
 
 const fullscreenBtn=document.querySelector('#fullscreenBtn') as HTMLButtonElement;
 function updateFullscreenButton(){fullscreenBtn.textContent=document.fullscreenElement?'⛶':'⛶';fullscreenBtn.title=document.fullscreenElement?'Exit fullscreen':'Fullscreen'}
