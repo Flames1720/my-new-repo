@@ -14,6 +14,12 @@ A single-player, third-person/first-person survival-world prototype built with T
 
 The landscape is a seeded fictional world rather than a georeferenced replica of Earth. It aims for recognizable natural regions and wildlife behavior within the existing low-poly game style.
 
+## Performance
+
+- Phones and low-core devices use a lower render-pixel cap, skip antialiasing and shadow-map passes, and stream fewer distant terrain chunks; desktop settings retain the higher-fidelity path.
+- Interaction targets and camera blockers are indexed by chunk; aim and camera obstruction raycasts are reused and rate-limited. Player collision checks are restricted to nearby chunks.
+- The map and HUD refresh at reduced rates, animal animation uses direct references to its moving parts, and chunk-owned geometry/materials are released when streamed chunks unload.
+
 ## Controls
 
 | Action | Desktop | Touch |

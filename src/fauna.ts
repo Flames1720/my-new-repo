@@ -10,6 +10,10 @@ type AnimalState = {
   biome: Biome;
   chunkKey: string;
   root: THREE.Group;
+  body: THREE.Group;
+  legs: THREE.Group[];
+  head: THREE.Group;
+  tail: THREE.Group;
   home: THREE.Vector2;
   target: THREE.Vector2;
   think: number;
@@ -57,9 +61,10 @@ const GEO = {
   muzzle: new THREE.SphereGeometry(1, 8, 6),
   tail: new THREE.ConeGeometry(.16, .65, 6),
 };
+const SHARED_ANIMAL_ASSETS = new Set<THREE.BufferGeometry | THREE.Material>(Object.values(GEO));
 const mat = (color: number, roughness = .92) => {
   let m = MAT.get(color);
-  if (!m) { m = new THREE.MeshStandardMaterial({ color, roughness, flatShading: true }); MAT.set(color, m); }
+  if (!m) { m = new THREE.MeshStandardMaterial({ color, roughness, flatShading: true }); MAT.set(color, m); SHARED_ANIMAL_ASSETS.add(m); }
   return m;
 };
 const mix = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -77,7 +82,7 @@ function mesh(geometry: THREE.BufferGeometry, material: THREE.Material, parent: 
   m.position.set(...position); m.scale.set(...scale); parent.add(m); return m;
 }
 
-function buildAnimal(species: Species): { root: THREE.Group; legs: THREE.Group[]; head: THREE.Group; tail: THREE.Group } {
+function buildAnimal(species: Species): { root: THREE.Group; body: THREE.Group; legs: THREE.Group[]; head: THREE.Group; tail: THREE.Group } {
   const root = new THREE.Group(); root.name = `animal-${species}`;
   const fur = mat(SPECIES_COLOR[species]);
   const pale = mat(species === 'fox' ? 0xf2e8d7 : species === 'wolf' ? 0xaeb5b8 : 0xe8ddc8);
@@ -145,7 +150,11 @@ function buildAnimal(species: Species): { root: THREE.Group; legs: THREE.Group[]
     legs.push(pivot);
   }
   root.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
-  return { root, legs, head, tail };
+  return { root, body, legs, head, tail };
+}
+
+export function isSharedAnimalAsset(resource: THREE.BufferGeometry | THREE.Material): boolean {
+  return SHARED_ANIMAL_ASSETS.has(resource);
 }
 
 export class WildlifeSystem {
@@ -188,6 +197,7 @@ export class WildlifeSystem {
       const initialTrust = clamp(this.trust[id] || 0, 0, 5);
       this.animals.set(id, {
         id, species: kind, biome: habitat, chunkKey: `${cx},${cz}`, root: rootData.root,
+        body: rootData.body, legs: rootData.legs, head: rootData.head, tail: rootData.tail,
         home: new THREE.Vector2(x, z), target: new THREE.Vector2(x, z), think: .4 + seeded(slot + cx * 3, cz * 7) * 4,
         mood: 'foraging', phase: seeded(cx * 11 + slot, cz * 13) * Math.PI * 2,
         direction: rootData.root.rotation.y, trust: initialTrust,
@@ -247,23 +257,11 @@ export class WildlifeSystem {
       }
       a.root.rotation.y = a.direction;
       const gait = this.elapsed * (a.mood === 'fleeing' ? 13 : 6) + a.phase;
-      for (let i = 0; i < a.root.children.length; i++) {
-        const child = a.root.children[i];
-        if (child.name === 'body') {
-          child.position.y = Math.sin(this.elapsed * 2.2 + a.phase) * (moving ? .025 : .012);
-          for (const limb of child.children) {
-            if (limb.name.startsWith('head-pivot')) limb.rotation.x = Math.sin(this.elapsed * 1.8 + a.phase) * (a.mood === 'foraging' ? .18 : .04);
-            if (limb.name === 'tail-pivot') limb.rotation.y = Math.sin(this.elapsed * 4 + a.phase) * .16;
-          }
-          for (let leg = 0; leg < child.children.length; leg++) {
-            const part = child.children[leg];
-            if (part.type === 'Group' && part.position.y < .7 && part.children.length) {
-              const isLeg = part.children.some(o => o instanceof THREE.Mesh && o.geometry === GEO.leg);
-              if (isLeg) part.rotation.x = moving ? Math.sin(gait + (leg % 2) * Math.PI) * (a.mood === 'fleeing' ? .65 : .34) : 0;
-            }
-          }
-        }
-      }
+      a.body.position.y = Math.sin(this.elapsed * 2.2 + a.phase) * (moving ? .025 : .012);
+      a.head.rotation.x = Math.sin(this.elapsed * 1.8 + a.phase) * (a.mood === 'foraging' ? .18 : .04);
+      a.tail.rotation.y = Math.sin(this.elapsed * 4 + a.phase) * .16;
+      for (let leg = 0; leg < a.legs.length; leg++)
+        a.legs[leg].rotation.x = moving ? Math.sin(gait + (leg % 2) * Math.PI) * (a.mood === 'fleeing' ? .65 : .34) : 0;
     }
   }
 
