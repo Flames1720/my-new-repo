@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import './style.css';
+import { WildlifeSystem, type Biome, speciesColor } from './fauna';
 
 type Mode='tpp'|'fpp';
-type Save={version:1;player:{x:number;y:number;z:number;ry:number;mode:Mode};camera:{yaw:number;pitch:number;distance:number};changes:Record<string,string[]>;inventory:Record<string,number>};
+type Save={version:1;player:{x:number;y:number;z:number;ry:number;mode:Mode};camera:{yaw:number;pitch:number;distance:number};changes:Record<string,string[]>;inventory:Record<string,number>;wildlifeTrust?:Record<string,number>;worldTime?:number};
 const SAVE_KEY='virtual-family-core-v1',SEED=847231,SIZE=16,RADIUS=7,WORLD_RADIUS=18;
 const WORLD_DIAMETER=WORLD_RADIUS*2+1;
 const WATER_LEVEL=1.25,ROAD_SPACING=128,ROAD_WIDTH=5.5;
@@ -16,16 +17,30 @@ const terrainHeightAt=(x:number,z:number)=>{const raw=rawTerrainHeightAt(x,z);co
 const waterAt=(x:number,z:number)=>{const a=Math.sin(x*.011+z*.017+SEED*.00003),b=Math.cos(x*.019-z*.009-SEED*.00002);return a+b>1.72&&terrainHeightAt(x,z)<WATER_LEVEL};
 const roadAt=(x:number,z:number)=>{const mx=Math.abs((((x+ROAD_SPACING/2)%ROAD_SPACING)+ROAD_SPACING)%ROAD_SPACING-ROAD_SPACING/2),mz=Math.abs((((z+ROAD_SPACING/2)%ROAD_SPACING)+ROAD_SPACING)%ROAD_SPACING-ROAD_SPACING/2);return mx<ROAD_WIDTH/2||mz<ROAD_WIDTH/2};
 const nearHome=(x:number,z:number)=>x>HOME_X-4.5-HOME_CLEAR_MARGIN&&x<HOME_X+4.5+HOME_CLEAR_MARGIN&&z>HOME_Z-3.5-HOME_CLEAR_MARGIN&&z<HOME_Z+3.5+HOME_CLEAR_MARGIN;
+function biomeAt(x:number,z:number):Biome{
+ const h=terrainHeightAt(x,z),nearWater=waterAt(x,z)||waterAt(x+3,z)||waterAt(x-3,z)||waterAt(x,z+3)||waterAt(x,z-3);
+ if(nearWater&&h<2.7)return h<1.9?'wetland':'shore';
+ if(h>7.6)return'alpine';
+ const canopy=Math.sin(x*.013+SEED*.0001)+Math.cos(z*.012-SEED*.0002)+Math.sin((x-z)*.007);
+ return canopy>.35?'forest':'meadow';
+}
 const lerp=(a:number,b:number,t:number)=>a+(b-a)*t;
 const angleLerp=(a:number,b:number,t:number)=>a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*Math.min(1,t);
 const hash=(x:number,z:number)=>{let n=Math.imul(x,374761393)^Math.imul(z,668265263)^Math.imul(SEED,1442695041);n=Math.imul(n^(n>>>13),1274126177);return((n^(n>>>16))>>>0)/4294967296};
-const grassColor=new THREE.Color(0x6f9a5a),rockTintColor=new THREE.Color(0x8b8680),snowColor=new THREE.Color(0xf2f4f6);
-function terrainColorAt(h:number):THREE.Color{
- if(h<4.0)return grassColor;
- if(h<5.2)return grassColor.clone().lerp(rockTintColor,(h-4.0)/1.2);
- if(h<7.0)return rockTintColor;
- if(h<8.2)return rockTintColor.clone().lerp(snowColor,(h-7.0)/1.2);
- return snowColor;
+const grassColor=new THREE.Color(0x6f9a5a),rockTintColor=new THREE.Color(0x8b8680),snowColor=new THREE.Color(0xf2f4f6),forestTintColor=new THREE.Color(0x52754d),meadowTintColor=new THREE.Color(0x91ad69),wetlandTintColor=new THREE.Color(0x9a9a63),shoreTintColor=new THREE.Color(0xc2b383);
+function terrainColorAt(h:number,x:number,z:number):THREE.Color{
+ let c:THREE.Color;
+ if(h<4.0)c=grassColor.clone();
+ else if(h<5.2)c=grassColor.clone().lerp(rockTintColor,(h-4.0)/1.2);
+ else if(h<7.0)c=rockTintColor.clone();
+ else if(h<8.2)c=rockTintColor.clone().lerp(snowColor,(h-7.0)/1.2);
+ else c=snowColor.clone();
+ const biome=biomeAt(x,z);
+ if(biome==='forest')c.lerp(forestTintColor,.2);
+ else if(biome==='meadow')c.lerp(meadowTintColor,.12);
+ else if(biome==='wetland')c.lerp(wetlandTintColor,.24);
+ else if(biome==='shore')c.lerp(shoreTintColor,.45);
+ return c;
 }
 
 // --- Resource model: every harvestable thing is data, not a special case ---
@@ -91,10 +106,12 @@ waterMaterial.onBeforeCompile=(shader)=>{
  waterShader=shader as any;
 };
 
-const scene=new THREE.Scene();scene.background=new THREE.Color(0x9fc7df);scene.fog=new THREE.Fog(0x9fc7df,60,160);
+const scene=new THREE.Scene();const skyColor=new THREE.Color(0x9fc7df);scene.background=skyColor;scene.fog=new THREE.Fog(0x9fc7df,60,160);
 const camera=new THREE.PerspectiveCamera(62,innerWidth/innerHeight,.05,500);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.querySelector('#game')!.appendChild(renderer.domElement);
-scene.add(new THREE.HemisphereLight(0xdceeff,0x405044,2.2));const sun=new THREE.DirectionalLight(0xfff0d0,3);sun.position.set(35,70,25);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-90;sun.shadow.camera.right=90;sun.shadow.camera.top=90;sun.shadow.camera.bottom=-90;scene.add(sun);
+const hemisphere=new THREE.HemisphereLight(0xdceeff,0x405044,2.2);scene.add(hemisphere);const sun=new THREE.DirectionalLight(0xfff0d0,3);sun.position.set(35,70,25);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-90;sun.shadow.camera.right=90;sun.shadow.camera.top=90;sun.shadow.camera.bottom=-90;scene.add(sun,sun.target);
+const daySky=new THREE.Color(0x9fc7df),nightSky=new THREE.Color(0x19273b),twilightSky=new THREE.Color(0xc58d79);let skyTimer=0;
+function updateSky(dt:number){skyTimer+=dt;if(skyTimer<.5)return;skyTimer=0;const angle=(worldTime-6)*Math.PI/12,daylight=clamp(Math.sin(angle),0,1),twilight=clamp(1-Math.abs(Math.sin(angle))/.45,0,1);skyColor.copy(nightSky).lerp(daySky,daylight).lerp(twilightSky,twilight*.72);if(scene.fog)scene.fog.color.copy(skyColor);hemisphere.intensity=.45+daylight*1.65;sun.intensity=.12+daylight*2.85+twilight*.35;sun.color.set(twilight>.1?0xffbc8b:daylight>.18?0xfff0d0:0x9bb4dd);sun.position.set(player.root.position.x+Math.cos(angle)*85,player.root.position.y+Math.sin(angle)*85,player.root.position.z+28);sun.target.position.copy(player.root.position);}
 const world=new THREE.Group(),actors=new THREE.Group();scene.add(world,actors);
 
 class Player{
@@ -143,6 +160,7 @@ class Player{
  }
 }
 const player=new Player();
+let fauna:WildlifeSystem|null=null;
 
 class Chunks{
  loaded=new Map<string,THREE.Group>();changes:Record<string,string[]>={};
@@ -153,7 +171,7 @@ class Chunks{
   const segs = lod===0 ? 12 : lod===1 ? 6 : 3;
   const terrain=new THREE.PlaneGeometry(SIZE,SIZE,segs,segs);terrain.rotateX(-Math.PI/2);const pos=terrain.getAttribute('position');
   const colors=new Float32Array(pos.count*3);
-  for(let i=0;i<pos.count;i++){const lx=pos.getX(i)+cx*SIZE+SIZE/2,lz=pos.getZ(i)+cz*SIZE+SIZE/2;const h=terrainHeightAt(lx,lz);pos.setY(i,h);const c=terrainColorAt(h);colors[i*3]=c.r;colors[i*3+1]=c.g;colors[i*3+2]=c.b}
+  for(let i=0;i<pos.count;i++){const lx=pos.getX(i)+cx*SIZE+SIZE/2,lz=pos.getZ(i)+cz*SIZE+SIZE/2;const h=terrainHeightAt(lx,lz);pos.setY(i,h);const c=terrainColorAt(h,lx,lz);colors[i*3]=c.r;colors[i*3+1]=c.g;colors[i*3+2]=c.b}
   terrain.setAttribute('color',new THREE.BufferAttribute(colors,3));terrain.computeVertexNormals();
   const ground=new THREE.Mesh(terrain,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1}));ground.position.set(cx*SIZE+SIZE/2,0,cz*SIZE+SIZE/2);ground.receiveShadow=lod===0;ground.name='terrain';g.add(ground);
   const roadMat=new THREE.MeshStandardMaterial({color:0x3d4348,roughness:1});
@@ -229,6 +247,7 @@ class Chunks{
      g.add(rock);
     }
   }
+  fauna?.spawnChunk(cx,cz,lod,g);
   if(cx===0&&cz===0)this.home(g);world.add(g);this.loaded.set(key,g);
  }
  home(g:THREE.Group){
@@ -256,26 +275,27 @@ class Chunks{
 }
  stream(px:number,pz:number){
   const cx=this.coord(px),cz=this.coord(pz);
-  for(const[k,g]of this.loaded){const[a,b]=k.split(',').map(Number);if(Math.abs(a-cx)>RADIUS||Math.abs(b-cz)>RADIUS){world.remove(g);this.loaded.delete(k)}}
+  for(const[k,g]of this.loaded){const[a,b]=k.split(',').map(Number);if(Math.abs(a-cx)>RADIUS||Math.abs(b-cz)>RADIUS){fauna?.removeChunk(k);world.remove(g);this.loaded.delete(k)}}
   const minX=Math.max(-WORLD_RADIUS,cx-RADIUS),maxX=Math.min(WORLD_RADIUS,cx+RADIUS),minZ=Math.max(-WORLD_RADIUS,cz-RADIUS),maxZ=Math.min(WORLD_RADIUS,cz+RADIUS);
   for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++){
    const dist=Math.max(Math.abs(x-cx),Math.abs(z-cz));
    const lod=dist<=2?0:dist<=4?1:2;
    const key=this.key(x,z),existing=this.loaded.get(key);
    if(!existing){this.build(x,z,lod)}
-   else if(existing.userData.lod>lod){world.remove(existing);this.loaded.delete(key);this.build(x,z,lod)} // upgrade detail as player gets closer
+   else if(existing.userData.lod>lod){fauna?.removeChunk(key);world.remove(existing);this.loaded.delete(key);this.build(x,z,lod)} // upgrade detail as player gets closer
   }
  }
 }
 const chunks=new Chunks();
 let save:Save={version:1,player:{x:0,y:0,z:5,ry:0,mode:'tpp'},camera:{yaw:0,pitch:-.28,distance:7},changes:{},inventory:{}};
 try{const raw=localStorage.getItem(SAVE_KEY);if(raw)save=JSON.parse(raw)}catch{}
-chunks.changes=save.changes;chunks.stream(save.player.x,save.player.z);player.root.position.set(save.player.x,save.player.y,save.player.z);if(!Number.isFinite(player.root.position.y)||player.root.position.y<terrainHeightAt(player.root.position.x,player.root.position.z))player.root.position.y=terrainHeightAt(player.root.position.x,player.root.position.z);player.root.rotation.y=save.player.ry;
+chunks.changes=save.changes;player.root.position.set(save.player.x,save.player.y,save.player.z);if(!Number.isFinite(player.root.position.y)||player.root.position.y<terrainHeightAt(player.root.position.x,player.root.position.z))player.root.position.y=terrainHeightAt(player.root.position.x,player.root.position.z);player.root.rotation.y=save.player.ry;
 let mode:Mode=save.player.mode,camYaw=save.camera.yaw,camPitch=save.camera.pitch,camDistance=save.camera.distance,targetYaw=camYaw,targetPitch=camPitch,targetDistance=camDistance;
 let inventory:Record<string,number>=save.inventory||{};
-function saveNow(){save={version:1,player:{x:player.root.position.x,y:player.root.position.y,z:player.root.position.z,ry:player.root.rotation.y,mode},camera:{yaw:camYaw,pitch:camPitch,distance:camDistance},changes:chunks.changes,inventory};localStorage.setItem(SAVE_KEY,JSON.stringify(save))}
+let worldTime=save.worldTime??9;
+function saveNow(){save={version:1,player:{x:player.root.position.x,y:player.root.position.y,z:player.root.position.z,ry:player.root.rotation.y,mode},camera:{yaw:camYaw,pitch:camPitch,distance:camDistance},changes:chunks.changes,inventory,wildlifeTrust:fauna?.trust??save.wildlifeTrust??{},worldTime};localStorage.setItem(SAVE_KEY,JSON.stringify(save))}
 
-const keys=new Set<string>();addEventListener('keydown',e=>{keys.add(e.key.toLowerCase());if(e.key.toLowerCase()==='f')mode='fpp';if(e.key.toLowerCase()==='c')mode='tpp'});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
+const keys=new Set<string>();addEventListener('keydown',e=>{keys.add(e.key.toLowerCase());if(e.key.toLowerCase()==='f')mode='fpp';if(e.key.toLowerCase()==='c')mode='tpp';if(!e.repeat&&e.key.toLowerCase()==='e')interact()});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
 let pointer:number|null=null,lastX=0,lastY=0;
 renderer.domElement.addEventListener('pointerdown',e=>{pointer=e.pointerId;lastX=e.clientX;lastY=e.clientY;renderer.domElement.setPointerCapture(e.pointerId)});
 renderer.domElement.addEventListener('pointermove',e=>{if(pointer!==e.pointerId)return;const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;targetYaw-=dx*.008;targetPitch=clamp(targetPitch-dy*.006,-1.15,.9)});
@@ -304,6 +324,7 @@ const mapBtn=document.querySelector('#mapBtn') as HTMLButtonElement, mapClose=do
 function openMap(open:boolean){mapOverlay.classList.toggle('show',open);if(open)drawMap();}
 bindAction(mapBtn,()=>openMap(true));bindAction(mapClose,()=>openMap(false));
 function drawMap(){const w=mapCanvas.width=mapCanvas.clientWidth*devicePixelRatio,h=mapCanvas.height=mapCanvas.clientHeight*devicePixelRatio;mapCtx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);const cw=mapCanvas.clientWidth,ch=mapCanvas.clientHeight;mapCtx.clearRect(0,0,cw,ch);mapCtx.fillStyle='#18232b';mapCtx.fillRect(0,0,cw,ch);const pad=18,cell=Math.min((cw-pad*2)/WORLD_DIAMETER,(ch-pad*2)/WORLD_DIAMETER);for(let cz=-WORLD_RADIUS;cz<=WORLD_RADIUS;cz++)for(let cx=-WORLD_RADIUS;cx<=WORLD_RADIUS;cx++){const sx=pad+(cx+WORLD_RADIUS)*cell,sy=pad+(WORLD_RADIUS-cz)*cell;const road=roadAt(cx*SIZE+SIZE/2,cz*SIZE+SIZE/2),wx=cx*SIZE+SIZE/2,wz=cz*SIZE+SIZE/2;mapCtx.fillStyle=waterAt(wx,wz)?'#4b86a4':road?'#555b60':mountainMaskAt(wx,wz)>.4?'#8b8680':'#657f57';mapCtx.fillRect(sx,sy,Math.ceil(cell)+.5,Math.ceil(cell)+.5);if(road){mapCtx.fillStyle='#777b7e';if(Math.abs((((cx*SIZE+SIZE/2+ROAD_SPACING/2)%ROAD_SPACING)+ROAD_SPACING)%ROAD_SPACING-ROAD_SPACING/2)<ROAD_WIDTH/2)mapCtx.fillRect(sx+cell*.38,sy,cell*.24,cell);if(Math.abs((((cz*SIZE+SIZE/2+ROAD_SPACING/2)%ROAD_SPACING)+ROAD_SPACING)%ROAD_SPACING-ROAD_SPACING/2)<ROAD_WIDTH/2)mapCtx.fillRect(sx,sy+cell*.38,cell,cell*.24)}}const px=pad+(thisCoord(player.root.position.x)+WORLD_RADIUS+.5)*cell,py=pad+(WORLD_RADIUS-thisCoord(player.root.position.z)+.5)*cell;mapCtx.fillStyle='#fff';mapCtx.beginPath();mapCtx.arc(px,py,Math.max(4,cell*.32),0,Math.PI*2);mapCtx.fill();const hx=pad+(Math.floor(HOME_X/SIZE)+WORLD_RADIUS+.5)*cell,hy=pad+(WORLD_RADIUS-Math.floor(HOME_Z/SIZE)+.5)*cell;mapCtx.fillStyle='#f0c674';mapCtx.fillRect(hx-cell*.25,hy-cell*.25,cell*.5,cell*.5);mapCtx.strokeStyle='#ffffff66';mapCtx.strokeRect(pad,pad,WORLD_DIAMETER*cell,WORLD_DIAMETER*cell);}
+function drawAnimalMapMarkers(){const cw=mapCanvas.clientWidth,ch=mapCanvas.clientHeight,pad=18,cell=Math.min((cw-pad*2)/WORLD_DIAMETER,(ch-pad*2)/WORLD_DIAMETER);for(const a of fauna?.markers()??[]){const x=pad+(a.x/SIZE+WORLD_RADIUS)*cell,y=pad+(WORLD_RADIUS-a.z/SIZE)*cell;mapCtx.fillStyle=speciesColor(a.species);mapCtx.strokeStyle='#10151b';mapCtx.lineWidth=1;mapCtx.beginPath();mapCtx.arc(x,y,Math.max(2.5,cell*.14),0,Math.PI*2);mapCtx.fill();mapCtx.stroke()}}
 
 const fullscreenBtn=document.querySelector('#fullscreenBtn') as HTMLButtonElement;
 function updateFullscreenButton(){fullscreenBtn.textContent=document.fullscreenElement?'⛶':'⛶';fullscreenBtn.title=document.fullscreenElement?'Exit fullscreen':'Fullscreen'}
@@ -315,6 +336,8 @@ function jump(){if(player.onGround){player.velocity.y=7.2;player.onGround=false}
 function addItem(item:string,qty:number){inventory[item]=(inventory[item]||0)+qty;renderInventory();saveNow()}
 function renderInventory(){inventoryEl.innerHTML=Object.entries(inventory).filter(([,v])=>v>0).map(([k,v])=>`<span class="invItem">${ITEM_ICONS[k]||'•'} ${v}</span>`).join('')}
 renderInventory();
+fauna=new WildlifeSystem({heightAt:terrainHeightAt,waterAt,roadAt,nearHome,biomeAt,trust:save.wildlifeTrust??{},hasFruit:()=>Boolean(inventory.Fruit),consumeFruit:()=>{inventory.Fruit=Math.max(0,(inventory.Fruit||0)-1);renderInventory();saveNow()},onTrustChange:saveNow,notify:say});
+chunks.stream(save.player.x,save.player.z);
 function hitResource(obj:THREE.Object3D){
  const res=obj.userData.resource as {kind:ResourceKind;hits:number;maxHits:number};
  const def=RESOURCE_DEFS[res.kind];
@@ -349,6 +372,7 @@ function getAimTarget():THREE.Object3D|null{
 }
 function interact(){
  const o=getAimTarget();if(!o){say('Aim at something within reach');return}
+ if(o.userData.animal){fauna?.interact(o);return}
  if(o.userData.resource){hitResource(o);return}
  const data=o.userData.interactable as {action:string;label:string}|undefined;if(!data){say('Nothing to use here');return}
  if(data.action==='toggleDoor'){const h=chunks.loaded.get('0,0')?.getObjectByName('home') as THREE.Group|null;if(!h){say('Door unavailable');return}const open=!Boolean(h.userData.doorOpen);h.userData.doorOpen=open;const changes=chunks.changes['0,0']??(chunks.changes['0,0']=[]),i=changes.indexOf('door-open');if(open&&i<0)changes.push('door-open');if(!open&&i>=0)changes.splice(i,1);o.rotation.y=open?-Math.PI/2:0;saveNow();say(open?'Door opened':'Door closed');return}
@@ -378,6 +402,7 @@ function moveWithCollisions(dx:number,dz:number){
 function input(){let x=joy.x,y=joy.y;if(keys.has('a')||keys.has('arrowleft'))x-=1;if(keys.has('d')||keys.has('arrowright'))x+=1;if(keys.has('w')||keys.has('arrowup'))y-=1;if(keys.has('s')||keys.has('arrowdown'))y+=1;const l=Math.hypot(x,y);return l>1?{x:x/l,y:y/l}:{x,y}}
 function update(dt:number){
  if(waterShader)waterShader.uniforms.uTime.value+=dt;
+ worldTime=(worldTime+dt*.05)%24;updateSky(dt);
  const iv=input(),moving=Math.hypot(iv.x,iv.y)>.08;
  const forward=new THREE.Vector3(Math.sin(camYaw),0,Math.cos(camYaw)),right=new THREE.Vector3(-Math.cos(camYaw),0,Math.sin(camYaw));
  const dir=new THREE.Vector3().addScaledVector(right,iv.x).addScaledVector(forward,-iv.y);
@@ -393,6 +418,7 @@ function update(dt:number){
  if(player.root.position.y<=groundY){player.root.position.y=groundY;player.velocity.y=0;player.onGround=true}
  moveWithCollisions(player.velocity.x*dt,player.velocity.z*dt);
  const cx=chunks.coord(player.root.position.x),cz=chunks.coord(player.root.position.z);if(cx!==lastCx||cz!==lastCz){chunks.stream(player.root.position.x,player.root.position.z);lastCx=cx;lastCz=cz}
+ fauna?.update(dt,player.root.position,sprinting);
  camYaw=angleLerp(camYaw,targetYaw,Math.min(1,dt*12));camPitch=lerp(camPitch,targetPitch,Math.min(1,dt*12));camDistance=lerp(camDistance,targetDistance,Math.min(1,dt*12));
  player.root.visible=mode!=='fpp';
  const focus=player.root.position.clone();focus.y+=1.05;
@@ -402,12 +428,13 @@ function update(dt:number){
  target.style.top=mode==='tpp'?'40%':'50%';const aimed=getAimTarget();target.classList.toggle('active',!!aimed);target.textContent=aimed?(aimed.userData.resource?'✚':'•'):'✚';
  if(aimed&&!moving&&!promptTimer){
   const r=aimed.userData.resource as {kind:string;hits:number;maxHits:number}|undefined;
-  say(r?`USE · ${r.kind[0].toUpperCase()+r.kind.slice(1)} (${r.maxHits-r.hits}/${r.maxHits})`:`USE · ${aimed.name.replace('front-door','Front door').replace('tree-','Tree ')}`);
+  const animal=aimed.userData.animal as {species:string}|undefined;
+  say(animal?`E · observe ${animal.species}${inventory.Fruit?' or offer fruit':''}`:r?`USE · ${r.kind[0].toUpperCase()+r.kind.slice(1)} (${r.maxHits-r.hits}/${r.maxHits})`:`USE · ${aimed.name.replace('front-door','Front door').replace('tree-','Tree ')}`);
  }
  if(promptTimer>0){promptTimer-=dt;if(promptTimer<=0)prompt.classList.remove('show')}
- (document.querySelector('#modeBtn') as HTMLButtonElement).textContent=mode.toUpperCase();compass.style.transform=`translateX(-50%) rotate(${-camYaw*180/Math.PI}deg)`;if(mapOverlay.classList.contains('show'))drawMap();
+ (document.querySelector('#modeBtn') as HTMLButtonElement).textContent=mode.toUpperCase();compass.style.transform=`translateX(-50%) rotate(${-camYaw*180/Math.PI}deg)`;if(mapOverlay.classList.contains('show')){drawMap();drawAnimalMapMarkers()}
  (document.querySelector('#runBtn') as HTMLButtonElement).textContent=sprintToggle?'RUN':'WALK';
- autosave+=dt;if(autosave>2){autosave=0;saveNow()}status.textContent=`${mode.toUpperCase()} · ${sprinting?'RUN':'WALK'} · chunk ${cx},${cz} · ${chunks.loaded.size} loaded`;
+ autosave+=dt;if(autosave>2){autosave=0;saveNow()}const hour=Math.floor(worldTime),minute=Math.floor((worldTime-hour)*60);status.textContent=`${mode.toUpperCase()} · ${sprinting?'RUN':'WALK'} · ${biomeAt(player.root.position.x,player.root.position.z)} · ${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')} · chunk ${cx},${cz}`;(document.querySelector('#wildlife') as HTMLElement).textContent=fauna?.status(player.root.position)??'Wildlife loading…';
 }
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
 addEventListener('beforeunload',saveNow);

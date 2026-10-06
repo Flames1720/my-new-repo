@@ -1,3 +1,43 @@
-# Virtual Family Core
+# Virtual Family Core — Wildlife World
 
-Single-player vertical slice foundation: deterministic chunks, player controller, dual TPP/FPP camera, orbit/zoom, interactions and local persistence.
+A single-player, third-person/first-person survival-world prototype built with Three.js. The world is a bounded, traversable plane generated from a fixed seed, with terrain, water, roads, a home, harvestable resources, and a small wildlife ecosystem.
+
+## World and wildlife
+
+- **Procedural regions:** meadow, forest, wetland, shore, and alpine terrain are assigned from seeded climate/elevation signals and influence ground color and animal habitat.
+- **Six wild species:** white-tailed deer, cottontail rabbits, red foxes, grey wolves, wild boar, and mallard ducks are built from lightweight procedural meshes.
+- **NPC behavior:** animals idle, forage, wander within their home range, turn toward movement, and move away from a nearby or sprinting player. Their animation changes with their gait and mood. Ducks are confined to water; land animals avoid roads and water.
+- **Gentle interaction:** aim at an animal and press **E** (or use the mobile **USE** button) to observe it. Offer **Fruit** to eligible animals to gradually increase their persistent trust; wolves are observed but not fed.
+- **Living world:** an in-game day/night cycle shifts the sky, fog, sunlight, and ambient illumination. Time and animal trust are saved locally.
+- **World map:** nearby loaded wildlife appears as color-coded markers alongside terrain, roads, water, home, and the player.
+- **Existing systems retained:** streamed terrain chunks, third-person/first-person cameras, collision, jumping, sprinting, harvesting, inventory, home interactions, and local save data.
+
+The landscape is a seeded fictional world rather than a georeferenced replica of Earth. It aims for recognizable natural regions and wildlife behavior within the existing low-poly game style.
+
+## Controls
+
+| Action | Desktop | Touch |
+|---|---|---|
+| Move | WASD or arrow keys | Left virtual stick |
+| Look | Drag on the scene | Drag on the right side |
+| Interact / observe / offer Fruit | E | USE |
+| Jump | Space | JUMP |
+| Sprint | Hold Shift | WALK/RUN toggle |
+| Camera | F for first person, C for third person | FPP button |
+| Map | MAP button | MAP button |
+| Zoom | Mouse wheel | Pinch/browser zoom |
+
+## Run locally
+
+```bash
+npm install
+npm run dev
+```
+
+Build and type-check:
+
+```bash
+npm run build
+```
+
+Save data remains in browser `localStorage` under `virtual-family-core-v1`; existing saves continue to load, with wildlife trust and world time added as optional fields.
