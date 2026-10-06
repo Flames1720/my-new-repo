@@ -1,6 +1,13 @@
 # Virtual Family Core — Wildlife World
 
-A single-player, third-person/first-person survival-world prototype built with Three.js. The world is a bounded, traversable plane generated from a fixed seed, with terrain, water, roads, a home, harvestable resources, and a small wildlife ecosystem.
+A single-player survival-world prototype built with Three.js. The game uses a seeded, traversable plane with procedural biomes, terrain, roads, a home, harvestable resources, and wildlife. The visual direction is an original low-poly adventure style: readable, approachable forms with a few blocky-survival cues, without copying Minecraft assets.
+
+## Character and water
+
+- **Articulated adventurer:** a custom procedural low-poly character with a distinct head and face, layered jacket and trousers, belt, boots, pack and bedroll. Shoulder, elbow, hip and knee pivots drive walk/run cycles and a blended swimming stroke. No Blender asset is required.
+- **Carved lake basins:** freshwater lakes depress the underlying terrain rather than sitting on grass. Sloped banks transition to sand and silt-colored lakebeds, with water depth reflected in the animated, rippling surface.
+- **Swimming:** enter a sufficiently deep lake to float into a swim pose. Movement slows in water; buoyancy returns the character to the surface by default. Rise above the waterline or dive below it, with underwater camera fog when the view is submerged.
+- **Touch support:** the existing virtual stick handles swimming movement. The **JUMP** button becomes **RISE**, and a **DIVE** button appears while swimming.
 
 ## World and wildlife
 
@@ -25,9 +32,10 @@ The landscape is a seeded fictional world rather than a georeferenced replica of
 | Action | Desktop | Touch |
 |---|---|---|
 | Move | WASD or arrow keys | Left virtual stick |
-| Look | Drag on the scene | Drag on the right side |
+| Look | Drag to look | Drag on the right side |
 | Interact / observe / offer Fruit | E | USE |
-| Jump | Space | JUMP |
+| Jump / rise | Space | JUMP (becomes RISE in water) |
+| Dive | Hold Ctrl while swimming | Hold DIVE while swimming |
 | Sprint | Hold Shift | WALK/RUN toggle |
 | Camera | F for first person, C for third person | FPP button |
 | Map | MAP button | MAP button |
