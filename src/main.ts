@@ -6,7 +6,10 @@ type Save={version:1;player:{x:number;y:number;z:number;ry:number;mode:Mode};cam
 const SAVE_KEY='virtual-family-core-v1',SEED=847231,SIZE=16,RADIUS=7,WORLD_RADIUS=18;
 const WORLD_DIAMETER=WORLD_RADIUS*2+1;
 const WATER_LEVEL=1.25,ROAD_SPACING=128,ROAD_WIDTH=5.5;
-const terrainHeightAt=(x:number,z:number)=>{const broad=Math.sin(x*.018+SEED*.001)*1.7+Math.cos(z*.021-SEED*.0007)*1.35;const hills=Math.sin((x+z)*.045)*.75+Math.cos((x-z)*.032)*.55;return Math.max(0,broad+hills+.9)};
+const HOME_X=8,HOME_Z=8,HOME_FLATTEN_RADIUS=6.5;
+const rawTerrainHeightAt=(x:number,z:number)=>{const broad=Math.sin(x*.018+SEED*.001)*1.7+Math.cos(z*.021-SEED*.0007)*1.35;const hills=Math.sin((x+z)*.045)*.75+Math.cos((x-z)*.032)*.55;return Math.max(0,broad+hills+.9)};
+const HOME_BASE_HEIGHT=rawTerrainHeightAt(HOME_X,HOME_Z);
+const terrainHeightAt=(x:number,z:number)=>{const raw=rawTerrainHeightAt(x,z);const d=Math.hypot(x-HOME_X,z-HOME_Z);if(d<HOME_FLATTEN_RADIUS){const t=1-d/HOME_FLATTEN_RADIUS;return raw+(HOME_BASE_HEIGHT-raw)*t}return raw};
 const waterAt=(x:number,z:number)=>{const a=Math.sin(x*.011+z*.017+SEED*.00003),b=Math.cos(x*.019-z*.009-SEED*.00002);return a+b>1.72&&terrainHeightAt(x,z)<WATER_LEVEL};
 const roadAt=(x:number,z:number)=>{const mx=Math.abs((((x+ROAD_SPACING/2)%ROAD_SPACING)+ROAD_SPACING)%ROAD_SPACING-ROAD_SPACING/2),mz=Math.abs((((z+ROAD_SPACING/2)%ROAD_SPACING)+ROAD_SPACING)%ROAD_SPACING-ROAD_SPACING/2);return mx<ROAD_WIDTH/2||mz<ROAD_WIDTH/2};
 const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
@@ -94,12 +97,21 @@ class Chunks{
   const removed=this.changes[key]||[];
   if(lod < 2){ // no trees on far LOD
     const maxTrees = lod===0 ? 9 : 4;
-    for(let i=0;i<maxTrees;i++){if(hash(cx*17+i,cz*23-i)<=.56||roadAt(cx*SIZE+SIZE/2,cz*SIZE+SIZE/2)||removed.includes(`tree-${i}`))continue;const tree=new THREE.Group();tree.name=`tree-${i}`;tree.userData.colliderRadius=.72;const tx=cx*SIZE+2+hash(cx+i,cz-i)*(SIZE-4),tz=cz*SIZE+2+hash(cx-i,cz+i)*(SIZE-4);tree.position.set(tx,terrainHeightAt(tx,tz),tz);const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.16,.20,1.6,lod===0?8:5),new THREE.MeshStandardMaterial({color:0x694b35}));trunk.position.y=.8;const crown=new THREE.Mesh(new THREE.SphereGeometry(1.05,lod===0?9:5,lod===0?7:4),new THREE.MeshStandardMaterial({color:0x3d7148}));crown.position.y=1.95;tree.add(trunk,crown);if(lod===0)tree.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(tree)}
+    for(let i=0;i<maxTrees;i++){
+     if(hash(cx*17+i,cz*23-i)<=.56||removed.includes(`tree-${i}`))continue;
+     const tx=cx*SIZE+2+hash(cx+i,cz-i)*(SIZE-4),tz=cz*SIZE+2+hash(cx-i,cz+i)*(SIZE-4);
+     if(roadAt(tx,tz)||waterAt(tx,tz))continue; // check the tree's own spot, not the chunk center
+     const tree=new THREE.Group();tree.name=`tree-${i}`;tree.userData.colliderRadius=.72;
+     tree.position.set(tx,terrainHeightAt(tx,tz),tz);
+     const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.16,.20,1.6,lod===0?8:5),new THREE.MeshStandardMaterial({color:0x694b35}));trunk.position.y=.8;
+     const crown=new THREE.Mesh(new THREE.SphereGeometry(1.05,lod===0?9:5,lod===0?7:4),new THREE.MeshStandardMaterial({color:0x3d7148}));crown.position.y=1.95;
+     tree.add(trunk,crown);if(lod===0)tree.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(tree)
+    }
   }
   if(cx===0&&cz===0)this.home(g);world.add(g);this.loaded.set(key,g);
  }
  home(g:THREE.Group){
- const h=new THREE.Group();h.name='home';const HOME_X=8,HOME_Z=8;const hy=terrainHeightAt(HOME_X,HOME_Z);h.position.set(HOME_X,hy,HOME_Z);
+ const h=new THREE.Group();h.name='home';const hy=terrainHeightAt(HOME_X,HOME_Z);h.position.set(HOME_X,hy,HOME_Z);
  const wallMat=new THREE.MeshStandardMaterial({color:0xe6ded0,roughness:.9}),floorMat=new THREE.MeshStandardMaterial({color:0x9b8065,roughness:1}),roofMat=new THREE.MeshStandardMaterial({color:0x7c4d3d,roughness:.9}),dark=new THREE.MeshStandardMaterial({color:0x253746,roughness:.7});
  const floor=new THREE.Mesh(new THREE.BoxGeometry(9,.18,7),floorMat);floor.position.y=.09;floor.name='home-floor';h.add(floor);
  const wallH=3.6,th=.25,halfW=4.5,halfD=3.5;
@@ -121,7 +133,18 @@ class Chunks{
  h.userData.doorOpen=(this.changes['0,0']||[]).includes('door-open');doorPivot.rotation.y=h.userData.doorOpen?-Math.PI/2:0;
  h.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=true;o.receiveShadow=true}});g.add(h)
 }
- stream(px:number,pz:number){const cx=this.coord(px),cz=this.coord(pz);for(const[k,g]of this.loaded){const[a,b]=k.split(',').map(Number);if(Math.abs(a-cx)>RADIUS||Math.abs(b-cz)>RADIUS){world.remove(g);this.loaded.delete(k)}}const minX=Math.max(-WORLD_RADIUS,cx-RADIUS),maxX=Math.min(WORLD_RADIUS,cx+RADIUS),minZ=Math.max(-WORLD_RADIUS,cz-RADIUS),maxZ=Math.min(WORLD_RADIUS,cz+RADIUS);for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++){const dist=Math.max(Math.abs(x-cx),Math.abs(z-cz));const lod=dist<=2?0:dist<=4?1:2;if(!this.loaded.has(this.key(x,z)))this.build(x,z,lod)}}
+ stream(px:number,pz:number){
+  const cx=this.coord(px),cz=this.coord(pz);
+  for(const[k,g]of this.loaded){const[a,b]=k.split(',').map(Number);if(Math.abs(a-cx)>RADIUS||Math.abs(b-cz)>RADIUS){world.remove(g);this.loaded.delete(k)}}
+  const minX=Math.max(-WORLD_RADIUS,cx-RADIUS),maxX=Math.min(WORLD_RADIUS,cx+RADIUS),minZ=Math.max(-WORLD_RADIUS,cz-RADIUS),maxZ=Math.min(WORLD_RADIUS,cz+RADIUS);
+  for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++){
+   const dist=Math.max(Math.abs(x-cx),Math.abs(z-cz));
+   const lod=dist<=2?0:dist<=4?1:2;
+   const key=this.key(x,z),existing=this.loaded.get(key);
+   if(!existing){this.build(x,z,lod)}
+   else if(existing.userData.lod>lod){world.remove(existing);this.loaded.delete(key);this.build(x,z,lod)} // upgrade detail as player gets closer
+  }
+ }
  harvestTree(tree:THREE.Object3D){const q=tree.getWorldPosition(new THREE.Vector3()),cx=this.coord(q.x),cz=this.coord(q.z),g=this.loaded.get(this.key(cx,cz));if(!g)return;this.changes[this.key(cx,cz)]??=[];this.changes[this.key(cx,cz)].push(tree.name);g.remove(tree);saveNow()}
 }
 const chunks=new Chunks();
@@ -191,8 +214,8 @@ function canOccupy(x:number,z:number){
  const playerRadius=.34;if(Math.abs(thisCoord(x))>WORLD_RADIUS||Math.abs(thisCoord(z))>WORLD_RADIUS)return false;
  if(waterAt(x,z))return false;
  for(const g of chunks.loaded.values()){
-  const home=g.getObjectByName('home');const box=home?.userData.collider as {minX:number;maxX:number;minZ:number;maxZ:number;doorMinX:number;doorMaxX:number;wallThickness:number}|undefined;
-  if(box){const inside=x+playerRadius>box.minX&&x-playerRadius<box.maxX&&z+playerRadius>box.minZ&&z-playerRadius<box.maxZ;if(inside){const nearLeft=x-box.minX<box.wallThickness+playerRadius,nearRight=box.maxX-x<box.wallThickness+playerRadius,nearBack=z-box.minZ<box.wallThickness+playerRadius,nearFront=box.maxZ-z<box.wallThickness+playerRadius,inDoor=x>box.doorMinX-playerRadius&&x<box.doorMaxX+playerRadius;if(nearLeft||nearRight||nearBack||(nearFront&&!inDoor))return false}}
+  const home=g.getObjectByName('home') as THREE.Group|null;const box=home?.userData.collider as {minX:number;maxX:number;minZ:number;maxZ:number;doorMinX:number;doorMaxX:number;wallThickness:number}|undefined;
+  if(box&&home){const inside=x+playerRadius>box.minX&&x-playerRadius<box.maxX&&z+playerRadius>box.minZ&&z-playerRadius<box.maxZ;if(inside){const nearLeft=x-box.minX<box.wallThickness+playerRadius,nearRight=box.maxX-x<box.wallThickness+playerRadius,nearBack=z-box.minZ<box.wallThickness+playerRadius,nearFront=box.maxZ-z<box.wallThickness+playerRadius,doorOpen=Boolean(home.userData.doorOpen),inDoor=doorOpen&&x>box.doorMinX-playerRadius&&x<box.doorMaxX+playerRadius;if(nearLeft||nearRight||nearBack||(nearFront&&!inDoor))return false}}
   for(const o of g.children){if(!o.name.startsWith('tree-'))continue;const r=Number(o.userData.colliderRadius||.72)+playerRadius,dx=x-o.position.x,dz=z-o.position.z;if(dx*dx+dz*dz<r*r)return false}
  }return true
 }
