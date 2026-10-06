@@ -26,12 +26,17 @@ canvas { display:block; width:100%; height:100%; }
 .actions { position:absolute; right:calc(14px + env(safe-area-inset-right)); bottom:calc(14px + env(safe-area-inset-bottom)); display:flex; gap:9px; pointer-events:auto; }
 .actions button { border:1px solid #ffffff2b; color:white; background:#111a22c9; width:64px; height:64px; border-radius:50%; font-weight:800; font-size:10px; }
 #orientation { display:none; position:fixed; inset:0; z-index:20; place-items:center; text-align:center; background:#0b1015; padding:40px; font-weight:700; }
-@media (orientation: portrait) and (max-width: 900px) { #orientation { display:grid; } }
-@media (max-width: 900px) { #fullscreenBtn { display:block; } }
-@media (min-width: 901px) { #fullscreenBtn { display:none; } }
+@media (max-width: 900px), (pointer: coarse) { #fullscreenBtn { display:block; } #touch { display:block; } #controls { display:none; } }
+@media (min-width: 901px) and (pointer: fine) { #fullscreenBtn { display:none; } }
 :fullscreen #fullscreenBtn { display:block; }
 @media (display-mode: fullscreen) { #fullscreenBtn { display:block; } }
-@media (max-width: 900px) { #touch { display:block; } #controls { display:none; } }
+@media (orientation: portrait) and (pointer: coarse) {
+  #stick { left:calc(12px + env(safe-area-inset-left)); width:96px; height:96px; }
+  #knob { width:42px; height:42px; margin:-21px; }
+  .actions { right:calc(12px + env(safe-area-inset-right)); bottom:calc(14px + env(safe-area-inset-bottom)); display:grid; grid-template-columns:repeat(2,52px); gap:6px; }
+  .actions button { width:52px; height:52px; font-size:9px; }
+  #prompt { bottom:27%; max-width:72vw; white-space:normal; text-align:center; }
+}
 #compass{position:absolute;left:50%;top:calc(8px + env(safe-area-inset-top));width:48px;text-align:center;font-size:11px;font-weight:900;letter-spacing:2px;text-shadow:0 2px 8px #000;transform-origin:center;}
 #mapBtn{position:absolute;right:calc(60px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));height:36px;padding:0 12px;border:1px solid #ffffff2b;border-radius:10px;color:#fff;background:#111a22c9;font-size:10px;font-weight:800;pointer-events:auto}
 #mapOverlay{position:fixed;inset:0;z-index:30;background:#0b1015ed;display:none;padding:calc(20px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));}
