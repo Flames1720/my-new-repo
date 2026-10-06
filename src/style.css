@@ -9,6 +9,8 @@ canvas { display:block; width:100%; height:100%; }
 #brand { position:absolute; top:calc(8px + env(safe-area-inset-top)); left:calc(10px + env(safe-area-inset-left)); font-size:12px; font-weight:800; letter-spacing:1.7px; text-shadow:0 2px 8px #0008; }
 #brand span { opacity:.55; font-size:9px; }
 #status { position:absolute; top:calc(28px + env(safe-area-inset-top)); left:calc(10px + env(safe-area-inset-left)); font-size:11px; opacity:.72; text-shadow:0 2px 8px #000; }
+#inventory { position:absolute; top:calc(44px + env(safe-area-inset-top)); left:calc(10px + env(safe-area-inset-left)); display:flex; gap:9px; font-size:12px; text-shadow:0 2px 8px #000; opacity:.9; }
+#inventory .invItem { display:inline-flex; align-items:center; gap:3px; background:#111a22c9; border:1px solid #ffffff22; border-radius:8px; padding:2px 7px; }
 #target { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:18px; height:18px; display:grid; place-items:center; font-size:17px; line-height:1; opacity:.55; text-shadow:0 1px 5px #000; transition:opacity .12s, transform .12s; }
 #target.active { opacity:1; transform:translate(-50%,-50%) scale(1.2); }
 #prompt { position:absolute; left:50%; bottom:18%; transform:translateX(-50%); padding:9px 13px; border-radius:12px; background:#111a22d9; border:1px solid #ffffff22; font-size:12px; opacity:0; transition:.15s; white-space:nowrap; }
