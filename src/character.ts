@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { EmoteKind, Gender } from './types';
 import { clamp, lerp } from './terrain';
 
@@ -124,6 +125,15 @@ export class PlayerCharacter {
   private currentEmote: EmoteKind = 'none';
   private emoteTime = 0;
 
+  // Production character asset. The procedural rig remains as a fallback until the
+  // uploaded Mixamo-style GLB is available, so a missing asset can never blank the game.
+  private modelRoot: THREE.Group | null = null;
+  private modelMixer: THREE.AnimationMixer | null = null;
+  private modelActions = new Map<string, THREE.AnimationAction>();
+  private activeModelAction: THREE.AnimationAction | null = null;
+  private modelReady = false;
+  private modelAnimation = '';
+
   constructor(lowPowerMode: boolean, onLoaded?: () => void) {
     this.root.name = 'player-character-rig';
 
@@ -142,6 +152,7 @@ export class PlayerCharacter {
 
     this.applyOutfit(this.currentOutfit);
     this.applyGender(this.gender);
+    this.loadProductionModel(onLoaded);
 
     if (onLoaded) {
       setTimeout(onLoaded, 50);
@@ -412,6 +423,105 @@ export class PlayerCharacter {
     }
   }
 
+  private loadProductionModel(onLoaded?: () => void) {
+    const loader = new GLTFLoader();
+    loader.load(
+      '/assets/rigged-model.glb',
+      gltf => {
+        const model = gltf.scene;
+        model.name = 'player-production-model';
+        model.traverse(object => {
+          if (object instanceof THREE.Mesh) {
+            object.castShadow = true;
+            object.receiveShadow = true;
+            object.frustumCulled = true;
+          }
+        });
+
+        // Normalize the source asset to the game's existing ~1.8m character scale.
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        const height = Math.max(size.y, 0.001);
+        const scale = 1.78 / height;
+        model.scale.setScalar(scale);
+        model.updateMatrixWorld(true);
+        const scaledBox = new THREE.Box3().setFromObject(model);
+        model.position.y -= scaledBox.min.y;
+
+        this.modelRoot = model;
+        this.root.add(model);
+        this.rigRoot.visible = false;
+        this.modelReady = true;
+
+        this.modelMixer = new THREE.AnimationMixer(model);
+        for (const sourceClip of gltf.animations) {
+          // Remove hip/root translation so animation does not fight the game's
+          // own collision-driven player movement. The body/leg motion remains intact.
+          const clip = sourceClip.clone();
+          clip.tracks = clip.tracks.filter(track => {
+            const target = track.name.split('.')[0].toLowerCase();
+            const property = track.name.split('.')[1] || '';
+            return !(target.includes('hips') && property === 'position');
+          });
+          const action = this.modelMixer!.clipAction(clip);
+          action.enabled = false;
+          action.setLoop(THREE.LoopRepeat, Infinity);
+          this.modelActions.set(sourceClip.name.toLowerCase(), action);
+        }
+
+        this.playModelAnimation('idle', 0);
+        onLoaded?.();
+      },
+      undefined,
+      error => {
+        console.warn('[PlayerCharacter] Production GLB unavailable; using procedural fallback.', error);
+      }
+    );
+  }
+
+  private findModelAction(name: string) {
+    const exact = this.modelActions.get(name.toLowerCase());
+    if (exact) return exact;
+    for (const [key, action] of this.modelActions) {
+      if (key.includes(name.toLowerCase())) return action;
+    }
+    return null;
+  }
+
+  private playModelAnimation(name: 'idle' | 'walk' | 'run' | 'backward', fade = 0.16) {
+    if (!this.modelReady || !this.modelMixer) return;
+    const lookup = name === 'walk' || name === 'run' ? 'jog forward' : name === 'backward' ? 'jog backward' : 'idle';
+    const next = this.findModelAction(lookup) || this.findModelAction(name) || this.findModelAction('idle');
+    if (!next || next === this.activeModelAction) {
+      if (next) next.setEffectiveTimeScale(name === 'run' ? 1.0 : name === 'walk' ? 0.62 : 1.0);
+      return;
+    }
+    next.reset();
+    next.enabled = true;
+    next.setEffectiveWeight(1);
+    next.setEffectiveTimeScale(name === 'run' ? 1.05 : name === 'walk' ? 0.62 : 1.0);
+    if (this.activeModelAction) {
+      this.activeModelAction.crossFadeTo(next, fade, true);
+    } else {
+      next.play();
+    }
+    this.activeModelAction = next;
+    this.modelAnimation = name;
+  }
+
+  private updateProductionAnimation(moving: boolean, sprinting: boolean, swimming: boolean) {
+    if (!this.modelReady || !this.modelMixer) return;
+    if (swimming) {
+      // No swimming clip was purchased, so keep the character readable while the
+      // existing game swimming state controls the body/camera.
+      this.playModelAnimation('idle', 0.25);
+    } else if (moving) {
+      this.playModelAnimation(sprinting ? 'run' : 'walk');
+    } else {
+      this.playModelAnimation('idle');
+    }
+  }
+
   // --- OUTFIT & GENDER CUSTOMIZATION ---
   setOutfit(kind: CharacterOutfitKind) {
     this.applyOutfit(kind);
@@ -477,6 +587,8 @@ export class PlayerCharacter {
     turnRate: number
   ) {
     this.update(dt, t, moving, sprinting, swimming, speed, turnRate);
+    this.updateProductionAnimation(moving, sprinting, swimming);
+    this.modelMixer?.update(Math.min(dt, 1 / 20));
   }
 
   // --- NATURAL CONTRALATERAL HUMAN WALKING & LOCOMOTION ENGINE ---
