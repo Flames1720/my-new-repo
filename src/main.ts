@@ -128,15 +128,19 @@ class Player{
 	root=new THREE.Group();velocity=new THREE.Vector3();onGround=true;swimming=false;
 	private fallback:THREE.Group;private avatar:THREE.Group|null=null;private mixer:THREE.AnimationMixer|null=null;private actions=new Map<string,THREE.AnimationAction>();private activeAction:THREE.AnimationAction|null=null;private oneShot=false;
 	private leftUpperArm:THREE.Object3D|null=null;private rightUpperArm:THREE.Object3D|null=null;private leftUpperLeg:THREE.Object3D|null=null;private rightUpperLeg:THREE.Object3D|null=null;
-	private swimBlend=0;
+	private leftForeArm:THREE.Object3D|null=null;private rightForeArm:THREE.Object3D|null=null;private leftHand:THREE.Object3D|null=null;private rightHand:THREE.Object3D|null=null;
+	private swimBlend=0;private locomotionBlend=0;private limbStart=new THREE.Vector3();private limbEnd=new THREE.Vector3();private limbDirection=new THREE.Vector3();private limbTarget=new THREE.Vector3();
+	private avatarWorldQuaternion=new THREE.Quaternion();private limbWorldQuaternion=new THREE.Quaternion();private limbParentQuaternion=new THREE.Quaternion();private limbDeltaQuaternion=new THREE.Quaternion();
 	constructor(){
 	 this.root.name='player-adventurer';this.fallback=new THREE.Group();this.fallback.name='player-fallback';
 	 const mat=new THREE.MeshStandardMaterial({color:0x507486,roughness:.92});const body=new THREE.Mesh(new THREE.CapsuleGeometry(.25,.68,3,7),mat);body.position.y=.78;const head=new THREE.Mesh(new THREE.SphereGeometry(.19,8,6),mat);head.position.y=1.42;
 	 for(const mesh of[body,head]){mesh.castShadow=!LOW_POWER_MODE;mesh.receiveShadow=true;this.fallback.add(mesh)}this.root.add(this.fallback);actors.add(this.root);
-	 import('three/addons/loaders/GLTFLoader.js').then(({GLTFLoader})=>new GLTFLoader().load('/models/kenney-adventurer.glb',gltf=>{
-	  const avatar=gltf.scene;avatar.name='kenney-human-adventurer';avatar.scale.setScalar(.45);
-		 this.leftUpperArm=avatar.getObjectByName('LeftArm')??null;this.rightUpperArm=avatar.getObjectByName('RightArm')??null;this.leftUpperLeg=avatar.getObjectByName('LeftUpLeg')??null;this.rightUpperLeg=avatar.getObjectByName('RightUpLeg')??null;
-	  avatar.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=!LOW_POWER_MODE;o.receiveShadow=true}});this.root.add(avatar);this.avatar=avatar;
+		 import('three/addons/loaders/GLTFLoader.js').then(({GLTFLoader})=>new GLTFLoader().load('/models/kenney-adventurer.glb',gltf=>{
+		  const avatar=gltf.scene;avatar.name='kenney-human-adventurer';avatar.scale.setScalar(.45);
+			 this.leftUpperArm=avatar.getObjectByName('LeftArm')??null;this.rightUpperArm=avatar.getObjectByName('RightArm')??null;this.leftUpperLeg=avatar.getObjectByName('LeftUpLeg')??null;this.rightUpperLeg=avatar.getObjectByName('RightUpLeg')??null;
+		 this.leftForeArm=avatar.getObjectByName('LeftForeArm')??null;this.rightForeArm=avatar.getObjectByName('RightForeArm')??null;
+		 this.leftHand=avatar.getObjectByName('LeftHand')??null;this.rightHand=avatar.getObjectByName('RightHand')??null;
+		  avatar.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=!LOW_POWER_MODE;o.receiveShadow=true}});this.root.add(avatar);this.avatar=avatar;
 	  this.fallback.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();const list=Array.isArray(o.material)?o.material:[o.material];for(const m of list)m.dispose()}});this.root.remove(this.fallback);
 	  this.mixer=new THREE.AnimationMixer(avatar);this.mixer.addEventListener('finished',event=>{if(event.action===this.activeAction){this.activeAction=null;this.oneShot=false}});
 	  for(const clip of gltf.animations){const n=clip.name.toLowerCase(),key=n.startsWith('idle')?'Idle':n.startsWith('run')?'Run':n.startsWith('jump')?'Jump':null;if(key)this.actions.set(key,this.mixer.clipAction(clip))}
@@ -148,18 +152,46 @@ class Player{
 	 this.activeAction?.fadeOut(fade);next.reset();next.enabled=true;next.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);next.clampWhenFinished=!loop;next.fadeIn(fade).play();this.activeAction=next;
 	}
 	playJump(){
-	 const next=this.actions.get('Jump');if(!next)return;this.activeAction?.fadeOut(.08);this.oneShot=true;next.reset();next.enabled=true;next.setLoop(THREE.LoopOnce,1);next.clampWhenFinished=true;next.fadeIn(.08).play();this.activeAction=next;
+		 const next=this.actions.get('Jump');if(!next)return;this.activeAction?.fadeOut(.08);this.oneShot=true;next.reset();next.enabled=true;next.setLoop(THREE.LoopOnce,1);next.clampWhenFinished=true;next.fadeIn(.08).play();this.activeAction=next;
 	}
-	animate(t:number,moving:boolean,sprinting:boolean,swimming:boolean,dt:number){
+	private aimLimbSegment(bone:THREE.Object3D|null,child:THREE.Object3D|null,x:number,y:number,z:number){
+		if(!bone||!child||!bone.parent||!this.avatar)return;
+		bone.getWorldPosition(this.limbStart);child.getWorldPosition(this.limbEnd);
+		this.limbDirection.copy(this.limbEnd).sub(this.limbStart);if(this.limbDirection.lengthSq()<1e-6)return;this.limbDirection.normalize();
+		this.avatar.getWorldQuaternion(this.avatarWorldQuaternion);this.limbTarget.set(x,y,z).normalize().applyQuaternion(this.avatarWorldQuaternion);
+		this.limbDeltaQuaternion.setFromUnitVectors(this.limbDirection,this.limbTarget);bone.getWorldQuaternion(this.limbWorldQuaternion);bone.parent.getWorldQuaternion(this.limbParentQuaternion).invert();
+		this.limbWorldQuaternion.premultiply(this.limbDeltaQuaternion);bone.quaternion.copy(this.limbParentQuaternion).multiply(this.limbWorldQuaternion);
+	}
+	animate(t:number,moving:boolean,sprinting:boolean,swimming:boolean,dt:number,speed=0){
 		this.mixer?.update(dt);
 		if(swimming&&this.oneShot){this.activeAction?.fadeOut(.1);this.activeAction=null;this.oneShot=false}
-		if(!this.oneShot){const state=moving&&!swimming?'Run':'Idle';this.setAction(state,true);this.actions.get(state)?.setEffectiveTimeScale(state==='Run'?(sprinting?1:.61):1)}
-		this.swimBlend=lerp(this.swimBlend,swimming?1:0,Math.min(1,dt*6));
-		const stroke=moving?Math.sin(t*4.6)*.5*this.swimBlend:0;
-		if(this.leftUpperArm){const arm=this.leftUpperArm.rotation;arm.set(lerp(arm.x-.65,-1.178-stroke,this.swimBlend),lerp(arm.y,0,this.swimBlend),lerp(arm.z,-Math.PI,this.swimBlend))}
-		if(this.rightUpperArm){const arm=this.rightUpperArm.rotation;arm.set(lerp(arm.x+.65,2.749+stroke,this.swimBlend),lerp(arm.y,1.178,this.swimBlend),lerp(arm.z,Math.PI/2,this.swimBlend))}
-		const kick=(moving ? .38 : .06)*this.swimBlend;if(this.leftUpperLeg)this.leftUpperLeg.rotation.x+=Math.sin(t*4.6)*kick;if(this.rightUpperLeg)this.rightUpperLeg.rotation.x+=Math.sin(t*4.6+Math.PI)*kick;
-		if(this.avatar){const target=swimming?1.38:0;this.avatar.rotation.x=lerp(this.avatar.rotation.x,target,Math.min(1,dt*5));this.avatar.position.y=swimming?Math.sin(t*2.6)*.018:0}
+		const idle=this.actions.get('Idle'),run=this.actions.get('Run');
+		for(const action of[idle,run])if(action&&!action.isRunning()){action.reset();action.enabled=true;action.setLoop(THREE.LoopRepeat,Infinity);action.play()}
+		if(!this.oneShot&&idle&&run){
+			const targetWeight=swimming||!moving?0:sprinting?1:.42;
+			this.locomotionBlend=lerp(this.locomotionBlend,targetWeight,Math.min(1,dt*5));
+			idle.setEffectiveWeight(1-this.locomotionBlend);run.setEffectiveWeight(this.locomotionBlend);
+			idle.setEffectiveTimeScale(1);run.setEffectiveTimeScale(clamp(speed/7.4,.32,1.25));
+		}else{idle?.setEffectiveWeight(0);run?.setEffectiveWeight(0)}
+		this.swimBlend=lerp(this.swimBlend,swimming?1:0,Math.min(1,dt*5));
+		const phase=t*4.6,stroke=moving?Math.sin(phase)*.62:0;
+		if(this.leftUpperArm){const base=this.leftUpperArm.rotation.clone();this.leftUpperArm.rotation.set(lerp(base.x,-1.178-stroke,this.swimBlend),lerp(base.y,0,this.swimBlend),lerp(base.z,-Math.PI,this.swimBlend))}
+		if(this.rightUpperArm){const base=this.rightUpperArm.rotation.clone();this.rightUpperArm.rotation.set(lerp(base.x,2.749+stroke,this.swimBlend),lerp(base.y,1.178,this.swimBlend),lerp(base.z,Math.PI/2,this.swimBlend))}
+		const elbow=moving?.2+.22*Math.max(0,Math.cos(phase)):.16;
+		if(this.leftForeArm){const base=this.leftForeArm.rotation.clone();this.leftForeArm.rotation.set(lerp(base.x,base.x+elbow,this.swimBlend),base.y,base.z)}
+		if(this.rightForeArm){const base=this.rightForeArm.rotation.clone();this.rightForeArm.rotation.set(lerp(base.x,base.x+elbow,this.swimBlend),base.y,base.z)}
+		const kick=(moving?.32:.05)*this.swimBlend;
+		if(this.leftUpperLeg){const base=this.leftUpperLeg.rotation.clone();this.leftUpperLeg.rotation.x=base.x+Math.sin(phase)*kick}
+		if(this.rightUpperLeg){const base=this.rightUpperLeg.rotation.clone();this.rightUpperLeg.rotation.x=base.x+Math.sin(phase+Math.PI)*kick}
+			if(this.avatar){const target=swimming?1.38:moving?(sprinting?.055:.025):0;this.avatar.rotation.x=lerp(this.avatar.rotation.x,target,Math.min(1,dt*5));this.avatar.position.y=swimming?Math.sin(t*2.6)*.018:0}
+			if(!swimming&&!this.oneShot&&this.avatar){
+				const gaitPhase=t*(sprinting?8.9:5.4),armSwing=moving?Math.sin(gaitPhase)*(sprinting?.34:.18):0;
+				this.avatar.updateMatrixWorld(true);
+			this.aimLimbSegment(this.leftUpperArm,this.leftForeArm,.1,-.94,armSwing);
+			this.aimLimbSegment(this.rightUpperArm,this.rightForeArm,-.1,-.94,-armSwing);
+			this.aimLimbSegment(this.leftForeArm,this.leftHand,.04,-.96,.12+armSwing*.55);
+			this.aimLimbSegment(this.rightForeArm,this.rightHand,-.04,-.96,.12-armSwing*.55);
+		}
 	}
 }
 const player=new Player();
@@ -459,7 +491,7 @@ function update(dt:number){
 	if(mode==='tpp'){cameraProbeTimer-=dt;if(cameraProbeTimer<=0){cameraProbeTimer=LOW_POWER_MODE?.12:.075;cameraBlockerObjects.length=0;for(const o of chunks.cameraBlockers)cameraBlockerObjects.push(o);const pcx=chunks.coord(p.x),pcz=chunks.coord(p.z);for(let ox=-1;ox<=1;ox++)for(let oz=-1;oz<=1;oz++){const terrain=chunks.loaded.get(chunks.key(pcx+ox,pcz+oz))?.getObjectByName('terrain');if(terrain)cameraBlockerObjects.push(terrain)}cameraDirection.set(-Math.sin(camYaw)*Math.cos(camPitch),Math.sin(camPitch),-Math.cos(camYaw)*Math.cos(camPitch));cameraRay.near=0;cameraRay.far=camDistance;cameraRay.set(focus,cameraDirection);cameraHits.length=0;const hit=cameraRay.intersectObjects(cameraBlockerObjects,true,cameraHits)[0];cameraClearance=hit?Math.max(1.35,hit.distance-.25):camDistance}const distance=Math.min(camDistance,cameraClearance),h=Math.cos(camPitch)*distance,pos=cameraPosition.copy(focus);pos.x-=Math.sin(camYaw)*h;pos.y+=Math.sin(camPitch)*distance;pos.z-=Math.cos(camYaw)*h;if(player.swimming&&!keys.has('control'))pos.y=Math.max(pos.y,WATER_LEVEL+.8);camera.position.lerp(pos,Math.min(1,dt*14));camera.lookAt(focus)}
 	else{const eye=cameraEye.copy(p);eye.y+=player.swimming?.22:1.55;camera.position.lerp(eye,Math.min(1,dt*18));const look=cameraLook.copy(eye);look.x+=Math.sin(targetYaw)*Math.cos(targetPitch)*8;look.y+=Math.sin(targetPitch)*8;look.z+=Math.cos(targetYaw)*Math.cos(targetPitch)*8;camera.lookAt(look)}
 	const cameraUnderwater=player.swimming&&camera.position.y<WATER_LEVEL-.04;if(cameraUnderwater!==underwater){underwater=cameraUnderwater;hud.classList.toggle('underwater',underwater);if(scene.fog){const fog=scene.fog as THREE.Fog;fog.color.copy(underwater?underwaterFogColor:skyColor);fog.near=underwater?1.5:60;fog.far=underwater?18:160}}
-	player.animate(walkTime+=dt,moving,sprinting,player.swimming,dt);
+		player.animate(walkTime+=dt,moving,sprinting,player.swimming,dt,horizontalSpeed);
 	const aimed=getAimTarget();if(aimed&&!moving&&!promptTimer){const r=aimed.userData.resource as {kind:string;hits:number;maxHits:number}|undefined,animal=aimed.userData.animal as {species:string}|undefined;say(animal?`E · observe ${animal.species}${inventory.Fruit?' or offer fruit':''}`:r?`USE · ${r.kind[0].toUpperCase()+r.kind.slice(1)} (${r.maxHits-r.hits}/${r.maxHits})`:`USE · ${aimed.name.replace('front-door','Front door').replace('tree-','Tree ')}`)}
 	if(promptTimer>0){promptTimer-=dt;if(promptTimer<=0)prompt.classList.remove('show')}
 	compass.style.transform=`translateX(-50%) rotate(${-camYaw*180/Math.PI}deg)`;if(mapOverlay.classList.contains('show')){mapAccumulator+=dt;if(mapAccumulator>=.25){drawMap();drawAnimalMapMarkers();mapAccumulator=0}}else mapAccumulator=0;
