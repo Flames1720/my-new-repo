@@ -804,15 +804,35 @@ function saveNow() {
 
 // --- INPUTS & CONTROLS ---
 const keys = new Set<string>();
+const keyboardKeys = new Set<string>();
+const pointerKeys = new Map<string, Set<number>>();
+
+function syncKeyState(key: string) {
+  if (keyboardKeys.has(key) || (pointerKeys.get(key)?.size ?? 0) > 0) keys.add(key);
+  else keys.delete(key);
+}
+
+function isInteractiveTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && !!target.closest('button, input, select, textarea, [contenteditable="true"]');
+}
+
 addEventListener('keydown', e => {
-  keys.add(e.key.toLowerCase());
-  if (e.key.toLowerCase() === 'f') mode = 'fpp';
-  if (e.key.toLowerCase() === 'c') mode = 'tpp';
-  if (!e.repeat && e.key.toLowerCase() === 'e') interact();
-  if (!e.repeat && e.key.toLowerCase() === 'b') toggleEmoteBar();
-  if (!e.repeat && e.key.toLowerCase() === 'p') togglePhotoMode();
+  const key = e.key.toLowerCase();
+  if (isInteractiveTarget(e.target)) return;
+  keyboardKeys.add(key);
+  syncKeyState(key);
+  if (key === ' ' || key.startsWith('arrow')) e.preventDefault();
+  if (key === 'f') mode = 'fpp';
+  if (key === 'c') mode = 'tpp';
+  if (!e.repeat && key === 'e') interact();
+  if (!e.repeat && key === 'b') toggleEmoteBar();
+  if (!e.repeat && key === 'p') togglePhotoMode();
 });
-addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+addEventListener('keyup', e => {
+  const key = e.key.toLowerCase();
+  keyboardKeys.delete(key);
+  syncKeyState(key);
+});
 
 // Look drag with Independent X / Y Sensitivities
 let pointer: number | null = null, lastX = 0, lastY = 0;
@@ -854,10 +874,10 @@ gameDom.addEventListener('wheel', e => {
 // Virtual Joystick for Mobile
 const stick = document.querySelector('#stick') as HTMLElement;
 const knob = document.querySelector('#knob') as HTMLElement;
-let joy = { x: 0, y: 0 }, joyActive = false;
+let joy = { x: 0, y: 0 }, joyActive = false, joyPointer: number | null = null;
 
 const moveJoy = (e: PointerEvent) => {
-  if (!joyActive) return;
+  if (!joyActive || joyPointer !== e.pointerId) return;
   const r = stick.getBoundingClientRect();
   const cx = r.left + r.width / 2;
   const cy = r.top + r.height / 2;
@@ -873,22 +893,35 @@ const moveJoy = (e: PointerEvent) => {
 };
 
 stick.addEventListener('pointerdown', e => {
+  e.preventDefault();
   e.stopPropagation();
+  if (joyPointer !== null) return;
+  joyPointer = e.pointerId;
   joyActive = true;
   stick.setPointerCapture(e.pointerId);
   moveJoy(e);
 });
 stick.addEventListener('pointermove', moveJoy);
-stick.addEventListener('pointerup', () => {
+const endJoy = (e: PointerEvent) => {
+  if (joyPointer !== e.pointerId) return;
+  e.preventDefault();
+  e.stopPropagation();
+  joyPointer = null;
   joyActive = false;
   joy = { x: 0, y: 0 };
   knob.style.transform = 'translate(0,0)';
-});
+};
+stick.addEventListener('pointerup', endJoy);
+stick.addEventListener('pointercancel', endJoy);
+stick.addEventListener('lostpointercapture', endJoy);
 
 // Mobile Look Zone (Right screen drag)
 const lookZone = document.querySelector('#lookZone') as HTMLElement;
 let lookPointer: number | null = null;
 lookZone.addEventListener('pointerdown', e => {
+  if (lookPointer !== null) return;
+  e.preventDefault();
+  e.stopPropagation();
   lookPointer = e.pointerId;
   lastX = e.clientX;
   lastY = e.clientY;
@@ -898,30 +931,49 @@ lookZone.addEventListener('pointermove', e => {
   if (lookPointer !== e.pointerId) return;
   onLookMove(e.clientX, e.clientY);
 });
-lookZone.addEventListener('pointerup', () => (lookPointer = null));
-lookZone.addEventListener('pointercancel', () => (lookPointer = null));
+const endLook = (e: PointerEvent) => {
+  if (lookPointer !== e.pointerId) return;
+  e.stopPropagation();
+  lookPointer = null;
+};
+lookZone.addEventListener('pointerup', endLook);
+lookZone.addEventListener('pointercancel', endLook);
+lookZone.addEventListener('lostpointercapture', endLook);
 
 function bindAction(el: HTMLElement, fn: () => void) {
-  let lastTime = 0;
-  const handler = (e: Event) => {
-    const now = Date.now();
-    if (now - lastTime < 220) return;
-    lastTime = now;
+  const stopPointerEvent = (e: Event) => e.stopPropagation();
+  el.addEventListener('pointerdown', stopPointerEvent);
+  el.addEventListener('pointerup', stopPointerEvent);
+  el.addEventListener('pointercancel', stopPointerEvent);
+  el.addEventListener('click', e => {
+    e.preventDefault();
     e.stopPropagation();
     fn();
-  };
-  el.addEventListener('click', handler);
-  el.addEventListener('pointerdown', handler);
+  });
 }
 
-function bindHoldAction(el: HTMLElement, key: string) {
+function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void) {
+  const heldPointers = new Set<number>();
   const down = (e: PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    keys.add(key);
+    if (heldPointers.has(e.pointerId)) return;
+    heldPointers.add(e.pointerId);
+    let keyPointers = pointerKeys.get(key);
+    if (!keyPointers) pointerKeys.set(key, (keyPointers = new Set()));
+    keyPointers.add(e.pointerId);
+    syncKeyState(key);
+    onPress?.();
     el.setPointerCapture(e.pointerId);
   };
-  const up = () => keys.delete(key);
+  const up = (e: PointerEvent) => {
+    e.stopPropagation();
+    if (!heldPointers.delete(e.pointerId)) return;
+    const keyPointers = pointerKeys.get(key);
+    keyPointers?.delete(e.pointerId);
+    if (!keyPointers?.size) pointerKeys.delete(key);
+    syncKeyState(key);
+  };
   el.addEventListener('pointerdown', down);
   el.addEventListener('pointerup', up);
   el.addEventListener('pointercancel', up);
@@ -930,8 +982,7 @@ function bindHoldAction(el: HTMLElement, key: string) {
 
 // Touch buttons
 bindAction(document.querySelector('#modeBtn') as HTMLButtonElement, () => (mode = mode === 'tpp' ? 'fpp' : 'tpp'));
-bindAction(document.querySelector('#jumpBtn') as HTMLButtonElement, jump);
-bindHoldAction(document.querySelector('#jumpBtn') as HTMLButtonElement, ' ');
+bindHoldAction(document.querySelector('#jumpBtn') as HTMLButtonElement, ' ', jump);
 bindHoldAction(document.querySelector('#diveBtn') as HTMLButtonElement, 'control');
 bindAction(document.querySelector('#runBtn') as HTMLButtonElement, () => (sprintToggle = !sprintToggle));
 bindAction(document.querySelector('#interactBtn') as HTMLButtonElement, interact);
@@ -1675,7 +1726,7 @@ function update(dt: number) {
 
   const iv = input();
   const forward = moveForward.set(Math.sin(camYaw), 0, Math.cos(camYaw));
-  const right = moveRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw));
+  const right = moveRight.set(-Math.cos(camYaw), 0, Math.sin(camYaw));
   const dir = moveDirection.set(0, 0, 0).addScaledVector(right, iv.x).addScaledVector(forward, -iv.y);
   const inputMagnitude = Math.min(1, dir.length());
   const hasInput = inputMagnitude > 0.08;
