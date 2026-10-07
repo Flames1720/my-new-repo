@@ -430,6 +430,12 @@ export class PlayerCharacter {
       gltf => {
         const model = gltf.scene;
         model.name = 'player-production-model';
+
+        // The exported asset's armature carries a +90° X conversion rotation.
+        // The game already uses Three.js Y-up world coordinates, so keeping that
+        // export-space rotation makes the character lie on its back. Counter it
+        // once at the model root; the Mixamo skeleton/animations then stay upright.
+        model.rotation.x = -Math.PI / 2;
         model.traverse(object => {
           if (object instanceof THREE.Mesh) {
             object.castShadow = true;
