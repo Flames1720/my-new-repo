@@ -49,6 +49,15 @@ export interface SettingsState {
   chunkRadius: number;
   characterGender?: 'male' | 'female';
   characterOutfit?: 'explorer' | 'ranger' | 'scout' | 'arctic' | 'lagos';
+  characterCustomization?: {
+    skinTone: number;
+    hairColor: number;
+    eyeColor: number;
+    shirtColor: number;
+    pantsColor: number;
+    shoeColor: number;
+    beard: boolean;
+  };
   lodDetail?: 'ultra' | 'balanced' | 'fast';
 }
 
