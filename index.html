@@ -18,6 +18,7 @@
 
       <!-- Top Right Controls & Live Mini-Map (CODM Style) -->
       <div id="topRightBar">
+        <button id="ecoBtn" aria-label="Ecosystem sanctuary & field guide" title="Wildlife Sanctuary">🐾</button>
         <button id="settingsBtn" aria-label="Open settings" title="Settings">⚙️</button>
         <button id="fullscreenBtn" aria-label="Toggle fullscreen" title="Fullscreen">⛶</button>
       </div>
@@ -31,6 +32,7 @@
       </div>
 
       <div id="status">Generating world…</div>
+      <div id="profileBadge" title="Your Character Identity">🧑 Explorer · Lv.1</div>
       <div id="inventory"></div>
       <div id="target" aria-hidden="true">✚</div>
       <div id="prompt"></div>
@@ -116,6 +118,32 @@
 
           <div class="settingGroup">
             <div class="settingLabel">
+              <span>Player Identity & Gender</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="playerNameInput" placeholder="Adventurer Name" value="Explorer" style="flex: 1; padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;" />
+              <select id="playerGenderSelect" style="padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;">
+                <option value="male">♂ Male</option>
+                <option value="female">♀ Female</option>
+                <option value="adventurer">⚧ Adventurer</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Life Class / Profession</span>
+            </div>
+            <select id="playerRoleSelect">
+              <option value="explorer">🧭 Pioneer Explorer (+Speed & Stamina)</option>
+              <option value="rancher">🐄 Pasture Rancher (+Animal Trust & Calves)</option>
+              <option value="hunter">🏹 Wilderness Tracker (+Predator Tracking)</option>
+              <option value="builder">🔨 Master Homesteader (+Harvest & Timber)</option>
+            </select>
+          </div>
+
+          <div class="settingGroup">
+            <div class="settingLabel">
               <span>Character Outfit & Style</span>
             </div>
             <select id="outfitSelect">
@@ -123,6 +151,7 @@
               <option value="ranger">Forest Ranger (Pine Green & Brass)</option>
               <option value="scout">Autumn Scout (Amber & Leather)</option>
               <option value="arctic">Arctic Scout (Slate & Frost White)</option>
+              <option value="lagos">Lagos Life Pioneer (Emerald & Gold)</option>
             </select>
           </div>
 
@@ -135,6 +164,24 @@
               <option value="balanced">Balanced LOD (Optimized Hills)</option>
               <option value="fast">Fast LOD (Battery Saver)</option>
             </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Living Ecosystem Sanctuary Census Modal -->
+    <div id="ecoOverlay">
+      <div class="ecoCard">
+        <div class="ecoHeader">
+          <h3>LIVING ECOSYSTEM SANCTUARY & CENSUS</h3>
+          <button id="ecoClose">✕</button>
+        </div>
+        <div class="ecoBody">
+          <p class="ecoIntro">Real-time persistent population tracking. Animals reproduce through mating and raise their young. Protect vulnerable species from extinction!</p>
+          <div id="ecoCensusList"></div>
+          <div class="ecoSummary">
+            <span id="ecoTotalCount">Total Fauna: 0</span>
+            <span id="ecoExtinctCount">Status: Balanced</span>
           </div>
         </div>
       </div>

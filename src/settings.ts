@@ -9,6 +9,7 @@ export const defaultSettings: SettingsState = {
   graphics: 'high',
   weatherMode: 'dynamic',
   chunkRadius: 6,
+  characterGender: 'male',
   characterOutfit: 'explorer',
   lodDetail: 'ultra',
 };

@@ -1,14 +1,66 @@
 import * as THREE from 'three';
-import type { EmoteKind } from './types';
+import type { EmoteKind, Gender } from './types';
 import { clamp, lerp } from './terrain';
 
-export type CharacterOutfitKind = 'explorer' | 'ranger' | 'scout' | 'arctic';
+export type CharacterOutfitKind = 'explorer' | 'ranger' | 'scout' | 'arctic' | 'lagos';
 
-export const OUTFIT_PALETTES: Record<CharacterOutfitKind, { tunic: number; pants: number; leather: number; accent: number }> = {
-  explorer: { tunic: 0x2b4c68, pants: 0x3d352e, leather: 0x6e4324, accent: 0xd4a046 },
-  ranger: { tunic: 0x284729, pants: 0x2c2621, leather: 0x5a341a, accent: 0x937840 },
-  scout: { tunic: 0x8a4522, pants: 0x383533, leather: 0x522f18, accent: 0xd9b35b },
-  arctic: { tunic: 0x415b6d, pants: 0x24323d, leather: 0x332822, accent: 0xe6eef2 },
+export const OUTFIT_PALETTES: Record<
+  CharacterOutfitKind,
+  {
+    tunic: number;
+    tunicTrim: number;
+    pants: number;
+    leather: number;
+    boots: number;
+    metal: number;
+    accent: number;
+  }
+> = {
+  explorer: {
+    tunic: 0x2b6ca3, // Vibrant Azure Expedition Tunic
+    tunicTrim: 0xf2c14e,
+    pants: 0x3d352e, // Sturdy Khaki Trail Pants
+    leather: 0x824d27, // Cognac Leather
+    boots: 0x422817,
+    metal: 0xe6b843, // Polished Brass
+    accent: 0xf5ba42,
+  },
+  ranger: {
+    tunic: 0x2e6b35, // Forest Emerald Ranger Coat
+    tunicTrim: 0xb5954e,
+    pants: 0x332c25,
+    leather: 0x734320,
+    boots: 0x3d2716,
+    metal: 0xa8c256,
+    accent: 0xb5954e,
+  },
+  scout: {
+    tunic: 0xc25a2b, // Desert Terracotta Tunic
+    tunicTrim: 0xf0c85d,
+    pants: 0x453e36,
+    leather: 0x6e3c1d,
+    boots: 0x3b2414,
+    metal: 0xdeb841,
+    accent: 0xf2cb61,
+  },
+  arctic: {
+    tunic: 0x5486ad, // Glacial Blue Parka
+    tunicTrim: 0xf0f5fa,
+    pants: 0x2b3847,
+    leather: 0x4a3b32,
+    boots: 0x222a33,
+    metal: 0xd9e5eb,
+    accent: 0xffffff,
+  },
+  lagos: {
+    tunic: 0x138a4b, // Vibrant Lagos Emerald Agbada/Tunic with Gold Filigree
+    tunicTrim: 0xf5c027,
+    pants: 0x1f2421, // Sleek Midnight Chinos
+    leather: 0x8a5528,
+    boots: 0x241810,
+    metal: 0xf5ba2c, // Rich West African Gold
+    accent: 0xf5c027,
+  },
 };
 
 export class PlayerCharacter {
@@ -17,329 +69,402 @@ export class PlayerCharacter {
   onGround = true;
   swimming = false;
 
-  private fallback: THREE.Group;
-  avatar: THREE.Group | null = null;
-  private mixer: THREE.AnimationMixer | null = null;
-  private actions = new Map<string, THREE.AnimationAction>();
-  private activeAction: THREE.AnimationAction | null = null;
-  private oneShot = false;
-
-  // Bones for procedural IK and Emotes
-  private headBone: THREE.Object3D | null = null;
-  private spineBone: THREE.Object3D | null = null;
-  private chestBone: THREE.Object3D | null = null;
-  private leftUpperArm: THREE.Object3D | null = null;
-  private rightUpperArm: THREE.Object3D | null = null;
-  private leftForeArm: THREE.Object3D | null = null;
-  private rightForeArm: THREE.Object3D | null = null;
-  private leftHand: THREE.Object3D | null = null;
-  private rightHand: THREE.Object3D | null = null;
-  private leftUpperLeg: THREE.Object3D | null = null;
-  private rightUpperLeg: THREE.Object3D | null = null;
-  private leftLeg: THREE.Object3D | null = null;
-  private rightLeg: THREE.Object3D | null = null;
-  private leftFoot: THREE.Object3D | null = null;
-  private rightFoot: THREE.Object3D | null = null;
-
-  // Materials for outfit styling
-  private outfitMaterials: THREE.MeshStandardMaterial[] = [];
+  // Visual Customization
+  private gender: Gender = 'male';
   private currentOutfit: CharacterOutfitKind = 'explorer';
 
-  // Motion blends
-  private swimBlend = 0;
+  // Procedural Skeletal Rig Components
+  private rigRoot = new THREE.Group();
+  private pelvis = new THREE.Group();
+  private spine = new THREE.Group();
+  private chest = new THREE.Group();
+  private neck = new THREE.Group();
+  private head = new THREE.Group();
+
+  // Limbs: Left & Right Arms
+  private leftClavicle = new THREE.Group();
+  private leftUpperArm = new THREE.Group();
+  private leftForearm = new THREE.Group();
+  private leftHand = new THREE.Group();
+
+  private rightClavicle = new THREE.Group();
+  private rightUpperArm = new THREE.Group();
+  private rightForearm = new THREE.Group();
+  private rightHand = new THREE.Group();
+
+  // Limbs: Left & Right Legs
+  private leftHip = new THREE.Group();
+  private leftThigh = new THREE.Group();
+  private leftCalf = new THREE.Group();
+  private leftFoot = new THREE.Group();
+
+  private rightHip = new THREE.Group();
+  private rightThigh = new THREE.Group();
+  private rightCalf = new THREE.Group();
+  private rightFoot = new THREE.Group();
+
+  // Headwear & Hair Groups (swapped by gender)
+  private hairGroup = new THREE.Group();
+  private hatGroup = new THREE.Group();
+
+  // Dynamic Outfit Mesh References for instant re-theming
+  private outfitMeshes: {
+    mesh: THREE.Mesh;
+    part: 'tunic' | 'tunicTrim' | 'pants' | 'leather' | 'boots' | 'metal' | 'accent';
+  }[] = [];
+
+  // Dedicated Character Lighting
+  private charKeyLight: THREE.PointLight;
+  private charFillLight: THREE.PointLight;
+
+  // Animation State
+  private walkPhase = 0;
   private locomotionBlend = 0;
   private landingSquash = 0;
   private currentEmote: EmoteKind = 'none';
   private emoteTime = 0;
 
-  // Working vectors
-  private limbStart = new THREE.Vector3();
-  private limbEnd = new THREE.Vector3();
-  private limbDirection = new THREE.Vector3();
-  private limbTarget = new THREE.Vector3();
-  private avatarWorldQuaternion = new THREE.Quaternion();
-  private limbWorldQuaternion = new THREE.Quaternion();
-  private limbParentQuaternion = new THREE.Quaternion();
-  private limbDeltaQuaternion = new THREE.Quaternion();
-
   constructor(lowPowerMode: boolean, onLoaded?: () => void) {
-    this.root.name = 'player-adventurer';
-    this.fallback = new THREE.Group();
-    this.fallback.name = 'player-fallback';
+    this.root.name = 'player-character-rig';
 
-    const mat = new THREE.MeshStandardMaterial({ color: 0x486b7c, roughness: 0.88 });
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.25, 0.68, 3, 7), mat);
-    body.position.y = 0.78;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 8, 6), mat);
-    head.position.y = 1.42;
-    for (const mesh of [body, head]) {
-      mesh.castShadow = !lowPowerMode;
-      mesh.receiveShadow = true;
-      this.fallback.add(mesh);
+    // 1. DEDICATED CHARACTER LIGHTING: Illuminates face and hands from front
+    this.charKeyLight = new THREE.PointLight(0xfff7ea, 2.2, 5.5);
+    this.charKeyLight.position.set(0, 1.6, 1.2);
+    this.root.add(this.charKeyLight);
+
+    this.charFillLight = new THREE.PointLight(0xdceeff, 1.4, 4.5);
+    this.charFillLight.position.set(-0.6, 1.2, -0.8);
+    this.root.add(this.charFillLight);
+
+    // 2. BUILD ARTICULATED SKELETAL RIG
+    this.buildSkeletalHierarchy();
+    this.buildAnatomicalModel(lowPowerMode);
+
+    this.applyOutfit(this.currentOutfit);
+    this.applyGender(this.gender);
+
+    if (onLoaded) {
+      setTimeout(onLoaded, 50);
     }
-    this.root.add(this.fallback);
-
-    // Load Kenney human adventurer GLB
-    import('three/addons/loaders/GLTFLoader.js')
-      .then(({ GLTFLoader }) => {
-        new GLTFLoader().load(
-          '/models/kenney-adventurer.glb',
-          gltf => {
-            const avatar = gltf.scene;
-            avatar.name = 'kenney-human-adventurer';
-            avatar.scale.setScalar(0.45);
-
-            this.headBone = avatar.getObjectByName('Head') ?? null;
-            this.spineBone = avatar.getObjectByName('Spine') ?? null;
-            this.chestBone = avatar.getObjectByName('Chest') ?? null;
-            this.leftUpperArm = avatar.getObjectByName('LeftArm') ?? null;
-            this.rightUpperArm = avatar.getObjectByName('RightArm') ?? null;
-            this.leftForeArm = avatar.getObjectByName('LeftForeArm') ?? null;
-            this.rightForeArm = avatar.getObjectByName('RightForeArm') ?? null;
-            this.leftHand = avatar.getObjectByName('LeftHand') ?? null;
-            this.rightHand = avatar.getObjectByName('RightHand') ?? null;
-            this.leftUpperLeg = avatar.getObjectByName('LeftUpLeg') ?? null;
-            this.rightUpperLeg = avatar.getObjectByName('RightUpLeg') ?? null;
-            this.leftLeg = avatar.getObjectByName('LeftLeg') ?? null;
-            this.rightLeg = avatar.getObjectByName('RightLeg') ?? null;
-            this.leftFoot = avatar.getObjectByName('LeftFoot') ?? null;
-            this.rightFoot = avatar.getObjectByName('RightFoot') ?? null;
-
-            avatar.traverse(o => {
-              if (o instanceof THREE.Mesh) {
-                o.castShadow = !lowPowerMode;
-                o.receiveShadow = true;
-                if (o.material) {
-                  const m = o.material.clone() as THREE.MeshStandardMaterial;
-                  m.roughness = 0.75;
-                  o.material = m;
-                  this.outfitMaterials.push(m);
-                }
-              }
-            });
-
-            // Attach high-detail adventurer accessories to enhance visual appeal
-            this.attachAccessories(lowPowerMode);
-
-            this.root.add(avatar);
-            this.avatar = avatar;
-
-            // Remove placeholder fallback
-            this.fallback.traverse(o => {
-              if (o instanceof THREE.Mesh) {
-                o.geometry.dispose();
-                const list = Array.isArray(o.material) ? o.material : [o.material];
-                for (const m of list) m.dispose();
-              }
-            });
-            this.root.remove(this.fallback);
-
-            this.mixer = new THREE.AnimationMixer(avatar);
-            this.mixer.addEventListener('finished', event => {
-              if (event.action === this.activeAction) {
-                this.activeAction = null;
-                this.oneShot = false;
-              }
-            });
-
-            for (const clip of gltf.animations) {
-              const n = clip.name.toLowerCase();
-              const key = n.startsWith('idle') ? 'Idle' : n.startsWith('run') ? 'Run' : n.startsWith('jump') ? 'Jump' : null;
-              if (key) this.actions.set(key, this.mixer.clipAction(clip));
-            }
-
-            this.setAction('Idle', true, 0.01);
-            this.applyOutfit(this.currentOutfit);
-            if (onLoaded) onLoaded();
-          },
-          undefined,
-          err => console.warn('Player fallback kept:', err)
-        );
-      })
-      .catch(err => console.warn('GLTFLoader import failed:', err));
   }
 
-  // Attach sculpted explorer backpack, belt with canteen & pouch, and hat
-  private attachAccessories(lowPowerMode: boolean) {
-    const leatherMat = new THREE.MeshStandardMaterial({ color: 0x5a361e, roughness: 0.82 });
-    const brassMat = new THREE.MeshStandardMaterial({ color: 0xd4a046, metalness: 0.85, roughness: 0.35 });
-    const canvasMat = new THREE.MeshStandardMaterial({ color: 0x425666, roughness: 0.9 });
-    const bedrollMat = new THREE.MeshStandardMaterial({ color: 0xa87146, roughness: 0.95 });
-    const hatMat = new THREE.MeshStandardMaterial({ color: 0x3d2c1f, roughness: 0.85 });
-    const featherMat = new THREE.MeshStandardMaterial({ color: 0xc43b2f, roughness: 0.6 });
+  private buildSkeletalHierarchy() {
+    this.rigRoot.name = 'rig-root';
+    this.root.add(this.rigRoot);
 
-    // 1. Explorer Backpack on Chest/Spine
-    const backpackTarget = this.chestBone || this.spineBone;
-    if (backpackTarget) {
-      const backpack = new THREE.Group();
-      backpack.name = 'adventurer-backpack';
-      backpack.position.set(0, 0.22, -0.24);
+    // Pelvis / Hips (pivot at base of torso, y=0.92m)
+    this.pelvis.name = 'bone-pelvis';
+    this.pelvis.position.set(0, 0.92, 0);
+    this.rigRoot.add(this.pelvis);
 
-      // Main pack body
-      const packBody = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.65, 0.32), leatherMat);
-      packBody.castShadow = !lowPowerMode;
-      backpack.add(packBody);
+    // Spine
+    this.spine.name = 'bone-spine';
+    this.spine.position.set(0, 0.16, 0);
+    this.pelvis.add(this.spine);
 
-      // Flap cover with buckle
-      const flap = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.22, 0.34), canvasMat);
-      flap.position.set(0, 0.24, 0.01);
-      backpack.add(flap);
+    // Chest / Upper Torso
+    this.chest.name = 'bone-chest';
+    this.chest.position.set(0, 0.22, 0);
+    this.spine.add(this.chest);
 
-      const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.04), brassMat);
-      buckle.position.set(0, 0.12, -0.17);
-      backpack.add(buckle);
+    // Neck
+    this.neck.name = 'bone-neck';
+    this.neck.position.set(0, 0.24, 0);
+    this.chest.add(this.neck);
 
-      // Bedroll rolled across the top
-      const bedroll = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.68, 8), bedrollMat);
-      bedroll.rotation.z = Math.PI / 2;
-      bedroll.position.set(0, 0.44, 0);
-      backpack.add(bedroll);
+    // Head
+    this.head.name = 'bone-head';
+    this.head.position.set(0, 0.12, 0);
+    this.neck.add(this.head);
 
-      // Bedroll leather binding straps
-      for (const side of [-0.2, 0.2]) {
-        const strap = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.05, 8), leatherMat);
-        strap.rotation.z = Math.PI / 2;
-        strap.position.set(side, 0.44, 0);
-        backpack.add(strap);
+    // Left Arm Hierarchy
+    this.leftClavicle.name = 'bone-clavicle-l';
+    this.leftClavicle.position.set(0.24, 0.16, 0);
+    this.chest.add(this.leftClavicle);
+
+    this.leftUpperArm.name = 'bone-upperarm-l';
+    this.leftUpperArm.position.set(0.06, -0.02, 0);
+    this.leftClavicle.add(this.leftUpperArm);
+
+    this.leftForearm.name = 'bone-forearm-l';
+    this.leftForearm.position.set(0, -0.28, 0);
+    this.leftUpperArm.add(this.leftForearm);
+
+    this.leftHand.name = 'bone-hand-l';
+    this.leftHand.position.set(0, -0.26, 0);
+    this.leftForearm.add(this.leftHand);
+
+    // Right Arm Hierarchy
+    this.rightClavicle.name = 'bone-clavicle-r';
+    this.rightClavicle.position.set(-0.24, 0.16, 0);
+    this.chest.add(this.rightClavicle);
+
+    this.rightUpperArm.name = 'bone-upperarm-r';
+    this.rightUpperArm.position.set(-0.06, -0.02, 0);
+    this.rightClavicle.add(this.rightUpperArm);
+
+    this.rightForearm.name = 'bone-forearm-r';
+    this.rightForearm.position.set(0, -0.28, 0);
+    this.rightUpperArm.add(this.rightForearm);
+
+    this.rightHand.name = 'bone-hand-r';
+    this.rightHand.position.set(0, -0.26, 0);
+    this.rightForearm.add(this.rightHand);
+
+    // Left Leg Hierarchy
+    this.leftHip.name = 'bone-hip-l';
+    this.leftHip.position.set(0.14, -0.04, 0);
+    this.pelvis.add(this.leftHip);
+
+    this.leftThigh.name = 'bone-thigh-l';
+    this.leftThigh.position.set(0, 0, 0);
+    this.leftHip.add(this.leftThigh);
+
+    this.leftCalf.name = 'bone-calf-l';
+    this.leftCalf.position.set(0, -0.42, 0);
+    this.leftThigh.add(this.leftCalf);
+
+    this.leftFoot.name = 'bone-foot-l';
+    this.leftFoot.position.set(0, -0.42, 0.04);
+    this.leftCalf.add(this.leftFoot);
+
+    // Right Leg Hierarchy
+    this.rightHip.name = 'bone-hip-r';
+    this.rightHip.position.set(-0.14, -0.04, 0);
+    this.pelvis.add(this.rightHip);
+
+    this.rightThigh.name = 'bone-thigh-r';
+    this.rightThigh.position.set(0, 0, 0);
+    this.rightHip.add(this.rightThigh);
+
+    this.rightCalf.name = 'bone-calf-r';
+    this.rightCalf.position.set(0, -0.42, 0);
+    this.rightThigh.add(this.rightCalf);
+
+    this.rightFoot.name = 'bone-foot-r';
+    this.rightFoot.position.set(0, -0.42, 0.04);
+    this.rightCalf.add(this.rightFoot);
+  }
+
+  private buildAnatomicalModel(lowPowerMode: boolean) {
+    this.outfitMeshes = [];
+
+    // Shared Materials
+    const skinMat = new THREE.MeshStandardMaterial({
+      color: 0xffd1b3, // Radiant, warm, glowing anime skin tone
+      roughness: 0.52,
+      metalness: 0.0,
+      emissive: new THREE.Color(0x38261e), // Subtle warm bounce so face is NEVER black
+    });
+
+    const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
+    const irisMat = new THREE.MeshStandardMaterial({ color: 0x1b72a8, roughness: 0.25 }); // Deep sapphire iris
+    const pupilMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2 });
+    const blushMat = new THREE.MeshStandardMaterial({ color: 0xf5988e, roughness: 0.8 });
+    const mouthMat = new THREE.MeshStandardMaterial({ color: 0xd95763, roughness: 0.5 });
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x3d2716, roughness: 0.75 }); // Rich chestnut hair
+
+    const tunicMat = new THREE.MeshStandardMaterial({ color: 0x2b6ca3, roughness: 0.75 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0xf2c14e, roughness: 0.65 });
+    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x3d352e, roughness: 0.82 });
+    const leatherMat = new THREE.MeshStandardMaterial({ color: 0x824d27, roughness: 0.72 });
+    const bootsMat = new THREE.MeshStandardMaterial({ color: 0x422817, roughness: 0.7 });
+    const brassMat = new THREE.MeshStandardMaterial({ color: 0xe6b843, roughness: 0.35, metalness: 0.75 });
+
+    const createMesh = (
+      geo: THREE.BufferGeometry,
+      mat: THREE.Material,
+      parent: THREE.Object3D,
+      pos: [number, number, number] = [0, 0, 0],
+      scale: [number, number, number] = [1, 1, 1],
+      role?: 'tunic' | 'tunicTrim' | 'pants' | 'leather' | 'boots' | 'metal' | 'accent'
+    ): THREE.Mesh => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(...pos);
+      m.scale.set(...scale);
+      m.castShadow = !lowPowerMode;
+      m.receiveShadow = true;
+      parent.add(m);
+      if (role) {
+        this.outfitMeshes.push({ mesh: m, part: role });
       }
+      return m;
+    };
 
-      // Side water canteen
-      const canteen = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.22, 6), brassMat);
-      canteen.position.set(0.32, -0.05, 0);
-      backpack.add(canteen);
+    // --- 1. HEAD & EXPRESSIVE ANIME FACE ---
+    // Smooth sculpted head
+    const headGeo = new THREE.SphereGeometry(0.19, 14, 12);
+    createMesh(headGeo, skinMat, this.head, [0, 0.08, 0], [0.92, 1.05, 0.98]);
 
-      // Side pouch
-      const sidePouch = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.24, 0.18), leatherMat);
-      sidePouch.position.set(-0.32, -0.05, 0);
-      backpack.add(sidePouch);
+    // Cute stylized anime chin/jaw
+    const jawGeo = new THREE.ConeGeometry(0.12, 0.16, 8);
+    const jaw = createMesh(jawGeo, skinMat, this.head, [0, -0.04, 0.04], [1, 1, 1]);
+    jaw.rotation.x = Math.PI;
 
-      backpackTarget.add(backpack);
+    // Expressive Eyes (Left & Right)
+    for (const sx of [-1, 1]) {
+      // Eye White (Sclera)
+      createMesh(new THREE.BoxGeometry(0.065, 0.065, 0.02), eyeWhiteMat, this.head, [sx * 0.075, 0.08, 0.165]);
+      // Colored Iris
+      createMesh(new THREE.BoxGeometry(0.042, 0.052, 0.022), irisMat, this.head, [sx * 0.075, 0.08, 0.17]);
+      // Pupil & Specular Catchlight
+      createMesh(new THREE.BoxGeometry(0.022, 0.03, 0.024), pupilMat, this.head, [sx * 0.075, 0.08, 0.174]);
+      createMesh(new THREE.SphereGeometry(0.009, 4, 4), eyeWhiteMat, this.head, [sx * 0.068, 0.092, 0.18]);
+      // Cute Anime Blush on Cheeks
+      createMesh(new THREE.BoxGeometry(0.05, 0.024, 0.01), blushMat, this.head, [sx * 0.09, 0.03, 0.162]);
+      // Stylized Eyebrows
+      createMesh(new THREE.BoxGeometry(0.065, 0.014, 0.02), hairMat, this.head, [sx * 0.075, 0.128, 0.165]);
     }
 
-    // 2. Wide-brim Ranger Hat on Head
-    if (this.headBone) {
-      const hat = new THREE.Group();
-      hat.name = 'adventurer-hat';
-      hat.position.set(0, 0.36, 0.02);
+    // Friendly smile
+    createMesh(new THREE.BoxGeometry(0.05, 0.016, 0.015), mouthMat, this.head, [0, -0.025, 0.165]);
 
-      // Crown
-      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.22, 10), hatMat);
-      hat.add(crown);
-
-      // Wide Brim
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.04, 12), hatMat);
-      brim.position.y = -0.08;
-      hat.add(brim);
-
-      // Hatband
-      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.285, 0.285, 0.05, 10), brassMat);
-      band.position.y = -0.04;
-      hat.add(band);
-
-      // Crimson feather
-      const feather = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.28, 4), featherMat);
-      feather.position.set(0.26, 0.12, 0);
-      feather.rotation.z = -0.35;
-      feather.rotation.x = -0.15;
-      hat.add(feather);
-
-      this.headBone.add(hat);
+    // Ears
+    for (const sx of [-1, 1]) {
+      createMesh(new THREE.BoxGeometry(0.028, 0.06, 0.04), skinMat, this.head, [sx * 0.18, 0.07, 0]);
     }
 
-    // 3. Waist Explorer Belt & Tool Satchel
-    if (this.spineBone) {
-      const beltGroup = new THREE.Group();
-      beltGroup.name = 'adventurer-belt';
-      beltGroup.position.set(0, -0.05, 0);
+    // --- 2. HAIR & HEADWEAR (attached to head) ---
+    this.head.add(this.hairGroup);
+    this.head.add(this.hatGroup);
 
-      const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.1, 10), leatherMat);
-      beltGroup.add(belt);
+    // Base Hair Volume
+    const hairCap = createMesh(new THREE.SphereGeometry(0.205, 12, 10), hairMat, this.hairGroup, [0, 0.1, -0.02], [1, 1.05, 1.05]);
+    // Hair Bangs & Front Locks
+    createMesh(new THREE.BoxGeometry(0.24, 0.08, 0.08), hairMat, this.hairGroup, [0, 0.18, 0.14]);
+    createMesh(new THREE.BoxGeometry(0.06, 0.18, 0.06), hairMat, this.hairGroup, [-0.12, 0.08, 0.12]);
+    createMesh(new THREE.BoxGeometry(0.06, 0.18, 0.06), hairMat, this.hairGroup, [0.12, 0.08, 0.12]);
 
-      const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.05), brassMat);
-      buckle.position.set(0, 0, 0.36);
-      beltGroup.add(buckle);
+    // Adventurer Leather Cap & Feather/Pin
+    const hatCrown = createMesh(new THREE.CylinderGeometry(0.18, 0.22, 0.14, 10), leatherMat, this.hatGroup, [0, 0.2, -0.01], [1, 1, 1], 'leather');
+    const hatBrim = createMesh(new THREE.CylinderGeometry(0.32, 0.32, 0.025, 14), leatherMat, this.hatGroup, [0, 0.13, 0.02], [1, 1, 1], 'leather');
+    const hatBand = createMesh(new THREE.CylinderGeometry(0.225, 0.225, 0.035, 10), brassMat, this.hatGroup, [0, 0.15, -0.01], [1, 1, 1], 'metal');
+    const feather = createMesh(new THREE.ConeGeometry(0.04, 0.22, 4), trimMat, this.hatGroup, [0.18, 0.28, -0.01], [1, 1, 0.4], 'accent');
+    feather.rotation.z = -0.35;
 
-      this.spineBone.add(beltGroup);
+    // --- 3. TORSO, TUNIC, VEST & BELT ---
+    // Neck collar
+    createMesh(new THREE.CylinderGeometry(0.075, 0.085, 0.14, 8), skinMat, this.neck, [0, 0.04, 0]);
+
+    // Chest & Upper Tunic
+    const chestMesh = createMesh(new THREE.BoxGeometry(0.44, 0.32, 0.28), tunicMat, this.chest, [0, 0.02, 0], [1, 1, 1], 'tunic');
+    // Leather Vest Overlay
+    const vestMesh = createMesh(new THREE.BoxGeometry(0.46, 0.28, 0.3), leatherMat, this.chest, [0, 0.03, 0], [1, 1, 1], 'leather');
+    // Gold Tunic Trim / Collar
+    createMesh(new THREE.BoxGeometry(0.2, 0.12, 0.32), trimMat, this.chest, [0, 0.12, 0], [1, 1, 1], 'tunicTrim');
+
+    // Spine & Lower Torso
+    createMesh(new THREE.BoxGeometry(0.4, 0.24, 0.26), tunicMat, this.spine, [0, -0.02, 0], [1, 1, 1], 'tunic');
+
+    // Adventurer Belt with Stately Brass Buckle
+    createMesh(new THREE.BoxGeometry(0.42, 0.08, 0.28), leatherMat, this.pelvis, [0, 0.04, 0], [1, 1, 1], 'leather');
+    createMesh(new THREE.BoxGeometry(0.12, 0.1, 0.3), brassMat, this.pelvis, [0, 0.04, 0], [1, 1, 1], 'metal');
+    // Belt Pouch
+    createMesh(new THREE.BoxGeometry(0.12, 0.14, 0.1), leatherMat, this.pelvis, [0.22, 0.01, 0.04], [1, 1, 1], 'leather');
+
+    // Pelvis & Hips (Pants upper)
+    createMesh(new THREE.BoxGeometry(0.38, 0.18, 0.26), pantsMat, this.pelvis, [0, -0.08, 0], [1, 1, 1], 'pants');
+
+    // Adventurer Expedition Backpack (attached to chest)
+    const packBody = createMesh(new THREE.BoxGeometry(0.36, 0.44, 0.22), tunicMat, this.chest, [0, 0.02, -0.24], [1, 1, 1], 'tunic');
+    const packFlap = createMesh(new THREE.BoxGeometry(0.38, 0.16, 0.24), leatherMat, this.chest, [0, 0.16, -0.24], [1, 1, 1], 'leather');
+    const bedroll = createMesh(new THREE.CylinderGeometry(0.07, 0.07, 0.42, 8), leatherMat, this.chest, [0, 0.28, -0.24], [1, 1, 1], 'leather');
+    bedroll.rotation.z = Math.PI / 2;
+
+    // --- 4. ARMS & CLEARLY VISIBLE HANDS ---
+    for (const [arm, side] of [[this.leftUpperArm, 1], [this.rightUpperArm, -1]] as const) {
+      // Upper arm tunic sleeve
+      createMesh(new THREE.CylinderGeometry(0.075, 0.07, 0.26, 8), tunicMat, arm, [0, -0.13, 0], [1, 1, 1], 'tunic');
+      // Sleeve cuff
+      createMesh(new THREE.CylinderGeometry(0.082, 0.082, 0.05, 8), trimMat, arm, [0, -0.25, 0], [1, 1, 1], 'tunicTrim');
+    }
+
+    for (const forearm of [this.leftForearm, this.rightForearm]) {
+      // Forearm with visible skin & leather bracer
+      createMesh(new THREE.CylinderGeometry(0.065, 0.055, 0.24, 8), skinMat, forearm, [0, -0.12, 0]);
+      createMesh(new THREE.CylinderGeometry(0.072, 0.062, 0.14, 8), leatherMat, forearm, [0, -0.12, 0], [1, 1, 1], 'leather');
+    }
+
+    for (const hand of [this.leftHand, this.rightHand]) {
+      // Clear, bright, visible hands with palm and thumb
+      createMesh(new THREE.BoxGeometry(0.075, 0.11, 0.055), skinMat, hand, [0, -0.05, 0]);
+      // Thumb
+      createMesh(new THREE.BoxGeometry(0.03, 0.05, 0.03), skinMat, hand, [0.035, -0.03, 0.02]);
+      // Finger tips
+      createMesh(new THREE.BoxGeometry(0.068, 0.035, 0.045), skinMat, hand, [0, -0.115, 0]);
+    }
+
+    // --- 5. LEGS & STURDY TRAVEL BOOTS ---
+    for (const thigh of [this.leftThigh, this.rightThigh]) {
+      createMesh(new THREE.CylinderGeometry(0.09, 0.08, 0.4, 8), pantsMat, thigh, [0, -0.2, 0], [1, 1, 1], 'pants');
+    }
+
+    for (const calf of [this.leftCalf, this.rightCalf]) {
+      createMesh(new THREE.CylinderGeometry(0.08, 0.075, 0.22, 8), pantsMat, calf, [0, -0.11, 0], [1, 1, 1], 'pants');
+      // High travel boot shaft
+      createMesh(new THREE.CylinderGeometry(0.085, 0.08, 0.24, 8), bootsMat, calf, [0, -0.28, 0], [1, 1, 1], 'boots');
+    }
+
+    for (const foot of [this.leftFoot, this.rightFoot]) {
+      // Boot foot & sturdy tread
+      createMesh(new THREE.BoxGeometry(0.12, 0.09, 0.24), bootsMat, foot, [0, -0.04, 0.04], [1, 1, 1], 'boots');
+      createMesh(new THREE.BoxGeometry(0.13, 0.035, 0.25), leatherMat, foot, [0, -0.08, 0.04], [1, 1, 1], 'leather');
     }
   }
 
-  // Outfit & Color Customization
-  applyOutfit(outfit: CharacterOutfitKind): void {
-    this.currentOutfit = outfit;
-    const palette = OUTFIT_PALETTES[outfit];
-    if (!palette) return;
+  // --- OUTFIT & GENDER CUSTOMIZATION ---
+  setOutfit(kind: CharacterOutfitKind) {
+    this.applyOutfit(kind);
+  }
 
-    for (const mat of this.outfitMaterials) {
-      mat.color.set(palette.tunic);
+  setGender(gender: Gender) {
+    this.applyGender(gender);
+  }
+
+  applyOutfit(kind: CharacterOutfitKind) {
+    this.currentOutfit = kind;
+    const pal = OUTFIT_PALETTES[kind] || OUTFIT_PALETTES.explorer;
+
+    for (const item of this.outfitMeshes) {
+      const mat = item.mesh.material as THREE.MeshStandardMaterial;
+      if (!mat) continue;
+      if (item.part === 'tunic') mat.color.setHex(pal.tunic);
+      else if (item.part === 'tunicTrim') mat.color.setHex(pal.tunicTrim);
+      else if (item.part === 'pants') mat.color.setHex(pal.pants);
+      else if (item.part === 'leather') mat.color.setHex(pal.leather);
+      else if (item.part === 'boots') mat.color.setHex(pal.boots);
+      else if (item.part === 'metal') mat.color.setHex(pal.metal);
+      else if (item.part === 'accent') mat.color.setHex(pal.accent);
     }
   }
 
-  getOutfit(): CharacterOutfitKind {
-    return this.currentOutfit;
+  applyGender(gender: Gender) {
+    this.gender = gender;
+    // Adjust silhouette: Female has slightly narrower shoulders, graceful hair ponytail/bangs
+    if (gender === 'female') {
+      this.chest.scale.set(0.92, 1.0, 0.94);
+      this.pelvis.scale.set(1.05, 1.0, 1.02);
+      this.hatGroup.visible = false;
+      this.hairGroup.scale.set(1.04, 1.06, 1.04);
+    } else {
+      this.chest.scale.set(1.0, 1.0, 1.0);
+      this.pelvis.scale.set(1.0, 1.0, 1.0);
+      this.hatGroup.visible = true;
+      this.hairGroup.scale.set(1.0, 1.0, 1.0);
+    }
   }
 
-  private setAction(name: string, loop: boolean, fade = 0.16): void {
-    const next = this.actions.get(name);
-    if (!next || next === this.activeAction) return;
-    this.activeAction?.fadeOut(fade);
-    next.reset();
-    next.enabled = true;
-    next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
-    next.clampWhenFinished = !loop;
-    next.fadeIn(fade).play();
-    this.activeAction = next;
-  }
-
-  playJump(): void {
-    if (this.currentEmote !== 'none') this.clearEmote();
-    const next = this.actions.get('Jump');
-    if (!next) return;
-    this.activeAction?.fadeOut(0.08);
-    this.oneShot = true;
-    next.reset();
-    next.enabled = true;
-    next.setLoop(THREE.LoopOnce, 1);
-    next.clampWhenFinished = true;
-    next.fadeIn(0.08).play();
-    this.activeAction = next;
-  }
-
-  triggerLanding(): void {
-    this.landingSquash = 0.22;
-  }
-
-  playEmote(kind: EmoteKind): void {
-    if (this.swimming) return;
-    this.currentEmote = kind;
+  playEmote(emote: EmoteKind) {
+    this.currentEmote = emote;
     this.emoteTime = 0;
   }
 
-  clearEmote(): void {
-    this.currentEmote = 'none';
-    this.emoteTime = 0;
+  playJump() {
+    this.landingSquash = 0.35;
   }
 
-  getEmote(): EmoteKind {
-    return this.currentEmote;
-  }
-
-  // Two-bone direction solver relative to the avatar root
-  private aimLimbSegment(bone: THREE.Object3D | null, child: THREE.Object3D | null, x: number, y: number, z: number): void {
-    if (!bone || !child || !bone.parent || !this.avatar) return;
-    bone.getWorldPosition(this.limbStart);
-    child.getWorldPosition(this.limbEnd);
-    this.limbDirection.copy(this.limbEnd).sub(this.limbStart);
-    if (this.limbDirection.lengthSq() < 1e-6) return;
-    this.limbDirection.normalize();
-
-    this.avatar.getWorldQuaternion(this.avatarWorldQuaternion);
-    this.limbTarget.set(x, y, z).normalize().applyQuaternion(this.avatarWorldQuaternion);
-    this.limbDeltaQuaternion.setFromUnitVectors(this.limbDirection, this.limbTarget);
-    bone.getWorldQuaternion(this.limbWorldQuaternion);
-    bone.parent.getWorldQuaternion(this.limbParentQuaternion).invert();
-
-    this.limbWorldQuaternion.premultiply(this.limbDeltaQuaternion);
-    bone.quaternion.copy(this.limbParentQuaternion).multiply(this.limbWorldQuaternion);
+  triggerLanding(intensity = 1.0) {
+    this.landingSquash = Math.min(1.0, 0.35 * Math.abs(intensity));
   }
 
   animate(
@@ -348,240 +473,186 @@ export class PlayerCharacter {
     sprinting: boolean,
     swimming: boolean,
     dt: number,
-    speed = 0,
-    turnRate = 0
-  ): void {
-    this.mixer?.update(dt);
+    speed: number,
+    turnRate: number
+  ) {
+    this.update(dt, t, moving, sprinting, swimming, speed, turnRate);
+  }
 
-    if (moving && this.currentEmote !== 'none') {
-      this.clearEmote();
-    }
-
-    if (swimming && this.oneShot) {
-      this.activeAction?.fadeOut(0.1);
-      this.activeAction = null;
-      this.oneShot = false;
-    }
-
+  // --- NATURAL CONTRALATERAL HUMAN WALKING & LOCOMOTION ENGINE ---
+  update(
+    dt: number,
+    t: number,
+    moving: boolean,
+    sprinting: boolean,
+    swimming: boolean,
+    speed: number,
+    turnRate: number
+  ) {
     if (this.landingSquash > 0) {
-      this.landingSquash = Math.max(0, this.landingSquash - dt * 2.2);
-    }
-
-    const idle = this.actions.get('Idle');
-    const run = this.actions.get('Run');
-
-    for (const action of [idle, run]) {
-      if (action && !action.isRunning()) {
-        action.reset();
-        action.enabled = true;
-        action.setLoop(THREE.LoopRepeat, Infinity);
-        action.play();
-      }
+      this.landingSquash = Math.max(0, this.landingSquash - dt * 4.5);
     }
 
     const isEmoting = this.currentEmote !== 'none';
-
-    // Blend between Idle and Run
-    if (!this.oneShot && idle && run) {
-      if (isEmoting) {
-        // Complete mute of walk/idle clips so procedural emotes have 100% clean authority
-        idle.setEffectiveWeight(0);
-        run.setEffectiveWeight(0);
-      } else {
-        const targetWeight = swimming || !moving ? 0 : sprinting ? 1.0 : 0.42;
-        this.locomotionBlend = lerp(this.locomotionBlend, targetWeight, Math.min(1, dt * 6));
-        idle.setEffectiveWeight(1 - this.locomotionBlend);
-        run.setEffectiveWeight(this.locomotionBlend);
-
-        idle.setEffectiveTimeScale(1.0);
-        const walkScale = clamp(speed / 4.2, 0.5, 1.1);
-        const runScale = clamp(speed / 7.2, 0.8, 1.35);
-        run.setEffectiveTimeScale(sprinting ? runScale : walkScale);
-      }
-    } else {
-      idle?.setEffectiveWeight(0);
-      run?.setEffectiveWeight(0);
-    }
-
-    this.swimBlend = lerp(this.swimBlend, swimming ? 1 : 0, Math.min(1, dt * 5));
-
-    // --- SWIMMING ANIMATION ---
-    if (this.swimBlend > 0.05) {
-      const strokePhase = t * (sprinting ? 6.2 : 4.2);
-      const stroke = moving ? Math.sin(strokePhase) * 0.72 : Math.sin(t * 1.5) * 0.12;
-
-      if (this.leftUpperArm) {
-        const base = this.leftUpperArm.rotation.clone();
-        this.leftUpperArm.rotation.set(
-          lerp(base.x, -1.25 - stroke, this.swimBlend),
-          lerp(base.y, 0.15, this.swimBlend),
-          lerp(base.z, -Math.PI * 0.95, this.swimBlend)
-        );
-      }
-      if (this.rightUpperArm) {
-        const base = this.rightUpperArm.rotation.clone();
-        this.rightUpperArm.rotation.set(
-          lerp(base.x, 2.8 + stroke, this.swimBlend),
-          lerp(base.y, 1.15, this.swimBlend),
-          lerp(base.z, Math.PI / 2, this.swimBlend)
-        );
-      }
-
-      const elbow = moving ? 0.28 + 0.3 * Math.max(0, Math.cos(strokePhase)) : 0.18;
-      if (this.leftForeArm) this.leftForeArm.rotation.x += elbow * this.swimBlend;
-      if (this.rightForeArm) this.rightForeArm.rotation.x += elbow * this.swimBlend;
-
-      const kick = (moving ? (sprinting ? 0.45 : 0.3) : 0.08) * this.swimBlend;
-      if (this.leftUpperLeg) this.leftUpperLeg.rotation.x += Math.sin(strokePhase * 1.5) * kick;
-      if (this.rightUpperLeg) this.rightUpperLeg.rotation.x += Math.sin(strokePhase * 1.5 + Math.PI) * kick;
-    }
-
-    // --- PROCEDURAL LEAN & SQUASH ---
-    if (this.avatar) {
-      const squashY = 1.0 - this.landingSquash * 0.45;
-      const squashXZ = 1.0 + this.landingSquash * 0.22;
-      this.avatar.scale.set(0.45 * squashXZ, 0.45 * squashY, 0.45 * squashXZ);
-
-      const forwardLean = swimming ? 1.35 : moving ? (sprinting ? 0.12 : 0.04) : 0;
-      const bankLean = moving ? clamp(-turnRate * 0.25, -0.15, 0.15) : 0;
-      this.avatar.rotation.x = lerp(this.avatar.rotation.x, forwardLean, Math.min(1, dt * 6));
-      this.avatar.rotation.z = lerp(this.avatar.rotation.z, bankLean, Math.min(1, dt * 8));
-
-      if (swimming) {
-        this.avatar.position.y = Math.sin(t * 2.8) * 0.024;
-      } else if (moving) {
-        const stepRate = sprinting ? 9.2 : 5.8;
-        this.avatar.position.y = Math.abs(Math.sin(t * stepRate)) * (sprinting ? 0.042 : 0.022);
-      } else if (this.currentEmote === 'none') {
-        this.avatar.position.y = Math.sin(t * 1.8) * 0.008;
-      }
-    }
-
-    // Natural Arm Swing when Walking / Running
-    if (!swimming && !this.oneShot && this.avatar && this.currentEmote === 'none') {
-      const gaitPhase = t * (sprinting ? 9.2 : 5.8);
-      const armSwing = moving ? Math.sin(gaitPhase) * (sprinting ? 0.38 : 0.22) : 0;
-
-      this.avatar.updateMatrixWorld(true);
-      this.aimLimbSegment(this.leftUpperArm, this.leftForeArm, 0.1, -0.94, armSwing);
-      this.aimLimbSegment(this.rightUpperArm, this.rightForeArm, -0.1, -0.94, -armSwing);
-      this.aimLimbSegment(this.leftForeArm, this.leftHand, 0.04, -0.96, 0.14 + armSwing * 0.55);
-      this.aimLimbSegment(this.rightForeArm, this.rightHand, -0.04, -0.96, 0.14 - armSwing * 0.55);
-    }
-
-    // --- REFINED EXPRESSIVE PROCEDURAL EMOTES ---
-    if (this.currentEmote !== 'none' && !swimming && this.avatar) {
+    if (isEmoting) {
       this.emoteTime += dt;
-      this.avatar.updateMatrixWorld(true);
-
-      if (this.currentEmote === 'wave') {
-        // Natural, Highly Visible Friendly Wave Beside the Head:
-        // Right Arm is raised outward and upward next to the temple
-        if (this.rightUpperArm) {
-          this.rightUpperArm.rotation.set(0.35, -0.2, -1.85);
-        }
-        if (this.rightForeArm) {
-          this.rightForeArm.rotation.set(0.15, 0, 0.85);
-        }
-        // Hand waves side to side enthusiastically near forehead/temple
-        if (this.rightHand) {
-          this.rightHand.rotation.z = Math.sin(this.emoteTime * 8.0) * 0.45;
-        }
-
-        // Head gently tilts toward the wave
-        if (this.headBone) {
-          this.headBone.rotation.z = 0.14;
-          this.headBone.rotation.y = -0.12;
-        }
-
-        // Left arm rests naturally at side
-        if (this.leftUpperArm) this.leftUpperArm.rotation.set(0.1, 0, 0.2);
-        if (this.leftForeArm) this.leftForeArm.rotation.set(0.2, 0, 0);
-
-      } else if (this.currentEmote === 'cheer') {
-        // Both arms raised high in triumphant victory with joyful hops
-        const hop = Math.max(0, Math.sin(this.emoteTime * 7.0)) * 0.09;
-        this.avatar.position.y = hop;
-        const cheerSway = Math.sin(this.emoteTime * 5.0) * 0.18;
-
-        if (this.leftUpperArm) this.leftUpperArm.rotation.set(0.3, 0, 2.5);
-        if (this.rightUpperArm) this.rightUpperArm.rotation.set(0.3, 0, -2.5);
-        if (this.leftForeArm) this.leftForeArm.rotation.set(0, 0, 0.4 + cheerSway);
-        if (this.rightForeArm) this.rightForeArm.rotation.set(0, 0, -0.4 - cheerSway);
-
-        if (this.headBone) this.headBone.rotation.x = -0.24;
-
-      } else if (this.currentEmote === 'sit') {
-        // NATURAL PEACEFUL SITTING POSE:
-        // Lower avatar body to ground level
-        this.avatar.position.y = -0.44;
-
-        // Thighs bend naturally FORWARD and slightly outward (knees pointing forward/up):
-        // Never backward into waist!
-        if (this.leftUpperLeg) {
-          this.leftUpperLeg.rotation.set(-1.38, 0.35, 0.22);
-        }
-        if (this.rightUpperLeg) {
-          this.rightUpperLeg.rotation.set(-1.38, -0.35, -0.22);
-        }
-
-        // Shins fold inward in comfortable cross-legged posture
-        if (this.leftLeg) {
-          this.leftLeg.rotation.set(1.48, -0.22, 0.1);
-        }
-        if (this.rightLeg) {
-          this.rightLeg.rotation.set(1.48, 0.22, -0.1);
-        }
-        if (this.leftFoot) this.leftFoot.rotation.set(-0.25, 0, 0);
-        if (this.rightFoot) this.rightFoot.rotation.set(-0.25, 0, 0);
-
-        // Arms rest naturally on knees
-        if (this.leftUpperArm) this.leftUpperArm.rotation.set(0.42, 0.15, 0.35);
-        if (this.rightUpperArm) this.rightUpperArm.rotation.set(0.42, -0.15, -0.35);
-        if (this.leftForeArm) this.leftForeArm.rotation.set(0.72, 0, 0.15);
-        if (this.rightForeArm) this.rightForeArm.rotation.set(0.72, 0, -0.15);
-
-        // Torso posture upright with calm meditative breathing
-        if (this.spineBone) {
-          this.spineBone.rotation.x = 0.08 + Math.sin(this.emoteTime * 1.8) * 0.02;
-        }
-
-      } else if (this.currentEmote === 'dance') {
-        // Groovy celebratory dance with rhythmic sway and arm pumps
-        const dancePhase = this.emoteTime * 5.5;
-        this.avatar.position.y = Math.abs(Math.sin(dancePhase)) * 0.06;
-        this.avatar.rotation.y = Math.sin(dancePhase * 0.5) * 0.35;
-        this.avatar.rotation.z = Math.cos(dancePhase * 0.5) * 0.08;
-
-        const leftPump = Math.sin(dancePhase) * 0.5;
-        const rightPump = -Math.sin(dancePhase) * 0.5;
-
-        if (this.leftUpperArm) this.leftUpperArm.rotation.set(0.6 + leftPump, 0, 1.2);
-        if (this.rightUpperArm) this.rightUpperArm.rotation.set(0.6 + rightPump, 0, -1.2);
-        if (this.leftForeArm) this.leftForeArm.rotation.set(0.8, 0, 0);
-        if (this.rightForeArm) this.rightForeArm.rotation.set(0.8, 0, 0);
-
-      } else if (this.currentEmote === 'inspect') {
-        // Thoughtful inspect/crouch posture to examine ground tracks and flora
-        this.avatar.position.y = -0.26;
-        this.avatar.rotation.x = 0.28;
-
-        // Crouch legs
-        if (this.leftUpperLeg) this.leftUpperLeg.rotation.set(-0.95, 0.15, 0.1);
-        if (this.rightUpperLeg) this.rightUpperLeg.rotation.set(-1.15, -0.15, -0.1);
-        if (this.leftLeg) this.leftLeg.rotation.set(1.15, 0, 0);
-        if (this.rightLeg) this.rightLeg.rotation.set(1.35, 0, 0);
-
-        // Right hand reaches down toward the ground
-        if (this.rightUpperArm) this.rightUpperArm.rotation.set(0.9, -0.2, -0.3);
-        if (this.rightForeArm) this.rightForeArm.rotation.set(0.5, 0, 0);
-
-        // Left arm rests on left thigh
-        if (this.leftUpperArm) this.leftUpperArm.rotation.set(0.7, 0.2, 0.3);
-        if (this.leftForeArm) this.leftForeArm.rotation.set(0.6, 0, 0);
-
-        if (this.headBone) this.headBone.rotation.x = 0.45;
+      if (this.emoteTime > 4.5) {
+        this.currentEmote = 'none';
       }
     }
+
+    // Advance locomotion cycle with actual displacement speed
+    const stepFreq = sprinting ? 11.5 : Math.max(5.5, speed * 1.4);
+    if (moving && !swimming && !isEmoting) {
+      this.walkPhase += dt * stepFreq;
+      this.locomotionBlend = lerp(this.locomotionBlend, 1.0, Math.min(1, dt * 10));
+    } else {
+      this.locomotionBlend = lerp(this.locomotionBlend, 0.0, Math.min(1, dt * 8));
+    }
+
+    const blend = this.locomotionBlend;
+    const phase = this.walkPhase;
+
+    // --- SWIMMING POSE & STROKES ---
+    if (swimming) {
+      this.rigRoot.rotation.x = lerp(this.rigRoot.rotation.x, 1.35, Math.min(1, dt * 8));
+      this.rigRoot.position.y = -0.25 + Math.sin(t * 3.0) * 0.03;
+
+      // Breaststroke / freestyle alternating arm strokes
+      const swimPhase = t * 4.0;
+      this.leftUpperArm.rotation.x = Math.sin(swimPhase) * 0.85;
+      this.rightUpperArm.rotation.x = Math.sin(swimPhase + Math.PI) * 0.85;
+      this.leftForearm.rotation.x = 0.5 + Math.max(0, Math.sin(swimPhase)) * 0.6;
+      this.rightForearm.rotation.x = 0.5 + Math.max(0, Math.sin(swimPhase + Math.PI)) * 0.6;
+
+      // Flutter kick legs
+      this.leftThigh.rotation.x = Math.sin(swimPhase * 1.5) * 0.45;
+      this.rightThigh.rotation.x = Math.sin(swimPhase * 1.5 + Math.PI) * 0.45;
+      this.leftCalf.rotation.x = 0.2 + Math.max(0, -Math.sin(swimPhase * 1.5)) * 0.4;
+      this.rightCalf.rotation.x = 0.2 + Math.max(0, Math.sin(swimPhase * 1.5)) * 0.4;
+      return;
+    }
+
+    // Reset swim rotation when on land
+    this.rigRoot.rotation.x = lerp(this.rigRoot.rotation.x, 0, Math.min(1, dt * 10));
+
+    // --- EMOTES ---
+    if (isEmoting) {
+      this.resetLimbsToNeutral();
+      if (this.currentEmote === 'wave') {
+        // Right hand waves high above shoulder!
+        this.rightUpperArm.rotation.set(-2.4, 0, -0.6);
+        this.rightForearm.rotation.set(-0.5, 0, Math.sin(this.emoteTime * 7.0) * 0.5);
+        this.head.rotation.y = -0.15;
+      } else if (this.currentEmote === 'cheer') {
+        // Both arms raised high celebrating!
+        const pump = Math.sin(this.emoteTime * 6.5) * 0.35;
+        this.leftUpperArm.rotation.set(-2.5 + pump, 0, 0.4);
+        this.rightUpperArm.rotation.set(-2.5 + pump, 0, -0.4);
+        this.pelvis.position.y = 0.92 + Math.max(0, Math.sin(this.emoteTime * 6.5)) * 0.12;
+      } else if (this.currentEmote === 'dance') {
+        this.pelvis.position.y = 0.92 + Math.abs(Math.sin(this.emoteTime * 5.0)) * 0.08;
+        this.pelvis.rotation.y = Math.sin(this.emoteTime * 3.5) * 0.35;
+        this.leftUpperArm.rotation.x = Math.sin(this.emoteTime * 5.0) * 0.5;
+        this.rightUpperArm.rotation.x = -Math.sin(this.emoteTime * 5.0) * 0.5;
+      } else if (this.currentEmote === 'sit') {
+        this.pelvis.position.y = 0.48;
+        this.leftThigh.rotation.x = -1.45;
+        this.rightThigh.rotation.x = -1.45;
+        this.leftCalf.rotation.x = 1.45;
+        this.rightCalf.rotation.x = 1.45;
+        this.leftUpperArm.rotation.x = 0.2;
+        this.rightUpperArm.rotation.x = 0.2;
+      } else if (this.currentEmote === 'inspect') {
+        this.spine.rotation.x = 0.45;
+        this.head.rotation.x = 0.35;
+        this.rightUpperArm.rotation.x = -0.6;
+        this.rightForearm.rotation.x = 0.8;
+      }
+      return;
+    }
+
+    // --- NATURAL CONTRALATERAL HUMAN WALKING CYCLE ---
+    const strideLength = sprinting ? 0.95 : 0.65;
+    const armSwingAmp = sprinting ? 0.92 : 0.62;
+
+    // 1. LEGS: STEPPING ONE AFTER THE OTHER
+    // Left leg swings forward when right leg swings back
+    const leftLegSwing = Math.sin(phase) * strideLength;
+    const rightLegSwing = -Math.sin(phase) * strideLength;
+
+    // Knee flexion: bends backward during swing phase
+    const leftKneeBend = Math.max(0, -Math.sin(phase)) * (sprinting ? 1.25 : 0.85);
+    const rightKneeBend = Math.max(0, Math.sin(phase)) * (sprinting ? 1.25 : 0.85);
+
+    this.leftThigh.rotation.x = lerp(0, leftLegSwing, blend);
+    this.rightThigh.rotation.x = lerp(0, rightLegSwing, blend);
+
+    this.leftCalf.rotation.x = lerp(0, leftKneeBend, blend);
+    this.rightCalf.rotation.x = lerp(0, rightKneeBend, blend);
+
+    // Foot ankle flexion for smooth toe-off and heel strike
+    this.leftFoot.rotation.x = lerp(0, -leftLegSwing * 0.35, blend);
+    this.rightFoot.rotation.x = lerp(0, -rightLegSwing * 0.35, blend);
+
+    // 2. UPPER LIMBS (ARMS): CONTRALATERAL HUMAN OPPOSITION
+    // Right arm swings FORWARD when Left leg swings forward!
+    // Left arm swings FORWARD when Right leg swings forward!
+    const rightArmSwing = Math.sin(phase) * armSwingAmp;
+    const leftArmSwing = -Math.sin(phase) * armSwingAmp;
+
+    // Natural arm relaxation at side (outward flare 0.1 rad, slight elbow curve)
+    const baseArmFlare = 0.12;
+    this.leftUpperArm.rotation.z = baseArmFlare;
+    this.rightUpperArm.rotation.z = -baseArmFlare;
+
+    this.leftUpperArm.rotation.x = lerp(0.05 + Math.sin(t * 1.8) * 0.02, leftArmSwing, blend);
+    this.rightUpperArm.rotation.x = lerp(0.05 + Math.sin(t * 1.8) * 0.02, rightArmSwing, blend);
+
+    // Elbows bend forward as arm drives forward
+    const leftElbowBend = 0.18 + Math.max(0, -leftArmSwing) * (sprinting ? 0.85 : 0.45);
+    const rightElbowBend = 0.18 + Math.max(0, -rightArmSwing) * (sprinting ? 0.85 : 0.45);
+
+    this.leftForearm.rotation.x = lerp(0.18, leftElbowBend, blend);
+    this.rightForearm.rotation.x = lerp(0.18, rightElbowBend, blend);
+
+    // 3. PELVIS BOUNCE, SWAY & HIP ROLL
+    // Double-dip vertical bounce per cycle (lowest at foot plant, highest at passing)
+    const verticalBounce = -Math.abs(Math.sin(phase)) * (sprinting ? 0.065 : 0.038);
+    const hipRoll = Math.sin(phase) * (sprinting ? 0.055 : 0.035);
+
+    this.pelvis.position.y = 0.92 + (moving ? verticalBounce : Math.sin(t * 2.0) * 0.012);
+    this.pelvis.rotation.z = lerp(0, hipRoll, blend);
+    this.pelvis.rotation.y = lerp(0, Math.sin(phase) * 0.08, blend);
+
+    // 4. TORSO & SPINE COUNTER-TWIST (Shoulders counter-rotate against hips)
+    this.spine.rotation.y = lerp(0, -Math.sin(phase) * 0.07, blend);
+    // Torso lean: athletic forward pitch when moving/sprinting
+    const forwardLean = moving ? (sprinting ? 0.22 : 0.08) : 0;
+    const bankLean = moving ? clamp(-turnRate * 0.25, -0.16, 0.16) : 0;
+    this.chest.rotation.x = lerp(0, forwardLean, blend);
+    this.chest.rotation.z = lerp(0, bankLean, blend);
+
+    // 5. HEAD STABILIZATION: Head counter-stabilizes to stay level
+    this.head.rotation.y = lerp(0, Math.sin(phase) * 0.03, blend);
+    this.head.rotation.z = lerp(0, -bankLean * 0.5, blend);
+  }
+
+  private resetLimbsToNeutral() {
+    this.leftUpperArm.rotation.set(0, 0, 0.1);
+    this.rightUpperArm.rotation.set(0, 0, -0.1);
+    this.leftForearm.rotation.set(0.15, 0, 0);
+    this.rightForearm.rotation.set(0.15, 0, 0);
+    this.leftThigh.rotation.set(0, 0, 0);
+    this.rightThigh.rotation.set(0, 0, 0);
+    this.leftCalf.rotation.set(0, 0, 0);
+    this.rightCalf.rotation.set(0, 0, 0);
+    this.leftFoot.rotation.set(0, 0, 0);
+    this.rightFoot.rotation.set(0, 0, 0);
+    this.pelvis.position.set(0, 0.92, 0);
+    this.pelvis.rotation.set(0, 0, 0);
+    this.spine.rotation.set(0, 0, 0);
+    this.chest.rotation.set(0, 0, 0);
+    this.head.rotation.set(0, 0, 0);
   }
 }

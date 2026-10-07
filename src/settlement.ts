@@ -105,17 +105,39 @@ export function buildHome(level: HomeLevel, isDoorOpen: boolean): THREE.Group {
   pillow.position.set(0, 0.3, -1.1);
   bed.add(pillow);
 
+  // Interior Dining Table & Chairs
   const table = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.8, 1.2), timberMat);
   table.position.set(2.4, 0.5, -1.1);
   table.name = 'table';
-  table.userData.interactable = { action: 'inspect', label: 'Dining Table' };
+  table.userData.interactable = { action: 'inspect', label: 'Cozy Dining Table & Chairs' };
   h.add(table);
 
-  // Outdoor Carpenter Workbench
+  // Chairs around dining table
+  for (const cz of [-1.8, -0.4]) {
+    const chair = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.45, 0.55), timberMat);
+    chair.position.set(2.4, 0.25, cz);
+    h.add(chair);
+  }
+
+  // Workshop Crafting Shed attached to cabin side (with solid wooden deck platform)
+  const workshopDeck = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.22, 3.2), floorMat);
+  workshopDeck.position.set(halfW + 1.8, 0.11, 0.5);
+  h.add(workshopDeck);
+
+  const workshopAwning = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.14, 3.4), roofMat);
+  workshopAwning.position.set(halfW + 1.8, 2.7, 0.5);
+  workshopAwning.rotation.z = -0.06;
+  h.add(workshopAwning);
+
+  const workshopPost = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.6, 6), timberMat);
+  workshopPost.position.set(halfW + 3.4, 1.3, 1.9);
+  h.add(workshopPost);
+
+  // Carpenter Workbench on Workshop Deck
   const bench = new THREE.Group();
   bench.name = 'carpenter-workbench';
-  bench.position.set(5.8, 0, 2.2);
-  bench.userData.interactable = { action: 'homeWorkshop', label: 'Carpenter Workbench (Upgrade Home)' };
+  bench.position.set(halfW + 1.8, 0.22, 0.5);
+  bench.userData.interactable = { action: 'homeWorkshop', label: 'Carpenter Workbench (Upgrade Home & Crafting)' };
   const benchTop = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.16, 0.9), timberMat);
   benchTop.position.y = 0.85;
   bench.add(benchTop);
@@ -311,6 +333,31 @@ export function buildVillage(g: THREE.Group): void {
   wellRoof.position.y = 2.4;
   well.add(wellRoof);
   villageGroup.add(well);
+
+  // Riverwood Trading Post & Elder Oladele
+  const trader = new THREE.Group();
+  trader.name = 'elder-oladele';
+  trader.position.set(4.5, 0, -1.5);
+  trader.userData.interactable = { action: 'talkElder', label: 'Elder Oladele (Riverwood Trading Post & Life Jobs)' };
+  const stallTable = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.85, 1.2), timberMat);
+  stallTable.position.y = 0.425;
+  trader.add(stallTable);
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.1, 1.6), new THREE.MeshStandardMaterial({ color: 0x2d6b4f }));
+  canopy.position.y = 2.2;
+  trader.add(canopy);
+  for (const cx of [-1.1, 1.1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2, 5), timberMat);
+    post.position.set(cx, 1.1, 0.6);
+    trader.add(post);
+  }
+  // Goods on display (crate with apples, rolled parchment)
+  const crate = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.5), timberMat);
+  crate.position.set(-0.6, 1.05, 0);
+  trader.add(crate);
+  const lantern = new THREE.Mesh(new THREE.DodecahedronGeometry(0.18), lanternMat);
+  lantern.position.set(0.7, 1.05, 0);
+  trader.add(lantern);
+  villageGroup.add(trader);
 
   // Village Hearth / Campfire with log seats
   const hearth = new THREE.Group();

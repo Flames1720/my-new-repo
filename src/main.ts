@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import './style.css';
-import type { Mode, EmoteKind, HomeLevel, ResourceKind, ResourceDef } from './types';
+import type { Mode, EmoteKind, HomeLevel, ResourceKind, ResourceDef, PlayerProfile, Species } from './types';
 import {
   SEED,
   SIZE,
@@ -11,6 +11,7 @@ import {
   ROAD_WIDTH,
   HOME_X,
   HOME_Z,
+  HOME_BASE_HEIGHT,
   VILLAGE_X,
   VILLAGE_Z,
   terrainHeightAt,
@@ -31,7 +32,7 @@ import {
 import { PlayerCharacter } from './character';
 import { WeatherSystem } from './weather';
 import { buildHome, buildVillage, buildBridge, HOME_UPGRADE_COSTS } from './settlement';
-import { WildlifeSystem, isSharedAnimalAsset, speciesColor, SPECIES_NAME } from './fauna';
+import { WildlifeSystem, isSharedAnimalAsset, speciesColor, SPECIES_NAME, SPECIES_ICON } from './fauna';
 import { MinimapSystem } from './minimap';
 import { settings } from './settings';
 
@@ -535,15 +536,16 @@ class Chunks {
       for (let ix = 0; ix <= waterGrid; ix++) {
         const wx = cx * SIZE + ix * step;
         const wz = cz * SIZE + iz * step;
-        const depth = waterDepthAt(wx, wz);
+        if (nearHome(wx, wz)) continue;
 
+        const depth = waterDepthAt(wx, wz);
         let isWetOrShore = depth > 0.005;
         if (!isWetOrShore) {
           if (
-            waterDepthAt(wx + step, wz) > 0.01 ||
-            waterDepthAt(wx - step, wz) > 0.01 ||
-            waterDepthAt(wx, wz + step) > 0.01 ||
-            waterDepthAt(wx, wz - step) > 0.01
+            (!nearHome(wx + step, wz) && waterDepthAt(wx + step, wz) > 0.01) ||
+            (!nearHome(wx - step, wz) && waterDepthAt(wx - step, wz) > 0.01) ||
+            (!nearHome(wx, wz + step) && waterDepthAt(wx, wz + step) > 0.01) ||
+            (!nearHome(wx, wz - step) && waterDepthAt(wx, wz - step) > 0.01)
           ) {
             isWetOrShore = true;
           }
@@ -582,6 +584,8 @@ class Chunks {
 
         const wxMid = cx * SIZE + (ix + 0.5) * step;
         const wzMid = cz * SIZE + (iz + 0.5) * step;
+        if (nearHome(wxMid, wzMid)) continue;
+
         const hasWaterInCell =
           waterDepthAt(wxMid, wzMid) > 0.005 || (i00 >= 0 && i10 >= 0 && i11 >= 0 && i01 >= 0);
 
@@ -605,8 +609,10 @@ class Chunks {
       g.userData.water = true;
     }
 
-    // Trees and Rocks
+    // Trees and Rocks (Rule: Tree will never spawn into a rock)
     const removed = this.changes[key] || [];
+    const placedProps: { x: number; z: number }[] = [];
+
     if (lod < 2) {
       const maxTrees = lod === 0 ? 10 : 5;
       for (let i = 0; i < maxTrees; i++) {
@@ -614,6 +620,10 @@ class Chunks {
         const tx = cx * SIZE + 2 + hash(cx + i, cz - i) * (SIZE - 4);
         const tz = cz * SIZE + 2 + hash(cx - i, cz + i) * (SIZE - 4);
         if (roadAt(tx, tz) || waterAt(tx, tz) || nearHome(tx, tz) || nearVillage(tx, tz)) continue;
+
+        // Collision rule: Tree will not spawn into any existing prop/rock
+        if (placedProps.some(p => Math.hypot(p.x - tx, p.z - tz) < 3.2)) continue;
+        placedProps.push({ x: tx, z: tz });
 
         const kind = pickTreeKind(cx, cz, i, tx, tz);
         const def = RESOURCE_DEFS[kind];
@@ -647,6 +657,10 @@ class Chunks {
         const tx = cx * SIZE + 2 + hash(cx - i * 3, cz + i * 5) * (SIZE - 4);
         const tz = cz * SIZE + 2 + hash(cx + i * 5, cz - i * 3) * (SIZE - 4);
         if (roadAt(tx, tz) || waterAt(tx, tz) || nearHome(tx, tz) || nearVillage(tx, tz)) continue;
+
+        // Collision rule: Rock will not spawn into any tree
+        if (placedProps.some(p => Math.hypot(p.x - tx, p.z - tz) < 3.2)) continue;
+        placedProps.push({ x: tx, z: tz });
 
         const mtn = mountainMaskAt(tx, tz);
         if (mtn < 0.15 && hash(cx * 3 + i, cz * 5 - i) > 0.25) continue;
@@ -740,8 +754,8 @@ const chunks = new Chunks();
 
 let save: Save = {
   version: 2,
-  player: { x: 0, y: 0, z: 5, ry: 0, mode: 'tpp' },
-  camera: { yaw: 0, pitch: -0.28, distance: 7 },
+  player: { x: HOME_X, y: HOME_BASE_HEIGHT + 0.1, z: HOME_Z + 7.5, ry: Math.PI, mode: 'tpp' },
+  camera: { yaw: 0, pitch: -0.15, distance: 6 },
   changes: {},
   inventory: {},
   homeLevel: 1,
@@ -755,10 +769,18 @@ try {
 chunks.changes = save.changes || {};
 chunks.homeLevel = save.homeLevel || 1;
 player.root.position.set(save.player.x, save.player.y, save.player.z);
-if (!Number.isFinite(player.root.position.y) || player.root.position.y < terrainHeightAt(player.root.position.x, player.root.position.z)) {
-  player.root.position.y = terrainHeightAt(player.root.position.x, player.root.position.z);
+
+// Safety validation: If saved position was inside ocean/water or invalid, spawn on dry homestead porch!
+if (
+  waterAt(player.root.position.x, player.root.position.z) ||
+  !Number.isFinite(player.root.position.y) ||
+  player.root.position.y < terrainHeightAt(player.root.position.x, player.root.position.z)
+) {
+  player.root.position.set(HOME_X, HOME_BASE_HEIGHT + 0.1, HOME_Z + 7.5);
+  player.root.rotation.y = Math.PI;
+} else {
+  player.root.rotation.y = save.player.ry;
 }
-player.root.rotation.y = save.player.ry;
 
 let mode: Mode = save.player.mode || 'tpp';
 let camYaw = save.camera.yaw, camPitch = save.camera.pitch, camDistance = save.camera.distance;
@@ -966,6 +988,31 @@ const graphicsSelect = document.querySelector('#graphicsSelect') as HTMLSelectEl
 const outfitSelect = document.querySelector('#outfitSelect') as HTMLSelectElement | null;
 const lodSelect = document.querySelector('#lodSelect') as HTMLSelectElement | null;
 
+const playerGenderSelect = document.querySelector('#playerGenderSelect') as HTMLSelectElement | null;
+const playerRoleSelect = document.querySelector('#playerRoleSelect') as HTMLSelectElement | null;
+const playerNameInput = document.querySelector('#playerNameInput') as HTMLInputElement | null;
+const profileBadge = document.querySelector('#profileBadge') as HTMLDivElement | null;
+
+let playerProfile: PlayerProfile = {
+  name: 'Explorer',
+  gender: 'male',
+  role: 'explorer',
+  coins: 50,
+  level: 1,
+  skillSurvival: 1,
+  skillHusbandry: 1,
+  skillBuilding: 1,
+  skillCartography: 1,
+};
+
+function updateProfileUI() {
+  if (profileBadge) {
+    const icon = playerProfile.gender === 'female' ? '👩' : '🧑';
+    const roleTitle = playerProfile.role.charAt(0).toUpperCase() + playerProfile.role.slice(1);
+    profileBadge.textContent = `${icon} ${playerProfile.name} · ${roleTitle} Lv.${playerProfile.level}`;
+  }
+}
+
 function openSettings(open: boolean) {
   settingsOverlay.classList.toggle('show', open);
   if (open) {
@@ -982,10 +1029,92 @@ function openSettings(open: boolean) {
     if (lodSelect && settings.current.lodDetail) {
       lodSelect.value = settings.current.lodDetail;
     }
+    if (playerGenderSelect && settings.current.characterGender) {
+      playerGenderSelect.value = settings.current.characterGender;
+    }
+    if (playerNameInput) playerNameInput.value = playerProfile.name;
+    if (playerRoleSelect) playerRoleSelect.value = playerProfile.role;
   }
 }
 bindAction(settingsBtn, () => openSettings(true));
 bindAction(settingsClose, () => openSettings(false));
+
+if (playerGenderSelect) {
+  playerGenderSelect.addEventListener('change', () => {
+    const g = playerGenderSelect.value as 'male' | 'female';
+    playerProfile.gender = g;
+    settings.update({ characterGender: g });
+    player.setGender(g);
+    updateProfileUI();
+    say(`Character Gender: ${g === 'male' ? '♂ Male' : '♀ Female'}`);
+  });
+}
+
+if (playerNameInput) {
+  playerNameInput.addEventListener('input', () => {
+    playerProfile.name = playerNameInput.value.trim() || 'Explorer';
+    updateProfileUI();
+  });
+}
+
+if (playerRoleSelect) {
+  playerRoleSelect.addEventListener('change', () => {
+    playerProfile.role = playerRoleSelect.value as any;
+    updateProfileUI();
+    say(`Life Class: ${playerRoleSelect.value.toUpperCase()}`);
+  });
+}
+
+// Living Ecosystem Sanctuary Census Modal
+const ecoBtn = document.querySelector('#ecoBtn') as HTMLButtonElement | null;
+const ecoOverlay = document.querySelector('#ecoOverlay') as HTMLDivElement | null;
+const ecoClose = document.querySelector('#ecoClose') as HTMLButtonElement | null;
+const ecoCensusList = document.querySelector('#ecoCensusList') as HTMLDivElement | null;
+const ecoTotalCount = document.querySelector('#ecoTotalCount') as HTMLSpanElement | null;
+const ecoExtinctCount = document.querySelector('#ecoExtinctCount') as HTMLSpanElement | null;
+
+function renderEcoCensus() {
+  if (!fauna || !ecoCensusList) return;
+  const census = fauna.speciesCensus();
+  let totalAnimals = 0;
+  let extinctSpecies = 0;
+
+  ecoCensusList.innerHTML = Object.entries(census)
+    .map(([sp, data]) => {
+      const s = sp as Species;
+      totalAnimals += data.total;
+      if (data.total === 0) extinctSpecies++;
+      return `
+        <div class="ecoRow">
+          <div class="ecoRowTitle">
+            <span>${SPECIES_ICON[s]}</span>
+            <span>${SPECIES_NAME[s]}</span>
+          </div>
+          <div class="ecoRowStats">
+            <span>♂ ${data.males}</span>
+            <span>♀ ${data.females}</span>
+            <span>🐣 ${data.babies}</span>
+            <span>Total: <b>${data.total}</b></span>
+            <span class="ecoStatusTag ${data.status.replace(/\s+/g, '-')}">${data.status}</span>
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+
+  if (ecoTotalCount) ecoTotalCount.textContent = `Total Fauna: ${totalAnimals}`;
+  if (ecoExtinctCount) ecoExtinctCount.textContent = extinctSpecies > 0 ? `🚨 ${extinctSpecies} Extinct!` : `🌿 Balance: Healthy`;
+}
+
+if (ecoBtn) {
+  bindAction(ecoBtn, () => {
+    renderEcoCensus();
+    ecoOverlay?.classList.add('show');
+  });
+}
+if (ecoClose) {
+  bindAction(ecoClose, () => ecoOverlay?.classList.remove('show'));
+}
 
 if (outfitSelect) {
   outfitSelect.addEventListener('change', () => {
@@ -1186,6 +1315,7 @@ fauna = new WildlifeSystem({
   },
   onTrustChange: saveNow,
   notify: say,
+  faunaContainer: actors,
 });
 
 chunks.stream(save.player.x, save.player.z);
@@ -1517,7 +1647,7 @@ function update(dt: number) {
           if (terrain) cameraBlockerObjects.push(terrain);
         }
       }
-      cameraDirection.set(-Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), -Math.cos(camYaw) * Math.cos(camPitch));
+      cameraDirection.set(-Math.sin(camYaw) * Math.cos(camPitch), -Math.sin(camPitch), -Math.cos(camYaw) * Math.cos(camPitch));
       cameraRay.near = 0;
       cameraRay.far = camDistance;
       cameraRay.set(focus, cameraDirection);
@@ -1529,19 +1659,20 @@ function update(dt: number) {
     const h = Math.cos(camPitch) * distance;
     const pos = cameraPosition.copy(focus);
     pos.x -= Math.sin(camYaw) * h;
-    pos.y += Math.sin(camPitch) * distance;
+    pos.y -= Math.sin(camPitch) * distance * 0.75;
     pos.z -= Math.cos(camYaw) * h;
     if (player.swimming && !keys.has('control')) pos.y = Math.max(pos.y, WATER_LEVEL + 0.8);
     camera.position.lerp(pos, Math.min(1, dt * 14));
-    camera.lookAt(focus);
+    const lookTarget = cameraLook.set(focus.x, focus.y + Math.sin(camPitch) * distance * 0.65, focus.z);
+    camera.lookAt(lookTarget);
   } else {
     const eye = cameraEye.copy(p);
     eye.y += player.swimming ? 0.22 : 1.55;
     camera.position.lerp(eye, Math.min(1, dt * 18));
     const look = cameraLook.copy(eye);
-    look.x += Math.sin(targetYaw) * Math.cos(targetPitch) * 8;
-    look.y += Math.sin(targetPitch) * 8;
-    look.z += Math.cos(targetYaw) * Math.cos(targetPitch) * 8;
+    look.x += Math.sin(camYaw) * Math.cos(camPitch) * 8;
+    look.y += Math.sin(camPitch) * 8;
+    look.z += Math.cos(camYaw) * Math.cos(camPitch) * 8;
     camera.lookAt(look);
   }
 

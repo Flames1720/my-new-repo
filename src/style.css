@@ -180,9 +180,24 @@ body.simulated-fullscreen canvas {
   text-shadow: 0 2px 8px #000;
 }
 
-#inventory {
+#profileBadge {
   position: absolute;
   top: calc(48px + env(safe-area-inset-top));
+  left: calc(10px + env(safe-area-inset-left));
+  font-size: 10px;
+  font-weight: 800;
+  color: #79d4ff;
+  background: #111a24d0;
+  border: 1px solid #38bdf844;
+  border-radius: 6px;
+  padding: 2px 7px;
+  text-shadow: 0 1px 4px #000;
+  letter-spacing: 0.5px;
+}
+
+#inventory {
+  position: absolute;
+  top: calc(72px + env(safe-area-inset-top));
   left: calc(10px + env(safe-area-inset-left));
   display: flex;
   flex-wrap: wrap;
@@ -204,7 +219,7 @@ body.simulated-fullscreen canvas {
 
 #wildlife {
   position: absolute;
-  top: calc(76px + env(safe-area-inset-top));
+  top: calc(100px + env(safe-area-inset-top));
   left: calc(10px + env(safe-area-inset-left));
   max-width: min(280px, 58vw);
   padding: 4px 8px;
@@ -219,7 +234,7 @@ body.simulated-fullscreen canvas {
 
 #waypointBadge {
   position: absolute;
-  top: calc(106px + env(safe-area-inset-top));
+  top: calc(128px + env(safe-area-inset-top));
   left: calc(10px + env(safe-area-inset-left));
   display: none;
   padding: 3px 7px;
@@ -385,8 +400,8 @@ body.simulated-fullscreen canvas {
   opacity: 0.75;
 }
 
-/* --- SETTINGS MODAL --- */
-#settingsOverlay, #upgradeOverlay {
+/* --- MODALS (SETTINGS, UPGRADE, ECOSYSTEM) --- */
+#settingsOverlay, #upgradeOverlay, #ecoOverlay {
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -398,11 +413,11 @@ body.simulated-fullscreen canvas {
   padding: 20px;
   pointer-events: auto !important;
 }
-#settingsOverlay.show, #upgradeOverlay.show {
+#settingsOverlay.show, #upgradeOverlay.show, #ecoOverlay.show {
   display: grid;
 }
 
-.settingsCard, .upgradeCard {
+.settingsCard, .upgradeCard, .ecoCard {
   background: #111822;
   border: 1px solid #ffffff28;
   border-radius: 18px;
@@ -412,21 +427,21 @@ body.simulated-fullscreen canvas {
   box-shadow: 0 12px 36px #000d;
 }
 
-.settingsHeader, .upgradeHeader {
+.settingsHeader, .upgradeHeader, .ecoHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
   border-bottom: 1px solid #ffffff18;
 }
-.settingsHeader h3, .upgradeHeader h3 {
+.settingsHeader h3, .upgradeHeader h3, .ecoHeader h3 {
   margin: 0;
   font-size: 13px;
   font-weight: 900;
   letter-spacing: 1.2px;
   color: #a2d2f7;
 }
-#settingsClose, #upgradeClose {
+#settingsClose, #upgradeClose, #ecoClose {
   background: none;
   border: none;
   color: #fff;
@@ -435,11 +450,68 @@ body.simulated-fullscreen canvas {
   padding: 4px 8px;
 }
 
-.settingsBody, .upgradeBody {
+.settingsBody, .upgradeBody, .ecoBody {
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.ecoIntro {
+  font-size: 11px;
+  opacity: 0.82;
+  margin: 0;
+  line-height: 1.4;
+}
+
+#ecoCensusList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ecoRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #17222e;
+  border: 1px solid #ffffff18;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 11px;
+}
+.ecoRowTitle {
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ecoRowStats {
+  display: flex;
+  gap: 10px;
+  font-size: 10px;
+  opacity: 0.85;
+}
+.ecoStatusTag {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.ecoStatusTag.Thriving { background: #1b5e20; color: #a5d6a7; }
+.ecoStatusTag.Vulnerable { background: #e65100; color: #ffe0b2; }
+.ecoStatusTag.Critically\ Endangered { background: #b71c1c; color: #ffcdd2; }
+.ecoStatusTag.Extinct { background: #37474f; color: #b0bec5; }
+
+.ecoSummary {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 800;
+  padding-top: 8px;
+  border-top: 1px solid #ffffff18;
+  color: #7dd3fc;
 }
 
 .settingGroup {

@@ -80,7 +80,7 @@ export class MinimapSystem {
     if (this.trail.length > 0) {
       const last = this.trail[this.trail.length - 1];
       const d = Math.hypot(x - last.x, z - last.z);
-      if (d < 1.4) return; // Haven't moved significantly
+      if (d < 1.4) return;
     }
 
     this.trail.push({ x, z, time: Date.now() });
@@ -89,7 +89,6 @@ export class MinimapSystem {
     }
     this.lastTrailRecordTime = now;
 
-    // Periodic persist
     if (this.trail.length % 20 === 0) {
       try {
         localStorage.setItem('world_trail_v1', JSON.stringify(this.trail.slice(-150)));
@@ -110,17 +109,16 @@ export class MinimapSystem {
     const mapOriginY = pad;
 
     const gridX = (clickX - mapOriginX) / cell - WORLD_RADIUS;
-    const gridZ = WORLD_RADIUS - (clickY - mapOriginY) / cell;
+    const gridZ = (clickY - mapOriginY) / cell - WORLD_RADIUS;
 
     const worldX = Math.round(gridX * SIZE);
     const worldZ = Math.round(gridZ * SIZE);
 
     if (Math.abs(gridX) <= WORLD_RADIUS && Math.abs(gridZ) <= WORLD_RADIUS) {
-      // Toggle waypoint
-      if (this.customWaypoint && Math.hypot(this.customWaypoint.x - worldX, this.customWaypoint.z - worldZ) < 12) {
+      if (this.customWaypoint && Math.hypot(this.customWaypoint.x - worldX, this.customWaypoint.z - worldZ) < 14) {
         this.customWaypoint = null;
       } else {
-        this.customWaypoint = { x: worldX, z: worldZ, label: `Beacon (${worldX}, ${worldZ})` };
+        this.customWaypoint = { x: worldX, z: worldZ, label: `Waypoint (${worldX}, ${worldZ})` };
       }
       try {
         localStorage.setItem('world_waypoint_v1', JSON.stringify(this.customWaypoint));
@@ -129,12 +127,12 @@ export class MinimapSystem {
   }
 
   // --- RENDER LIVE CODM-STYLE RADAR MINI-MAP ---
-  renderMini(playerPos: THREE.Vector3, playerYaw: number, animals: AnimalMarker[]): void {
+  renderMini(playerPos: THREE.Vector3, camYaw: number, animals: AnimalMarker[]): void {
     const c = this.miniCanvas;
     const ctx = this.miniCtx;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = (c.width = c.clientWidth * dpr);
-    const h = (c.height = c.clientHeight * dpr);
+    c.width = c.clientWidth * dpr;
+    c.height = c.clientHeight * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const size = c.clientWidth;
@@ -150,18 +148,23 @@ export class MinimapSystem {
     ctx.arc(cx, cy, radius - 2, 0, Math.PI * 2);
     ctx.clip();
 
-    // Radar backdrop
-    ctx.fillStyle = '#111820f0';
+    ctx.fillStyle = '#0f171fdc';
     ctx.fillRect(0, 0, size, size);
 
-    // Local radar scale: view radius of ~55 meters
     const viewRange = 55;
     const scale = (radius - 8) / viewRange;
 
-    // Rotate radar with player yaw for CODM-style navigation
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(playerYaw);
+    // Helper: convert relative world displacement (dx, dz) to radar screen (sx, sy)
+    // where screen UP is directly forward in the player's view direction
+    const cosY = Math.cos(camYaw);
+    const sinY = Math.sin(camYaw);
+    const toRadar = (wx: number, wz: number): { x: number; y: number } => {
+      const dx = wx - playerPos.x;
+      const dz = wz - playerPos.z;
+      const sx = cx + (dx * cosY - dz * sinY) * scale;
+      const sy = cy - (dx * sinY + dz * cosY) * scale;
+      return { x: sx, y: sy };
+    };
 
     // Draw local terrain tiles
     const chunkMinX = Math.floor((playerPos.x - viewRange) / SIZE);
@@ -173,19 +176,26 @@ export class MinimapSystem {
       for (let gz = chunkMinZ; gz <= chunkMaxZ; gz++) {
         const wx = gx * SIZE + SIZE / 2;
         const wz = gz * SIZE + SIZE / 2;
-        const dx = wx - playerPos.x;
-        const dz = wz - playerPos.z;
-
-        // Skip if outside circle view
-        if (Math.hypot(dx, dz) > viewRange + SIZE) continue;
+        if (Math.hypot(wx - playerPos.x, wz - playerPos.z) > viewRange + SIZE) continue;
 
         const isWater = waterAt(wx, wz);
         const isRoad = roadAt(wx, wz);
         const isMtn = mountainMaskAt(wx, wz) > 0.4;
         const isRiver = isRiverAt(wx, wz);
 
-        ctx.fillStyle = isWater || isRiver ? '#3b7899' : isRoad ? '#555b62' : isMtn ? '#767472' : '#4d6945';
-        ctx.fillRect((dx - SIZE / 2) * scale, (dz - SIZE / 2) * scale, SIZE * scale + 0.6, SIZE * scale + 0.6);
+        const p0 = toRadar(gx * SIZE, gz * SIZE);
+        const p1 = toRadar((gx + 1) * SIZE, gz * SIZE);
+        const p2 = toRadar((gx + 1) * SIZE, (gz + 1) * SIZE);
+        const p3 = toRadar(gx * SIZE, (gz + 1) * SIZE);
+
+        ctx.fillStyle = isWater || isRiver ? '#2d6d8f' : isRoad ? '#4a5057' : isMtn ? '#6d6c69' : '#45613d';
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.lineTo(p3.x, p3.y);
+        ctx.closePath();
+        ctx.fill();
       }
     }
 
@@ -195,16 +205,16 @@ export class MinimapSystem {
       let started = false;
       for (let i = 0; i < this.trail.length; i++) {
         const pt = this.trail[i];
-        const tx = (pt.x - playerPos.x) * scale;
-        const tz = (pt.z - playerPos.z) * scale;
+        if (Math.hypot(pt.x - playerPos.x, pt.z - playerPos.z) > viewRange * 1.5) continue;
+        const sp = toRadar(pt.x, pt.z);
         if (!started) {
-          ctx.moveTo(tx, tz);
+          ctx.moveTo(sp.x, sp.y);
           started = true;
         } else {
-          ctx.lineTo(tx, tz);
+          ctx.lineTo(sp.x, sp.y);
         }
       }
-      ctx.strokeStyle = '#5de6ffbb';
+      ctx.strokeStyle = '#4de0ffbb';
       ctx.lineWidth = 2.2;
       ctx.setLineDash([3, 3]);
       ctx.stroke();
@@ -212,50 +222,50 @@ export class MinimapSystem {
     }
 
     // Draw Home Icon on Radar
-    const homeDx = (HOME_X - playerPos.x) * scale;
-    const homeDz = (HOME_Z - playerPos.z) * scale;
-    ctx.fillStyle = '#ffcc00';
-    ctx.beginPath();
-    ctx.arc(homeDx, homeDz, 4.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Draw Village on Radar
-    const vDx = (VILLAGE_X - playerPos.x) * scale;
-    const vDz = (VILLAGE_Z - playerPos.z) * scale;
-    ctx.fillStyle = '#ff7744';
-    ctx.beginPath();
-    ctx.arc(vDx, vDz, 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Draw Waypoint on Radar
-    if (this.customWaypoint) {
-      const wpDx = (this.customWaypoint.x - playerPos.x) * scale;
-      const wpDz = (this.customWaypoint.z - playerPos.z) * scale;
-      ctx.fillStyle = '#33ccff';
+    const homePt = toRadar(HOME_X, HOME_Z);
+    if (Math.hypot(homePt.x - cx, homePt.y - cy) < radius - 4) {
+      ctx.fillStyle = '#ffcc00';
       ctx.beginPath();
-      ctx.arc(wpDx, wpDz, 5, 0, Math.PI * 2);
+      ctx.arc(homePt.x, homePt.y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Draw Village Icon on Radar
+    const vPt = toRadar(VILLAGE_X, VILLAGE_Z);
+    if (Math.hypot(vPt.x - cx, vPt.y - cy) < radius - 4) {
+      ctx.fillStyle = '#ff7744';
+      ctx.beginPath();
+      ctx.arc(vPt.x, vPt.y, 4, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Nearby Animals as radar blips
-    for (const a of animals) {
-      const adx = (a.x - playerPos.x) * scale;
-      const adz = (a.z - playerPos.z) * scale;
-      if (Math.hypot(adx, adz) < radius - 8) {
-        ctx.fillStyle = speciesColor(a.species);
+    // Draw Waypoint on Radar
+    if (this.customWaypoint) {
+      const wpPt = toRadar(this.customWaypoint.x, this.customWaypoint.z);
+      if (Math.hypot(wpPt.x - cx, wpPt.y - cy) < radius - 4) {
+        ctx.fillStyle = '#33ccff';
         ctx.beginPath();
-        ctx.arc(adx, adz, a.isBaby ? 2.2 : 3.0, 0, Math.PI * 2);
+        ctx.arc(wpPt.x, wpPt.y, 5, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
-    ctx.restore(); // Undo radar rotation
+    // Nearby Animals as radar blips
+    for (const a of animals) {
+      const aPt = toRadar(a.x, a.z);
+      if (Math.hypot(aPt.x - cx, aPt.y - cy) < radius - 8) {
+        ctx.fillStyle = speciesColor(a.species);
+        ctx.beginPath();
+        ctx.arc(aPt.x, aPt.y, a.isBaby ? 2.2 : 3.0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
 
-    // Radar Rings & Crosshairs
-    ctx.strokeStyle = '#ffffff25';
+    // Radar Concentric Distance Rings
+    ctx.strokeStyle = '#ffffff20';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(cx, cy, (radius - 8) * 0.5, 0, Math.PI * 2);
@@ -264,32 +274,33 @@ export class MinimapSystem {
     ctx.arc(cx, cy, radius - 8, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Center Player Arrowhead (Always pointing UP on radar)
+    // Center Player Arrowhead (Points directly FORWARD/UP on radar)
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.moveTo(cx, cy - 7);
-    ctx.lineTo(cx - 5, cy + 6);
+    ctx.moveTo(cx, cy - 8);
+    ctx.lineTo(cx - 5.5, cy + 6.5);
     ctx.lineTo(cx, cy + 3.5);
-    ctx.lineTo(cx + 5, cy + 6);
+    ctx.lineTo(cx + 5.5, cy + 6.5);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = '#0b1015';
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
-    // North Needle on Outer Edge
-    const northAngle = playerYaw;
-    const nx = cx + Math.sin(northAngle) * (radius - 8);
-    const ny = cy - Math.cos(northAngle) * (radius - 8);
+    // North Needle on Outer Rim
+    // North is (0, -1) in world space (z decreases going north)
+    const northAngle = Math.atan2(-sinY, -cosY);
+    const nx = cx + Math.sin(northAngle) * (radius - 9);
+    const ny = cy - Math.cos(northAngle) * (radius - 9);
     ctx.fillStyle = '#ff4444';
     ctx.font = 'bold 9px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('N', nx, ny);
 
-    ctx.restore(); // End clipping
+    ctx.restore();
 
-    // Outer Radar Frame & Glow
+    // Outer Radar Frame & Cyan Glow
     ctx.strokeStyle = '#38d2ff88';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
@@ -298,7 +309,7 @@ export class MinimapSystem {
   }
 
   // --- RENDER FULL WORLD MAP ---
-  renderFull(playerPos: THREE.Vector3, playerYaw: number, animals: AnimalMarker[]): void {
+  renderFull(playerPos: THREE.Vector3, camYaw: number, animals: AnimalMarker[]): void {
     if (!this.isFullOpen) return;
 
     const c = this.fullCanvas;
@@ -312,7 +323,7 @@ export class MinimapSystem {
     const ch = c.clientHeight;
 
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#10161d';
+    ctx.fillStyle = '#0e151c';
     ctx.fillRect(0, 0, cw, ch);
 
     const pad = 18;
@@ -320,11 +331,11 @@ export class MinimapSystem {
     const mapOriginX = pad;
     const mapOriginY = pad;
 
-    // Render world grid cells
+    // Render world grid tiles (Top is North / -Z, Bottom is South / +Z)
     for (let cz = -WORLD_RADIUS; cz <= WORLD_RADIUS; cz++) {
       for (let cx = -WORLD_RADIUS; cx <= WORLD_RADIUS; cx++) {
         const sx = mapOriginX + (cx + WORLD_RADIUS) * cell;
-        const sy = mapOriginY + (WORLD_RADIUS - cz) * cell;
+        const sy = mapOriginY + (cz + WORLD_RADIUS) * cell;
         const wx = cx * SIZE + SIZE / 2;
         const wz = cz * SIZE + SIZE / 2;
 
@@ -333,18 +344,18 @@ export class MinimapSystem {
         const isMtn = mountainMaskAt(wx, wz) > 0.4;
         const isRiver = isRiverAt(wx, wz);
 
-        ctx.fillStyle = isWater || isRiver ? '#3b7899' : isRoad ? '#555b62' : isMtn ? '#7b7976' : '#527248';
+        ctx.fillStyle = isWater || isRiver ? '#2d6d8f' : isRoad ? '#4a5057' : isMtn ? '#6d6c69' : '#45613d';
         ctx.fillRect(sx, sy, Math.ceil(cell) + 0.5, Math.ceil(cell) + 0.5);
       }
     }
 
-    // --- FULL EXPLORATION DISPLACEMENT TRAILS ---
+    // Displacement Trails (Breadcrumbs)
     if (this.trail.length > 1) {
       ctx.beginPath();
       for (let i = 0; i < this.trail.length; i++) {
         const pt = this.trail[i];
         const tx = mapOriginX + (pt.x / SIZE + WORLD_RADIUS + 0.5) * cell;
-        const ty = mapOriginY + (WORLD_RADIUS - pt.z / SIZE + 0.5) * cell;
+        const ty = mapOriginY + (pt.z / SIZE + WORLD_RADIUS + 0.5) * cell;
         if (i === 0) ctx.moveTo(tx, ty);
         else ctx.lineTo(tx, ty);
       }
@@ -352,11 +363,10 @@ export class MinimapSystem {
       ctx.lineWidth = 2.5;
       ctx.stroke();
 
-      // Dotted point highlights
       for (let i = 0; i < this.trail.length; i += 8) {
         const pt = this.trail[i];
         const tx = mapOriginX + (pt.x / SIZE + WORLD_RADIUS + 0.5) * cell;
-        const ty = mapOriginY + (WORLD_RADIUS - pt.z / SIZE + 0.5) * cell;
+        const ty = mapOriginY + (pt.z / SIZE + WORLD_RADIUS + 0.5) * cell;
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.arc(tx, ty, 1.8, 0, Math.PI * 2);
@@ -366,22 +376,22 @@ export class MinimapSystem {
 
     // Home Badge
     const hx = mapOriginX + (HOME_X / SIZE + WORLD_RADIUS + 0.5) * cell;
-    const hy = mapOriginY + (WORLD_RADIUS - HOME_Z / SIZE + 0.5) * cell;
+    const hy = mapOriginY + (HOME_Z / SIZE + WORLD_RADIUS + 0.5) * cell;
     ctx.fillStyle = '#ffcc00';
-    ctx.fillRect(hx - cell * 0.4, hy - cell * 0.4, cell * 0.8, cell * 0.8);
+    ctx.fillRect(hx - cell * 0.45, hy - cell * 0.45, cell * 0.9, cell * 0.9);
     ctx.strokeStyle = '#000';
-    ctx.strokeRect(hx - cell * 0.4, hy - cell * 0.4, cell * 0.8, cell * 0.8);
+    ctx.strokeRect(hx - cell * 0.45, hy - cell * 0.45, cell * 0.9, cell * 0.9);
 
     // Village Badge
     const vx = mapOriginX + (VILLAGE_X / SIZE + WORLD_RADIUS + 0.5) * cell;
-    const vy = mapOriginY + (WORLD_RADIUS - VILLAGE_Z / SIZE + 0.5) * cell;
+    const vy = mapOriginY + (VILLAGE_Z / SIZE + WORLD_RADIUS + 0.5) * cell;
     ctx.fillStyle = '#ff7733';
-    ctx.fillRect(vx - cell * 0.4, vy - cell * 0.4, cell * 0.8, cell * 0.8);
+    ctx.fillRect(vx - cell * 0.45, vy - cell * 0.45, cell * 0.9, cell * 0.9);
 
     // Custom Waypoint Marker
     if (this.customWaypoint) {
       const wpx = mapOriginX + (this.customWaypoint.x / SIZE + WORLD_RADIUS + 0.5) * cell;
-      const wpy = mapOriginY + (WORLD_RADIUS - this.customWaypoint.z / SIZE + 0.5) * cell;
+      const wpy = mapOriginY + (this.customWaypoint.z / SIZE + WORLD_RADIUS + 0.5) * cell;
       ctx.fillStyle = '#22ddff';
       ctx.beginPath();
       ctx.arc(wpx, wpy, Math.max(5, cell * 0.45), 0, Math.PI * 2);
@@ -394,35 +404,35 @@ export class MinimapSystem {
     // Wildlife markers
     for (const a of animals) {
       const ax = mapOriginX + (a.x / SIZE + WORLD_RADIUS + 0.5) * cell;
-      const ay = mapOriginY + (WORLD_RADIUS - a.z / SIZE + 0.5) * cell;
+      const ay = mapOriginY + (a.z / SIZE + WORLD_RADIUS + 0.5) * cell;
       ctx.fillStyle = speciesColor(a.species);
       ctx.beginPath();
       ctx.arc(ax, ay, Math.max(2.5, cell * 0.18), 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Player indicator with heading arrow
+    // Player position and LOOK ARROW
+    // dirX = sin(camYaw), dirZ = cos(camYaw)
+    // On screen, x increases right, y increases down (+Z is down)
+    // Arrow geometry points UP by default: rotate angle = atan2(dirX, -dirZ)
     const px = mapOriginX + (playerPos.x / SIZE + WORLD_RADIUS + 0.5) * cell;
-    const py = mapOriginY + (WORLD_RADIUS - playerPos.z / SIZE + 0.5) * cell;
+    const py = mapOriginY + (playerPos.z / SIZE + WORLD_RADIUS + 0.5) * cell;
+    const lookAngle = Math.atan2(Math.sin(camYaw), -Math.cos(camYaw));
+
     ctx.save();
     ctx.translate(px, py);
-    ctx.rotate(playerYaw);
+    ctx.rotate(lookAngle);
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.moveTo(0, -7);
-    ctx.lineTo(-5, 6);
-    ctx.lineTo(0, 3.5);
-    ctx.lineTo(5, 6);
+    ctx.moveTo(0, -8);
+    ctx.lineTo(-6, 7);
+    ctx.lineTo(0, 3.8);
+    ctx.lineTo(6, 7);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1.3;
     ctx.stroke();
     ctx.restore();
-
-    // Map Border
-    ctx.strokeStyle = '#ffffff44';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(pad, pad, WORLD_DIAMETER * cell, WORLD_DIAMETER * cell);
   }
 }
