@@ -19,8 +19,9 @@ const roadAt=(x:number,z:number)=>{const mx=Math.abs((((x+ROAD_SPACING/2)%ROAD_S
 const nearHome=(x:number,z:number)=>x>HOME_X-4.5-HOME_CLEAR_MARGIN&&x<HOME_X+4.5+HOME_CLEAR_MARGIN&&z>HOME_Z-3.5-HOME_CLEAR_MARGIN&&z<HOME_Z+3.5+HOME_CLEAR_MARGIN;
 const lakeSignalAt=(x:number,z:number)=>Math.sin(x*.011+z*.017+SEED*.00003)+Math.cos(x*.019-z*.009-SEED*.00002);
 const lakeDepressionAt=(x:number,z:number)=>{if(nearHome(x,z))return 0;const edge=clamp((lakeSignalAt(x,z)-1.38)/.3,0,1),smooth=edge*edge*(3-2*edge),lowland=clamp((WATER_LEVEL+1-rawTerrainHeightAt(x,z))/1,0,1);return smooth*lowland};
-const waterAt=(x:number,z:number)=>!nearHome(x,z)&&lakeSignalAt(x,z)>1.58&&rawTerrainHeightAt(x,z)<WATER_LEVEL+.2;
 const terrainHeightAt=(x:number,z:number)=>{const raw=rawTerrainHeightAt(x,z),d=Math.hypot(x-HOME_X,z-HOME_Z),t=d<HOME_FLATTEN_RADIUS?1-d/HOME_FLATTEN_RADIUS:0,ground=t?raw+(HOME_BASE_HEIGHT-raw)*t:raw;return ground-lakeDepressionAt(x,z)*2.4};
+const waterDepthAt=(x:number,z:number)=>Math.min(WATER_LEVEL-terrainHeightAt(x,z),(lakeDepressionAt(x,z)-.02)*6);
+const waterAt=(x:number,z:number)=>!nearHome(x,z)&&waterDepthAt(x,z)>.015;
 function biomeAt(x:number,z:number):Biome{
  const h=terrainHeightAt(x,z),nearWater=waterAt(x,z)||waterAt(x+3,z)||waterAt(x-3,z)||waterAt(x,z+3)||waterAt(x,z-3);
  if(nearWater&&h<2.7)return h<1.9?'wetland':'shore';
@@ -126,14 +127,15 @@ function updateSplash(dt:number){if(splashAge>=.65)return;splashAge+=dt;splashRi
 class Player{
 	root=new THREE.Group();velocity=new THREE.Vector3();onGround=true;swimming=false;
 	private fallback:THREE.Group;private avatar:THREE.Group|null=null;private mixer:THREE.AnimationMixer|null=null;private actions=new Map<string,THREE.AnimationAction>();private activeAction:THREE.AnimationAction|null=null;private oneShot=false;
-	private leftUpperArm:THREE.Object3D|null=null;private rightUpperArm:THREE.Object3D|null=null;
+	private leftUpperArm:THREE.Object3D|null=null;private rightUpperArm:THREE.Object3D|null=null;private leftUpperLeg:THREE.Object3D|null=null;private rightUpperLeg:THREE.Object3D|null=null;
+	private swimBlend=0;
 	constructor(){
 	 this.root.name='player-adventurer';this.fallback=new THREE.Group();this.fallback.name='player-fallback';
 	 const mat=new THREE.MeshStandardMaterial({color:0x507486,roughness:.92});const body=new THREE.Mesh(new THREE.CapsuleGeometry(.25,.68,3,7),mat);body.position.y=.78;const head=new THREE.Mesh(new THREE.SphereGeometry(.19,8,6),mat);head.position.y=1.42;
 	 for(const mesh of[body,head]){mesh.castShadow=!LOW_POWER_MODE;mesh.receiveShadow=true;this.fallback.add(mesh)}this.root.add(this.fallback);actors.add(this.root);
 	 import('three/addons/loaders/GLTFLoader.js').then(({GLTFLoader})=>new GLTFLoader().load('/models/kenney-adventurer.glb',gltf=>{
 	  const avatar=gltf.scene;avatar.name='kenney-human-adventurer';avatar.scale.setScalar(.45);
-	  this.leftUpperArm=avatar.getObjectByName('LeftArm')??null;this.rightUpperArm=avatar.getObjectByName('RightArm')??null;
+		 this.leftUpperArm=avatar.getObjectByName('LeftArm')??null;this.rightUpperArm=avatar.getObjectByName('RightArm')??null;this.leftUpperLeg=avatar.getObjectByName('LeftUpLeg')??null;this.rightUpperLeg=avatar.getObjectByName('RightUpLeg')??null;
 	  avatar.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=!LOW_POWER_MODE;o.receiveShadow=true}});this.root.add(avatar);this.avatar=avatar;
 	  this.fallback.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.dispose();const list=Array.isArray(o.material)?o.material:[o.material];for(const m of list)m.dispose()}});this.root.remove(this.fallback);
 	  this.mixer=new THREE.AnimationMixer(avatar);this.mixer.addEventListener('finished',event=>{if(event.action===this.activeAction){this.activeAction=null;this.oneShot=false}});
@@ -149,11 +151,15 @@ class Player{
 	 const next=this.actions.get('Jump');if(!next)return;this.activeAction?.fadeOut(.08);this.oneShot=true;next.reset();next.enabled=true;next.setLoop(THREE.LoopOnce,1);next.clampWhenFinished=true;next.fadeIn(.08).play();this.activeAction=next;
 	}
 	animate(t:number,moving:boolean,sprinting:boolean,swimming:boolean,dt:number){
-	 this.mixer?.update(dt);
-	 if(swimming&&this.oneShot){this.activeAction?.fadeOut(.1);this.activeAction=null;this.oneShot=false}
-	 if(!this.oneShot){const state=moving?'Run':'Idle';this.setAction(state,true);this.actions.get(state)?.setEffectiveTimeScale(state==='Run'?(swimming?.66:sprinting?1.18:.82):1)}
-	 if(this.leftUpperArm)this.leftUpperArm.rotation.x-=.65;if(this.rightUpperArm)this.rightUpperArm.rotation.x+=.65;
-	 if(this.avatar){const target=swimming?1.38:0;this.avatar.rotation.x=lerp(this.avatar.rotation.x,target,Math.min(1,dt*5));this.avatar.position.y=swimming?Math.sin(t*2.6)*.018:0}
+		this.mixer?.update(dt);
+		if(swimming&&this.oneShot){this.activeAction?.fadeOut(.1);this.activeAction=null;this.oneShot=false}
+		if(!this.oneShot){const state=moving&&!swimming?'Run':'Idle';this.setAction(state,true);this.actions.get(state)?.setEffectiveTimeScale(state==='Run'?(sprinting?1:.61):1)}
+		this.swimBlend=lerp(this.swimBlend,swimming?1:0,Math.min(1,dt*6));
+		const stroke=moving?Math.sin(t*4.6)*.5*this.swimBlend:0;
+		if(this.leftUpperArm){const arm=this.leftUpperArm.rotation;arm.set(lerp(arm.x-.65,-1.178-stroke,this.swimBlend),lerp(arm.y,0,this.swimBlend),lerp(arm.z,-Math.PI,this.swimBlend))}
+		if(this.rightUpperArm){const arm=this.rightUpperArm.rotation;arm.set(lerp(arm.x+.65,2.749+stroke,this.swimBlend),lerp(arm.y,1.178,this.swimBlend),lerp(arm.z,Math.PI/2,this.swimBlend))}
+		const kick=(moving ? .38 : .06)*this.swimBlend;if(this.leftUpperLeg)this.leftUpperLeg.rotation.x+=Math.sin(t*4.6)*kick;if(this.rightUpperLeg)this.rightUpperLeg.rotation.x+=Math.sin(t*4.6+Math.PI)*kick;
+		if(this.avatar){const target=swimming?1.38:0;this.avatar.rotation.x=lerp(this.avatar.rotation.x,target,Math.min(1,dt*5));this.avatar.position.y=swimming?Math.sin(t*2.6)*.018:0}
 	}
 }
 const player=new Player();
@@ -192,20 +198,30 @@ class Chunks{
     const rz=new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH,SIZE,2,16),roadMat);rz.rotation.x=-Math.PI/2;const zp=rz.geometry.getAttribute('position');
     for(let i=0;i<zp.count;i++){const lx=zp.getX(i)+center,lz=zp.getZ(i)+cz*SIZE+SIZE/2;zp.setY(i,terrainHeightAt(lx,lz)+.055)}rz.geometry.computeVertexNormals();rz.position.set(center,0,cz*SIZE+SIZE/2);rz.name='road-z';g.add(rz);
    }}
-  // Water is built from only the cells that are actually water, using the shared animated
-  // material so ripples run across every tile from one time uniform.
-  const waterGroup=new THREE.Group();waterGroup.name='water';
-  const waterSegs=lod===0?8:lod===1?4:2,step=SIZE/waterSegs,shallowWater=new THREE.Color(0x559c99),deepWater=new THREE.Color(0x174b73),waterColor=new THREE.Color();
+  // Clip the surface to the actual submerged basin floor instead of drawing whole
+  // rectangular cells whenever a single edge sample happens to be wet.
+  const waterGroup=new THREE.Group();waterGroup.name='water';waterGroup.position.set(cx*SIZE,0,cz*SIZE);
+  const waterSegs=lod===0?16:lod===1?8:4,step=SIZE/waterSegs,shallowWater=new THREE.Color(0x559c99),deepWater=new THREE.Color(0x174b73),waterColor=new THREE.Color();
+  const waterPositions:number[]=[],waterColors:number[]=[],waterIndices:number[]=[];
+  type WaterPoint={x:number;z:number;depth:number};
+  const appendWaterTriangle=(triangle:WaterPoint[])=>{
+   const clipped:WaterPoint[]=[];
+   for(let i=0;i<3;i++){
+    const previous=triangle[(i+2)%3],current=triangle[i],previousWet=previous.depth>0,currentWet=current.depth>0;
+    if(previousWet!==currentWet){const t=previous.depth/(previous.depth-current.depth);clipped.push({x:previous.x+(current.x-previous.x)*t,z:previous.z+(current.z-previous.z)*t,depth:0})}
+    if(currentWet)clipped.push(current);
+   }
+   if(clipped.length<3)return;
+   const base=waterPositions.length/3;
+   for(const point of clipped){waterPositions.push(point.x-cx*SIZE,WATER_LEVEL,point.z-cz*SIZE);waterColor.copy(shallowWater).lerp(deepWater,clamp(waterDepthAt(point.x,point.z)/3.2,0,1));waterColors.push(waterColor.r,waterColor.g,waterColor.b)}
+   for(let i=1;i<clipped.length-1;i++)waterIndices.push(base,base+i,base+i+1);
+  };
   for(let iz=0;iz<waterSegs;iz++)for(let ix=0;ix<waterSegs;ix++){
    const x0=cx*SIZE+ix*step,x1=x0+step,z0=cz*SIZE+iz*step,z1=z0+step;
-   const samples=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]];
-   const mx=(x0+x1)/2,mz=(z0+z1)/2;if(!waterAt(mx,mz)&&!waterAt(mx,z0)&&!waterAt(x1,mz)&&!waterAt(mx,z1)&&!waterAt(x0,mz)&&!samples.some(([x,z])=>waterAt(x,z)))continue;
-   const geom=new THREE.BufferGeometry();const verts=new Float32Array([0,WATER_LEVEL,0,step,WATER_LEVEL,0,step,WATER_LEVEL,step,0,WATER_LEVEL,step]);
-   const colors=new Float32Array(12);for(let i=0;i<4;i++){waterColor.copy(shallowWater).lerp(deepWater,clamp((WATER_LEVEL-terrainHeightAt(samples[i][0],samples[i][1]))/3.2,0,1));colors[i*3]=waterColor.r;colors[i*3+1]=waterColor.g;colors[i*3+2]=waterColor.b}
-   geom.setAttribute('position',new THREE.BufferAttribute(verts,3));geom.setAttribute('color',new THREE.BufferAttribute(colors,3));geom.setIndex([0,2,1,0,3,2]);geom.computeVertexNormals();
-   const water=new THREE.Mesh(geom,waterMaterial);water.position.set(x0,0,z0);water.name='water-cell';waterGroup.add(water);
+   const p00={x:x0,z:z0,depth:waterDepthAt(x0,z0)},p10={x:x1,z:z0,depth:waterDepthAt(x1,z0)},p11={x:x1,z:z1,depth:waterDepthAt(x1,z1)},p01={x:x0,z:z1,depth:waterDepthAt(x0,z1)};
+   appendWaterTriangle([p00,p01,p11]);appendWaterTriangle([p00,p11,p10]);
   }
-  if(waterGroup.children.length){g.add(waterGroup);g.userData.water=true}
+  if(waterIndices.length){const geom=new THREE.BufferGeometry();geom.setAttribute('position',new THREE.Float32BufferAttribute(waterPositions,3));geom.setAttribute('color',new THREE.Float32BufferAttribute(waterColors,3));geom.setIndex(waterIndices);geom.computeVertexNormals();const water=new THREE.Mesh(geom,waterMaterial);water.name='water-surface';waterGroup.add(water);g.add(waterGroup);g.userData.water=true}
   const removed=this.changes[key]||[];
   if(lod < 2){ // no trees/rocks on far LOD
     const maxTrees = lod===0 ? 9 : 4;
@@ -415,13 +431,14 @@ function update(dt:number){
 	if(waterShader)waterShader.uniforms.uTime.value+=dt;updateSplash(dt);aimTimer=Math.max(0,aimTimer-dt);worldTime=(worldTime+dt*.05)%24;updateSky(dt);
 	const wasSwimming=player.swimming,p=player.root.position;
 	player.swimming=waterAt(p.x,p.z)&&WATER_LEVEL-terrainHeightAt(p.x,p.z)>.65;
-	const iv=input(),moving=Math.hypot(iv.x,iv.y)>.08;
-	const forward=moveForward.set(Math.sin(camYaw),0,Math.cos(camYaw)),right=moveRight.set(-Math.cos(camYaw),0,Math.sin(camYaw));
-	const dir=moveDirection.set(0,0,0).addScaledVector(right,iv.x).addScaledVector(forward,-iv.y);
-	const sprinting=(keys.has('shift')||sprintToggle)&&moving;
-	if(dir.lengthSq()){dir.normalize();const desired=Math.atan2(dir.x,dir.z);player.root.rotation.y=angleLerp(player.root.rotation.y,desired,Math.min(1,dt*12));const speed=player.swimming?(sprinting?3.45:2.25):(sprinting?9:6.2);player.velocity.x=dir.x*speed;player.velocity.z=dir.z*speed}
-	else{const drag=player.swimming?3.2:10;player.velocity.x=lerp(player.velocity.x,0,Math.min(1,dt*drag));player.velocity.z=lerp(player.velocity.z,0,Math.min(1,dt*drag))}
-	if(keys.has(' ')&&!player.swimming&&player.onGround)jump();
+		const iv=input();
+		const forward=moveForward.set(Math.sin(camYaw),0,Math.cos(camYaw)),right=moveRight.set(-Math.cos(camYaw),0,Math.sin(camYaw));
+		const dir=moveDirection.set(0,0,0).addScaledVector(right,iv.x).addScaledVector(forward,-iv.y);
+		const inputMagnitude=Math.min(1,dir.length()),hasInput=inputMagnitude>.08,sprinting=(keys.has('shift')||sprintToggle)&&hasInput;
+		if(hasInput){const desired=Math.atan2(dir.x,dir.z),speed=player.swimming?(sprinting?2.05:1.4):(sprinting?7.4:4.5),targetSpeed=speed*inputMagnitude,response=1-Math.exp(-(player.swimming?5:14)*dt);player.velocity.x=lerp(player.velocity.x,Math.sin(desired)*targetSpeed,response);player.velocity.z=lerp(player.velocity.z,Math.cos(desired)*targetSpeed,response)}
+		else{const response=1-Math.exp(-(player.swimming?3.8:11)*dt);player.velocity.x=lerp(player.velocity.x,0,response);player.velocity.z=lerp(player.velocity.z,0,response)}
+		const horizontalSpeed=Math.hypot(player.velocity.x,player.velocity.z),moving=hasInput||horizontalSpeed>(player.swimming ? .08 : .16);if(horizontalSpeed>.05){const desired=Math.atan2(player.velocity.x,player.velocity.z);player.root.rotation.y=angleLerp(player.root.rotation.y,desired,Math.min(1,dt*(player.swimming?5:9)))}
+		if(keys.has(' ')&&!player.swimming&&player.onGround)jump();
 	moveWithCollisions(player.velocity.x*dt,player.velocity.z*dt);
 	player.swimming=waterAt(p.x,p.z)&&WATER_LEVEL-terrainHeightAt(p.x,p.z)>.65;
 	if(player.swimming){

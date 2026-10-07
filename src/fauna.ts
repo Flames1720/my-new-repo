@@ -17,6 +17,7 @@ type AnimalState = {
   home: THREE.Vector2;
   target: THREE.Vector2;
   think: number;
+  fleeCooldown: number;
   mood: Mood;
   phase: number;
   direction: number;
@@ -167,11 +168,11 @@ export class WildlifeSystem {
 
   spawnChunk(cx: number, cz: number, lod: number, parent: THREE.Group): void {
     if (lod >= 2) return;
-    const count = lod === 0 ? 3 : 1;
+    const count = lod === 0 ? 2 : 1;
     const minX = cx * 16 + 1.6, maxX = (cx + 1) * 16 - 1.6;
     const minZ = cz * 16 + 1.6, maxZ = (cz + 1) * 16 - 1.6;
     for (let slot = 0; slot < count; slot++) {
-      if (seeded(cx * 29 + slot * 7, cz * 37 - slot * 11) < (lod === 0 ? .42 : .68)) continue;
+      if (seeded(cx * 29 + slot * 7, cz * 37 - slot * 11) < (lod === 0 ? .62 : .82)) continue;
       const id = `${cx},${cz}:${slot}`;
       let x = 0, z = 0, kind: Species | null = null, habitat: Biome = 'meadow';
       for (let attempt = 0; attempt < 18; attempt++) {
@@ -198,7 +199,7 @@ export class WildlifeSystem {
       this.animals.set(id, {
         id, species: kind, biome: habitat, chunkKey: `${cx},${cz}`, root: rootData.root,
         body: rootData.body, legs: rootData.legs, head: rootData.head, tail: rootData.tail,
-        home: new THREE.Vector2(x, z), target: new THREE.Vector2(x, z), think: .4 + seeded(slot + cx * 3, cz * 7) * 4,
+        home: new THREE.Vector2(x, z), target: new THREE.Vector2(x, z), think: .4 + seeded(slot + cx * 3, cz * 7) * 4, fleeCooldown: 0,
         mood: 'foraging', phase: seeded(cx * 11 + slot, cz * 13) * Math.PI * 2,
         direction: rootData.root.rotation.y, trust: initialTrust,
       });
@@ -226,13 +227,14 @@ export class WildlifeSystem {
     for (const a of this.animals.values()) {
       const p = a.root.position, dx = player.x - p.x, dz = player.z - p.z, distance = Math.hypot(dx, dz);
       const trust = a.trust;
+      a.fleeCooldown = Math.max(0, a.fleeCooldown - dt);
       const notice = (a.species === 'wolf' ? 10 : a.species === 'deer' ? 8 : 6.5) + trust * .65;
       const close = distance < (trust >= 2 ? 1.45 : 2.7);
-      if (distance < notice && (FLEEING.has(a.species)) && (sprinting || trust < 2 || close)) {
+      if (distance < notice && FLEEING.has(a.species) && (sprinting || trust < 2 || close) && a.mood !== 'fleeing' && a.fleeCooldown <= 0) {
         const inv = 1 / Math.max(distance, .001);
         const fleeDist = a.species === 'rabbit' || a.species === 'duck' ? 5.5 : 7;
         a.target.set(p.x - dx * inv * fleeDist, p.z - dz * inv * fleeDist);
-        a.mood = 'fleeing'; a.think = .85;
+        a.mood = 'fleeing'; a.think = 1.55; a.fleeCooldown = 3.2;
       } else if (distance < notice && trust >= 1 && a.mood !== 'fleeing') {
         a.mood = 'curious';
       }
