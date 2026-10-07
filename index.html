@@ -6,23 +6,162 @@
     <meta name="theme-color" content="#10151b" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>World Prototype — Wildlife</title>
+    <meta name="description" content="3D open-world nature and wildlife exploration prototype with procedural terrain, biomes, resources, and animals." />
+    <meta property="og:title" content="World Prototype — Wildlife" />
+    <meta property="og:description" content="3D open-world nature and wildlife exploration prototype with procedural terrain, biomes, resources, and animals." />
   </head>
   <body>
     <div id="game"></div>
     <div id="hud">
-      <div id="brand">WORLD <span>WILDLIFE</span></div><div id="compass">N</div>
-      <button id="fullscreenBtn" aria-label="Toggle fullscreen">⛶</button><button id="mapBtn" aria-label="Open world map">MAP</button>
+      <div id="brand">WORLD <span>WILDLIFE</span></div>
+      <div id="compass">N</div>
+
+      <!-- Top Right Controls & Live Mini-Map (CODM Style) -->
+      <div id="topRightBar">
+        <button id="settingsBtn" aria-label="Open settings" title="Settings">⚙️</button>
+        <button id="fullscreenBtn" aria-label="Toggle fullscreen" title="Fullscreen">⛶</button>
+      </div>
+
+      <div id="minimapContainer" aria-label="Tap to open full world map" title="Tap for Full Map">
+        <canvas id="miniCanvas"></canvas>
+        <div id="minimapSub">
+          <span id="minimapHomeDist">⌂ 0m</span>
+          <span id="minimapTapHint">TAP MAP</span>
+        </div>
+      </div>
+
       <div id="status">Generating world…</div>
       <div id="inventory"></div>
       <div id="target" aria-hidden="true">✚</div>
       <div id="prompt"></div>
       <div id="wildlife" aria-live="polite">Wildlife loading…</div>
+      <div id="waypointBadge"></div>
       <div id="controls">WASD / arrows · drag to look · E = interact · Space = jump / rise · Ctrl = dive · Shift = sprint · F / C = camera</div>
     </div>
-    <div id="mapOverlay"><button id="mapClose">CLOSE</button><div id="mapTitle">WORLD MAP <span>DISCOVERED WORLD</span></div><canvas id="mapCanvas"></canvas><div id="mapLegend">■ HOME &nbsp; ● YOU &nbsp; ● WILDLIFE &nbsp; Roads &nbsp; Water &nbsp; Terrain</div></div><div id="touch">
+
+    <!-- Emote Selector Bar -->
+    <div id="emoteBar">
+      <button class="emoteOption" data-emote="wave">👋 Wave</button>
+      <button class="emoteOption" data-emote="cheer">🎉 Cheer</button>
+      <button class="emoteOption" data-emote="sit">🧘 Sit</button>
+      <button class="emoteOption" data-emote="dance">💃 Dance</button>
+      <button class="emoteOption" data-emote="inspect">🔍 Inspect</button>
+    </div>
+
+    <!-- Full World Map Overlay (Opens when tapping Mini-Map) -->
+    <div id="mapOverlay">
+      <button id="mapClose">CLOSE ✕</button>
+      <div id="mapTitle">WORLD MAP <span>DISCOVERED REGIONS & TRAILS</span></div>
+      <canvas id="mapCanvas"></canvas>
+      <div id="mapLegend">
+        <span>■ Home</span>
+        <span>● You (Arrow)</span>
+        <span>— Trail (Where you came from)</span>
+        <span>▲ Wildlife</span>
+        <span>★ Waypoint (Tap anywhere to set)</span>
+      </div>
+    </div>
+
+    <!-- Settings Modal Overlay -->
+    <div id="settingsOverlay">
+      <div class="settingsCard">
+        <div class="settingsHeader">
+          <h3>GAMEPLAY & CONTROLS SETTINGS</h3>
+          <button id="settingsClose">✕</button>
+        </div>
+        <div class="settingsBody">
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Horizontal Sensitivity (X-Axis)</span>
+              <span id="sensXVal">1.0x</span>
+            </div>
+            <input type="range" id="sensXSlider" min="0.2" max="3.0" step="0.1" value="1.0" />
+          </div>
+
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Vertical Sensitivity (Y-Axis)</span>
+              <span id="sensYVal">1.0x</span>
+            </div>
+            <input type="range" id="sensYSlider" min="0.2" max="3.0" step="0.1" value="1.0" />
+          </div>
+
+          <div class="settingRow">
+            <span>Invert Vertical (Y-Axis)</span>
+            <input type="checkbox" id="invertYCheck" />
+          </div>
+
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Dynamic Weather</span>
+              <span id="weatherVal">Dynamic</span>
+            </div>
+            <select id="weatherSelect">
+              <option value="dynamic">Dynamic Cycles (Sun & Rain)</option>
+              <option value="clear">Always Clear Sky</option>
+              <option value="rain">Gentle Rain Shower</option>
+            </select>
+          </div>
+
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Graphics & Shadows</span>
+            </div>
+            <select id="graphicsSelect">
+              <option value="high">High Quality (Full Shadows)</option>
+              <option value="med">Balanced (Optimized)</option>
+              <option value="low">Performance (Battery Saver)</option>
+            </select>
+          </div>
+
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Character Outfit & Style</span>
+            </div>
+            <select id="outfitSelect">
+              <option value="explorer">Explorer (Royal Indigo & Leather)</option>
+              <option value="ranger">Forest Ranger (Pine Green & Brass)</option>
+              <option value="scout">Autumn Scout (Amber & Leather)</option>
+              <option value="arctic">Arctic Scout (Slate & Frost White)</option>
+            </select>
+          </div>
+
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Terrain LOD & GPU Displacement</span>
+            </div>
+            <select id="lodSelect">
+              <option value="ultra">Ultra (High Mountains & GPU Displacement)</option>
+              <option value="balanced">Balanced LOD (Optimized Hills)</option>
+              <option value="fast">Fast LOD (Battery Saver)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Home Carpenter Upgrade Modal Overlay -->
+    <div id="upgradeOverlay">
+      <div class="upgradeCard">
+        <div class="upgradeHeader">
+          <h3 id="upgradeTitle">CARPENTER WORKBENCH</h3>
+          <button id="upgradeClose">✕</button>
+        </div>
+        <div class="upgradeBody">
+          <div id="upgradeCurrentLevel">Current: Starter Pioneer Cabin</div>
+          <p id="upgradeDesc">Upgrade your homestead with a timber porch, stone chimney, and warm lanterns!</p>
+          <div id="upgradeCosts"></div>
+          <button id="upgradeBtn">UPGRADE HOME</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Touch Mobile Controls -->
+    <div id="touch">
       <div id="stick"><div id="knob"></div></div>
       <div id="lookZone"></div>
       <div class="actions">
+        <button id="emoteBtn" title="Emotes">EMOTE</button>
         <button id="modeBtn">FPP</button>
         <button id="runBtn">WALK</button>
         <button id="jumpBtn">JUMP</button>
@@ -30,6 +169,7 @@
         <button id="interactBtn">USE</button>
       </div>
     </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

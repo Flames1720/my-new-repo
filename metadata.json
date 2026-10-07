@@ -1,0 +1,8 @@
+{
+  "name": "World Prototype — Wildlife",
+  "description": "3D open-world nature and wildlife exploration prototype with procedural terrain, biomes, resources, and animals.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
