@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import './style.css';
-import { WildlifeSystem, isSharedAnimalAsset, type Biome, speciesColor } from './fauna';
+import { WildlifeSystem, isSharedAnimalAsset, type Biome, speciesColor, SPECIES_NAME } from './fauna';
 
 type Mode='tpp'|'fpp';
 type Save={version:1;player:{x:number;y:number;z:number;ry:number;mode:Mode};camera:{yaw:number;pitch:number;distance:number};changes:Record<string,string[]>;inventory:Record<string,number>;wildlifeTrust?:Record<string,number>;worldTime?:number};
@@ -33,14 +33,17 @@ const lerp=(a:number,b:number,t:number)=>a+(b-a)*t;
 const angleLerp=(a:number,b:number,t:number)=>a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*Math.min(1,t);
 const hash=(x:number,z:number)=>{let n=Math.imul(x,374761393)^Math.imul(z,668265263)^Math.imul(SEED,1442695041);n=Math.imul(n^(n>>>13),1274126177);return((n^(n>>>16))>>>0)/4294967296};
 const grassColor=new THREE.Color(0x6f9a5a),rockTintColor=new THREE.Color(0x8b8680),snowColor=new THREE.Color(0xf2f4f6),forestTintColor=new THREE.Color(0x52754d),meadowTintColor=new THREE.Color(0x91ad69),wetlandTintColor=new THREE.Color(0x9a9a63),shoreTintColor=new THREE.Color(0xc2b383),lakeSandColor=new THREE.Color(0xb09a68),lakeSiltColor=new THREE.Color(0x5c5948);
-function terrainColorAt(h:number,x:number,z:number):THREE.Color{
+// biome is passed in (computed once per chunk) rather than resolved per vertex: biomeAt()
+// does up to 5 waterAt lookups internally, and the tint it drives is a broad, low-opacity
+// regional wash that doesn't benefit from per-vertex precision — only the lake sand/silt
+// blend below needs real per-vertex accuracy, since that one actually defines shorelines.
+function terrainColorAt(h:number,x:number,z:number,biome:Biome):THREE.Color{
  let c:THREE.Color;
  if(h<4.0)c=grassColor.clone();
  else if(h<5.2)c=grassColor.clone().lerp(rockTintColor,(h-4.0)/1.2);
  else if(h<7.0)c=rockTintColor.clone();
  else if(h<8.2)c=rockTintColor.clone().lerp(snowColor,(h-7.0)/1.2);
  else c=snowColor.clone();
- const biome=biomeAt(x,z);
  if(biome==='forest')c.lerp(forestTintColor,.2);
  else if(biome==='meadow')c.lerp(meadowTintColor,.12);
  else if(biome==='wetland')c.lerp(wetlandTintColor,.24);
@@ -214,7 +217,8 @@ class Chunks{
   const segs = lod===0 ? 12 : lod===1 ? 6 : 3;
   const terrain=new THREE.PlaneGeometry(SIZE,SIZE,segs,segs);terrain.rotateX(-Math.PI/2);const pos=terrain.getAttribute('position');
   const colors=new Float32Array(pos.count*3);
-  for(let i=0;i<pos.count;i++){const lx=pos.getX(i)+cx*SIZE+SIZE/2,lz=pos.getZ(i)+cz*SIZE+SIZE/2;const h=terrainHeightAt(lx,lz);pos.setY(i,h);const c=terrainColorAt(h,lx,lz);colors[i*3]=c.r;colors[i*3+1]=c.g;colors[i*3+2]=c.b}
+  const chunkBiome=biomeAt(cx*SIZE+SIZE/2,cz*SIZE+SIZE/2);
+  for(let i=0;i<pos.count;i++){const lx=pos.getX(i)+cx*SIZE+SIZE/2,lz=pos.getZ(i)+cz*SIZE+SIZE/2;const h=terrainHeightAt(lx,lz);pos.setY(i,h);const c=terrainColorAt(h,lx,lz,chunkBiome);colors[i*3]=c.r;colors[i*3+1]=c.g;colors[i*3+2]=c.b}
   terrain.setAttribute('color',new THREE.BufferAttribute(colors,3));terrain.computeVertexNormals();
   const ground=new THREE.Mesh(terrain,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1}));ground.position.set(cx*SIZE+SIZE/2,0,cz*SIZE+SIZE/2);ground.receiveShadow=lod===0;ground.name='terrain';g.add(ground);
   const roadMat=new THREE.MeshStandardMaterial({color:0x3d4348,roughness:1});
@@ -393,7 +397,7 @@ function jump(){if(player.swimming){player.velocity.y=1.8;return}if(player.onGro
 function addItem(item:string,qty:number){inventory[item]=(inventory[item]||0)+qty;renderInventory();saveNow()}
 function renderInventory(){inventoryEl.innerHTML=Object.entries(inventory).filter(([,v])=>v>0).map(([k,v])=>`<span class="invItem">${ITEM_ICONS[k]||'•'} ${v}</span>`).join('')}
 renderInventory();
-fauna=new WildlifeSystem({heightAt:terrainHeightAt,waterAt,roadAt,nearHome,biomeAt,trust:save.wildlifeTrust??{},hasFruit:()=>Boolean(inventory.Fruit),consumeFruit:()=>{inventory.Fruit=Math.max(0,(inventory.Fruit||0)-1);renderInventory();saveNow()},onTrustChange:saveNow,notify:say});
+fauna=new WildlifeSystem({heightAt:terrainHeightAt,waterAt,roadAt,nearHome,biomeAt,chunkSize:SIZE,trust:save.wildlifeTrust??{},hasFruit:()=>Boolean(inventory.Fruit),consumeFruit:()=>{inventory.Fruit=Math.max(0,(inventory.Fruit||0)-1);renderInventory();saveNow()},onTrustChange:saveNow,notify:say});
 chunks.stream(save.player.x,save.player.z);
 function hitResource(obj:THREE.Object3D){
  const res=obj.userData.resource as {kind:ResourceKind;hits:number;maxHits:number};
@@ -492,7 +496,7 @@ function update(dt:number){
 	else{const eye=cameraEye.copy(p);eye.y+=player.swimming?.22:1.55;camera.position.lerp(eye,Math.min(1,dt*18));const look=cameraLook.copy(eye);look.x+=Math.sin(targetYaw)*Math.cos(targetPitch)*8;look.y+=Math.sin(targetPitch)*8;look.z+=Math.cos(targetYaw)*Math.cos(targetPitch)*8;camera.lookAt(look)}
 	const cameraUnderwater=player.swimming&&camera.position.y<WATER_LEVEL-.04;if(cameraUnderwater!==underwater){underwater=cameraUnderwater;hud.classList.toggle('underwater',underwater);if(scene.fog){const fog=scene.fog as THREE.Fog;fog.color.copy(underwater?underwaterFogColor:skyColor);fog.near=underwater?1.5:60;fog.far=underwater?18:160}}
 		player.animate(walkTime+=dt,moving,sprinting,player.swimming,dt,horizontalSpeed);
-	const aimed=getAimTarget();if(aimed&&!moving&&!promptTimer){const r=aimed.userData.resource as {kind:string;hits:number;maxHits:number}|undefined,animal=aimed.userData.animal as {species:string}|undefined;say(animal?`E · observe ${animal.species}${inventory.Fruit?' or offer fruit':''}`:r?`USE · ${r.kind[0].toUpperCase()+r.kind.slice(1)} (${r.maxHits-r.hits}/${r.maxHits})`:`USE · ${aimed.name.replace('front-door','Front door').replace('tree-','Tree ')}`)}
+	const aimed=getAimTarget();if(aimed&&!moving&&!promptTimer){const r=aimed.userData.resource as {kind:string;hits:number;maxHits:number}|undefined,animal=aimed.userData.animal as {species:keyof typeof SPECIES_NAME}|undefined;say(animal?`E · observe ${SPECIES_NAME[animal.species]}${inventory.Fruit?' or offer fruit':''}`:r?`USE · ${r.kind[0].toUpperCase()+r.kind.slice(1)} (${r.maxHits-r.hits}/${r.maxHits})`:`USE · ${aimed.name.replace('front-door','Front door').replace('tree-','Tree ')}`)}
 	if(promptTimer>0){promptTimer-=dt;if(promptTimer<=0)prompt.classList.remove('show')}
 	compass.style.transform=`translateX(-50%) rotate(${-camYaw*180/Math.PI}deg)`;if(mapOverlay.classList.contains('show')){mapAccumulator+=dt;if(mapAccumulator>=.25){drawMap();drawAnimalMapMarkers();mapAccumulator=0}}else mapAccumulator=0;
 	autosave+=dt;if(autosave>2){autosave=0;saveNow()}uiAccumulator+=dt;if(uiAccumulator>=.1){uiAccumulator=0;target.style.top=mode==='tpp'?'40%':'50%';target.classList.toggle('active',!!aimed);target.textContent=aimed?(aimed.userData.resource?'✚':'•'):'✚';(document.querySelector('#modeBtn') as HTMLButtonElement).textContent=mode.toUpperCase();(document.querySelector('#runBtn') as HTMLButtonElement).textContent=sprintToggle?'RUN':'WALK';(document.querySelector('#jumpBtn') as HTMLButtonElement).textContent=player.swimming?'RISE':'JUMP';const hour=Math.floor(worldTime),minute=Math.floor((worldTime-hour)*60);status.textContent=`${player.swimming?'SWIM':mode.toUpperCase()} · ${sprinting?'RUN':'WALK'} · ${biomeAt(p.x,p.z)} · ${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')} · chunk ${cx},${cz}`;(document.querySelector('#wildlife') as HTMLElement).textContent=fauna?.status(p)??'Wildlife loading…'}
