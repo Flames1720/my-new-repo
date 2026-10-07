@@ -30,6 +30,7 @@ export interface WildlifeOptions {
   roadAt: (x: number, z: number) => boolean;
   nearHome: (x: number, z: number) => boolean;
   biomeAt: (x: number, z: number) => Biome;
+  chunkSize: number;
   trust: Record<string, number>;
   hasFruit: () => boolean;
   consumeFruit: () => void;
@@ -39,7 +40,7 @@ export interface WildlifeOptions {
 
 export interface AnimalMarker { x: number; z: number; species: Species; }
 
-const SPECIES_NAME: Record<Species, string> = {
+export const SPECIES_NAME: Record<Species, string> = {
   deer: 'White-tailed deer', rabbit: 'Cottontail rabbit', fox: 'Red fox',
   wolf: 'Grey wolf', boar: 'Wild boar', duck: 'Mallard duck',
 };
@@ -162,15 +163,17 @@ export class WildlifeSystem {
   readonly animals = new Map<string, AnimalState>();
   readonly trust: Record<string, number>;
   private readonly options: WildlifeOptions;
+  private readonly size: number;
   private elapsed = 0;
 
-  constructor(options: WildlifeOptions) { this.options = options; this.trust = options.trust; }
+  constructor(options: WildlifeOptions) { this.options = options; this.trust = options.trust; this.size = options.chunkSize; }
 
   spawnChunk(cx: number, cz: number, lod: number, parent: THREE.Group): void {
     if (lod >= 2) return;
     const count = lod === 0 ? 2 : 1;
-    const minX = cx * 16 + 1.6, maxX = (cx + 1) * 16 - 1.6;
-    const minZ = cz * 16 + 1.6, maxZ = (cz + 1) * 16 - 1.6;
+    const size = this.size;
+    const minX = cx * size + 1.6, maxX = (cx + 1) * size - 1.6;
+    const minZ = cz * size + 1.6, maxZ = (cz + 1) * size - 1.6;
     for (let slot = 0; slot < count; slot++) {
       if (seeded(cx * 29 + slot * 7, cz * 37 - slot * 11) < (lod === 0 ? .62 : .82)) continue;
       const id = `${cx},${cz}:${slot}`;
@@ -269,7 +272,8 @@ export class WildlifeSystem {
 
   private canStand(species: Species, x: number, z: number, home: THREE.Vector2, chunkKey: string): boolean {
     const [cx, cz] = chunkKey.split(',').map(Number);
-    if (x < cx * 16 + 1 || x > (cx + 1) * 16 - 1 || z < cz * 16 + 1 || z > (cz + 1) * 16 - 1) return false;
+    const size = this.size;
+    if (x < cx * size + 1 || x > (cx + 1) * size - 1 || z < cz * size + 1 || z > (cz + 1) * size - 1) return false;
     if (this.options.nearHome(x, z) || this.options.roadAt(x, z)) return false;
     const wet = this.options.waterAt(x, z);
     return AQUATIC.has(species) ? wet : !wet && Math.hypot(x - home.x, z - home.y) < 10;
@@ -277,14 +281,15 @@ export class WildlifeSystem {
 
   private chooseNextTarget(a: AnimalState): void {
     const [cx, cz] = a.chunkKey.split(',').map(Number);
+    const size = this.size;
     const turn = Math.floor(this.elapsed / 5 + a.phase * 3);
     for (let attempt = 0; attempt < 10; attempt++) {
       const r1 = seeded(Math.round(a.home.x * 19) + turn + attempt * 7, Math.round(a.home.y * 23) - turn * 3);
       const r2 = seeded(Math.round(a.home.x * 29) - turn * 5, Math.round(a.home.y * 31) + turn + attempt * 11);
       const radius = a.species === 'rabbit' ? 4.5 : 7;
       const angle = r1 * Math.PI * 2, distance = .8 + r2 * radius;
-      const x = clamp(a.home.x + Math.sin(angle) * distance, cx * 16 + 1.5, (cx + 1) * 16 - 1.5);
-      const z = clamp(a.home.y + Math.cos(angle) * distance, cz * 16 + 1.5, (cz + 1) * 16 - 1.5);
+      const x = clamp(a.home.x + Math.sin(angle) * distance, cx * size + 1.5, (cx + 1) * size - 1.5);
+      const z = clamp(a.home.y + Math.cos(angle) * distance, cz * size + 1.5, (cz + 1) * size - 1.5);
       if (this.canStand(a.species, x, z, a.home, a.chunkKey)) {
         a.target.set(x, z); a.mood = r1 < .22 ? 'resting' : r1 < .58 ? 'foraging' : 'wandering';
         a.think = 2.2 + r2 * 5.5; return;
