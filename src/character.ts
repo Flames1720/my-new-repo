@@ -554,6 +554,11 @@ export class PlayerCharacter {
   setOutfit(kind: CharacterOutfitKind) { this.applyOutfit(kind); }
   setGender(gender: Gender) { this.applyGender(gender); }
 
+  playEmote(emote: EmoteKind) {
+    this.currentEmote = emote;
+    this.emoteTime = 0;
+  }
+
   applyOutfit(kind: CharacterOutfitKind) {
     this.currentOutfit = kind;
     const pal = OUTFIT_PALETTES[kind] || OUTFIT_PALETTES.explorer;
