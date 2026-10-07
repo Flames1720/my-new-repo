@@ -431,28 +431,39 @@ export class PlayerCharacter {
         const model = gltf.scene;
         model.name = 'player-production-model';
 
-        // The exported asset's armature carries a +90° X conversion rotation.
-        // The game already uses Three.js Y-up world coordinates, so keeping that
-        // export-space rotation makes the character lie on its back. Counter it
-        // once at the model root; the Mixamo skeleton/animations then stay upright.
-        model.rotation.x = -Math.PI / 2;
+        // The Mixamo GLB asset is already exported in Three.js Y-up coordinates.
+        // It stands upright on its feet facing forward along +Z.
+        // Keep upright rotation (0, 0, 0).
+        model.rotation.set(0, 0, 0);
+        model.position.set(0, 0, 0);
+        model.scale.setScalar(1.0);
+
+        // Enhance materials so the character is brightly lit, textured, and vivid
         model.traverse(object => {
           if (object instanceof THREE.Mesh) {
             object.castShadow = true;
             object.receiveShadow = true;
-            object.frustumCulled = true;
+            object.frustumCulled = false; // Always render player character without clipping
+            if (object.material) {
+              const m = (Array.isArray(object.material) ? object.material[0] : object.material) as THREE.MeshStandardMaterial;
+              // Restore diffuse map if assigned to normalMap slot
+              if (!m.map && m.normalMap) {
+                m.map = m.normalMap;
+                m.normalMap = null;
+              }
+              if (m.map) {
+                m.map.colorSpace = THREE.SRGBColorSpace;
+                m.map.needsUpdate = true;
+              }
+              m.roughness = 0.68;
+              m.metalness = 0.05;
+              m.color.setHex(0xffffff);
+              // Subtle ambient warmth so character is never in pitch shadow
+              m.emissive = new THREE.Color(0x241c16);
+              m.needsUpdate = true;
+            }
           }
         });
-
-        // Normalize the source asset to the game's existing ~1.8m character scale.
-        const box = new THREE.Box3().setFromObject(model);
-        const size = box.getSize(new THREE.Vector3());
-        const height = Math.max(size.y, 0.001);
-        const scale = 1.78 / height;
-        model.scale.setScalar(scale);
-        model.updateMatrixWorld(true);
-        const scaledBox = new THREE.Box3().setFromObject(model);
-        model.position.y -= scaledBox.min.y;
 
         this.modelRoot = model;
         this.root.add(model);
@@ -461,20 +472,17 @@ export class PlayerCharacter {
 
         this.modelMixer = new THREE.AnimationMixer(model);
         for (const sourceClip of gltf.animations) {
-          // Remove hip/root translation so animation does not fight the game's
-          // own collision-driven player movement. The body/leg motion remains intact.
-          const clip = sourceClip.clone();
-          clip.tracks = clip.tracks.filter(track => {
-            const target = track.name.split('.')[0].toLowerCase();
-            const property = track.name.split('.')[1] || '';
-            return !(target.includes('hips') && property === 'position');
-          });
-          const action = this.modelMixer!.clipAction(clip);
-          action.enabled = false;
+          // Keep all bone tracks intact so the Mixamo skeleton and hips animate naturally
+          const action = this.modelMixer.clipAction(sourceClip);
           action.setLoop(THREE.LoopRepeat, Infinity);
           this.modelActions.set(sourceClip.name.toLowerCase(), action);
         }
 
+        // Apply current customization settings
+        this.applyOutfit(this.currentOutfit);
+        this.applyGender(this.gender);
+
+        // Start with idle animation
         this.playModelAnimation('idle', 0);
         onLoaded?.();
       },
@@ -485,46 +493,75 @@ export class PlayerCharacter {
     );
   }
 
-  private findModelAction(name: string) {
-    const exact = this.modelActions.get(name.toLowerCase());
+  private findModelAction(name: string): THREE.AnimationAction | null {
+    const target = name.toLowerCase();
+    const exact = this.modelActions.get(target);
     if (exact) return exact;
     for (const [key, action] of this.modelActions) {
-      if (key.includes(name.toLowerCase())) return action;
+      if (key.includes(target) || target.includes(key)) return action;
     }
     return null;
   }
 
-  private playModelAnimation(name: 'idle' | 'walk' | 'run' | 'backward', fade = 0.16) {
+  private playModelAnimation(name: 'idle' | 'walk' | 'run' | 'backward', fade = 0.18) {
     if (!this.modelReady || !this.modelMixer) return;
     const lookup = name === 'walk' || name === 'run' ? 'jog forward' : name === 'backward' ? 'jog backward' : 'idle';
     const next = this.findModelAction(lookup) || this.findModelAction(name) || this.findModelAction('idle');
-    if (!next || next === this.activeModelAction) {
-      if (next) next.setEffectiveTimeScale(name === 'run' ? 1.0 : name === 'walk' ? 0.62 : 1.0);
+    if (!next) return;
+
+    const timeScale = name === 'run' ? 1.22 : name === 'walk' ? 0.82 : 1.0;
+    next.setEffectiveTimeScale(timeScale);
+
+    if (next === this.activeModelAction) {
       return;
     }
+
     next.reset();
     next.enabled = true;
-    next.setEffectiveWeight(1);
-    next.setEffectiveTimeScale(name === 'run' ? 1.05 : name === 'walk' ? 0.62 : 1.0);
+    next.setEffectiveWeight(1.0);
+    next.play();
+
     if (this.activeModelAction) {
       this.activeModelAction.crossFadeTo(next, fade, true);
-    } else {
-      next.play();
     }
+
     this.activeModelAction = next;
     this.modelAnimation = name;
   }
 
-  private updateProductionAnimation(moving: boolean, sprinting: boolean, swimming: boolean) {
-    if (!this.modelReady || !this.modelMixer) return;
+  private updateProductionAnimation(
+    moving: boolean,
+    sprinting: boolean,
+    swimming: boolean,
+    turnRate = 0,
+    dt = 0.016,
+    onGround = true,
+    speed = 0
+  ) {
+    if (!this.modelReady || !this.modelRoot) return;
+
     if (swimming) {
-      // No swimming clip was purchased, so keep the character readable while the
-      // existing game swimming state controls the body/camera.
       this.playModelAnimation('idle', 0.25);
-    } else if (moving) {
-      this.playModelAnimation(sprinting ? 'run' : 'walk');
+      this.modelRoot.rotation.x = lerp(this.modelRoot.rotation.x, 1.25, Math.min(1, dt * 8));
+      this.modelRoot.position.y = lerp(this.modelRoot.position.y, -0.32, Math.min(1, dt * 8));
     } else {
-      this.playModelAnimation('idle');
+      if (!onGround) {
+        // Airborne jump dynamics
+        this.playModelAnimation('walk', 0.15);
+        this.modelRoot.position.y = lerp(this.modelRoot.position.y, 0.08, Math.min(1, dt * 10));
+      } else if (moving) {
+        this.playModelAnimation(sprinting || speed > 5.5 ? 'run' : 'walk');
+        this.modelRoot.position.y = lerp(this.modelRoot.position.y, 0, Math.min(1, dt * 8));
+      } else {
+        this.playModelAnimation('idle');
+        this.modelRoot.position.y = lerp(this.modelRoot.position.y, 0, Math.min(1, dt * 8));
+      }
+
+      // Athletic forward lean during movement and banking during turns
+      const forwardLean = moving ? (sprinting ? 0.15 : 0.06) : 0;
+      const bankLean = moving ? clamp(-turnRate * 0.22, -0.14, 0.14) : 0;
+      this.modelRoot.rotation.x = lerp(this.modelRoot.rotation.x, forwardLean, Math.min(1, dt * 8));
+      this.modelRoot.rotation.z = lerp(this.modelRoot.rotation.z, bankLean, Math.min(1, dt * 8));
     }
   }
 
@@ -552,6 +589,16 @@ export class PlayerCharacter {
       else if (item.part === 'metal') mat.color.setHex(pal.metal);
       else if (item.part === 'accent') mat.color.setHex(pal.accent);
     }
+
+    if (this.modelRoot) {
+      const tint = kind === 'lagos' ? 0xf0fdf4 : kind === 'ranger' ? 0xf4fbf0 : kind === 'scout' ? 0xfffaed : kind === 'arctic' ? 0xf0f9ff : 0xffffff;
+      this.modelRoot.traverse(o => {
+        if (o instanceof THREE.Mesh && o.material) {
+          const m = (Array.isArray(o.material) ? o.material[0] : o.material) as THREE.MeshStandardMaterial;
+          m.color.setHex(tint);
+        }
+      });
+    }
   }
 
   applyGender(gender: Gender) {
@@ -562,11 +609,13 @@ export class PlayerCharacter {
       this.pelvis.scale.set(1.05, 1.0, 1.02);
       this.hatGroup.visible = false;
       this.hairGroup.scale.set(1.04, 1.06, 1.04);
+      if (this.modelRoot) this.modelRoot.scale.set(0.96, 0.98, 0.96);
     } else {
       this.chest.scale.set(1.0, 1.0, 1.0);
       this.pelvis.scale.set(1.0, 1.0, 1.0);
       this.hatGroup.visible = true;
       this.hairGroup.scale.set(1.0, 1.0, 1.0);
+      if (this.modelRoot) this.modelRoot.scale.set(1.0, 1.0, 1.0);
     }
   }
 
@@ -590,11 +639,15 @@ export class PlayerCharacter {
     swimming: boolean,
     dt: number,
     speed: number,
-    turnRate: number
+    turnRate: number,
+    onGround = true
   ) {
-    this.update(dt, t, moving, sprinting, swimming, speed, turnRate);
-    this.updateProductionAnimation(moving, sprinting, swimming);
-    this.modelMixer?.update(Math.min(dt, 1 / 20));
+    if (!this.modelReady) {
+      this.update(dt, t, moving, sprinting, swimming, speed, turnRate);
+    } else {
+      this.updateProductionAnimation(moving, sprinting, swimming, turnRate, dt, onGround, speed);
+      this.modelMixer?.update(Math.min(dt, 0.05));
+    }
   }
 
   // --- NATURAL CONTRALATERAL HUMAN WALKING & LOCOMOTION ENGINE ---

@@ -49,11 +49,11 @@ export const SPECIES_ICON: Record<Species, string> = {
 
 export const speciesColor = (s: Species): string => '#' + (SPECIES_COLOR[s] || 0x888888).toString(16).padStart(6, '0');
 
-// Strict Ecological Trophic Limits: Sustainable predator packs and thriving prey
+// Strict Ecological Trophic Limits: Small predator packs and flourishing prey
 export const MAX_SPECIES_CAP: Record<Species, number> = {
-  wolf: 3,   // Small sustainable pack (Max 3 in world)
-  fox: 4,    // Small woodland predator (Max 4 in world)
-  boar: 22,
+  wolf: 2,   // Controlled apex pack (Max 2 in world)
+  fox: 3,    // Controlled woodland predator (Max 3 in world)
+  boar: 20,
   deer: 36,
   cow: 26,
   duck: 36,
@@ -828,6 +828,7 @@ export class WildlifeSystem {
       packId: HERD_ANIMALS.has(species) ? `${species}-herd-${chunkKey}` : PREDATORS.has(species) ? `wolf-pack-${chunkKey}` : undefined,
       isFlying: false,
       flyAltitude: 0,
+      huntStamina: 0,
       isAttachedToScene: isAttached,
     };
 
@@ -854,13 +855,25 @@ export class WildlifeSystem {
   balanceEcosystem(notifyPlayer = false): void {
     const census = this.speciesCensus();
 
-    // 1. Cap excessive wolves down to sustainable pack (4-5 wolves)
+    // 1. Cap excessive predators strictly to sustainable small packs (max 2 wolves, max 3 foxes)
     const wolfList: string[] = [];
+    const foxList: string[] = [];
     for (const [id, a] of this.animals) {
       if (a.species === 'wolf') wolfList.push(id);
+      if (a.species === 'fox') foxList.push(id);
     }
     if (wolfList.length > MAX_SPECIES_CAP.wolf) {
-      const toRemove = wolfList.slice(4);
+      const toRemove = wolfList.slice(MAX_SPECIES_CAP.wolf);
+      for (const id of toRemove) {
+        const a = this.animals.get(id);
+        if (a) {
+          a.root.parent?.remove(a.root);
+          this.animals.delete(id);
+        }
+      }
+    }
+    if (foxList.length > MAX_SPECIES_CAP.fox) {
+      const toRemove = foxList.slice(MAX_SPECIES_CAP.fox);
       for (const id of toRemove) {
         const a = this.animals.get(id);
         if (a) {
@@ -870,12 +883,12 @@ export class WildlifeSystem {
       }
     }
 
-    // 2. Reintroduce extinct or critically low species
+    // 2. Reintroduce extinct or critically low prey species (guarantee healthy breeding herds)
     // Mallard Ducks
-    if (census.duck.total < 8) {
-      const needed = 8 - census.duck.total;
+    if (census.duck.total < 10) {
+      const needed = 10 - census.duck.total;
       for (let i = 0; i < needed; i++) {
-        const gender: Gender = i % 2 === 0 ? 'male' : 'female';
+        const gender: Gender = i % 2 === 0 ? 'female' : 'male';
         const x = 32 + (i - 2) * 5;
         const z = -36 + (i % 2) * 4;
         this.createAnimal('duck', gender, false, x, z, `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`);
@@ -883,24 +896,13 @@ export class WildlifeSystem {
     }
 
     // Wild Boars
-    if (census.boar.total < 6) {
-      const needed = 6 - census.boar.total;
+    if (census.boar.total < 8) {
+      const needed = 8 - census.boar.total;
       for (let i = 0; i < needed; i++) {
-        const gender: Gender = i % 2 === 0 ? 'male' : 'female';
+        const gender: Gender = i % 2 === 0 ? 'female' : 'male';
         const x = -42 + (i - 2) * 6;
         const z = 28 + (i % 2) * 5;
         this.createAnimal('boar', gender, false, x, z, `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`);
-      }
-    }
-
-    // Red Foxes
-    if (census.fox.total < 5) {
-      const needed = 5 - census.fox.total;
-      for (let i = 0; i < needed; i++) {
-        const gender: Gender = i % 2 === 0 ? 'male' : 'female';
-        const x = 40 + (i - 2) * 6;
-        const z = 22 + (i % 2) * 4;
-        this.createAnimal('fox', gender, false, x, z, `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`);
       }
     }
 
@@ -908,27 +910,66 @@ export class WildlifeSystem {
     if (census.cow.total < 8) {
       const needed = 8 - census.cow.total;
       for (let i = 0; i < needed; i++) {
-        const gender: Gender = i % 2 === 0 ? 'male' : 'female';
+        const gender: Gender = i % 2 === 0 ? 'female' : 'male';
         const x = 18 + (i - 2) * 6;
         const z = -14 + (i % 2) * 5;
         this.createAnimal('cow', gender, false, x, z, `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`);
       }
     }
 
+    // Forest Deer
+    if (census.deer.total < 10) {
+      const needed = 10 - census.deer.total;
+      for (let i = 0; i < needed; i++) {
+        const gender: Gender = i % 2 === 0 ? 'female' : 'male';
+        const x = -28 + (i - 2) * 6;
+        const z = -45 + (i % 2) * 5;
+        this.createAnimal('deer', gender, false, x, z, `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`);
+      }
+    }
+
+    // Meadow Rabbits
+    if (census.rabbit.total < 12) {
+      const needed = 12 - census.rabbit.total;
+      for (let i = 0; i < needed; i++) {
+        const gender: Gender = i % 2 === 0 ? 'female' : 'male';
+        const x = 12 + (i - 3) * 4;
+        const z = 20 + (i % 2) * 4;
+        this.createAnimal('rabbit', gender, false, x, z, `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`);
+      }
+    }
+
+    // Ensure at least 1-2 small sustainable predators exist without overtaking
+    if (census.fox.total === 0) {
+      this.createAnimal('fox', 'male', false, 45, 25, '1,0');
+      this.createAnimal('fox', 'female', false, 48, 27, '1,0');
+    }
+    if (census.wolf.total === 0) {
+      this.createAnimal('wolf', 'male', false, -55, -55, '-1,-1');
+    }
+
     this.extinctSpecies.clear();
 
     if (notifyPlayer) {
-      this.options.notify('🌿 Sanctuary Balanced: Predator packs stabilized and wild breeding pairs reintroduced!');
+      this.options.notify('🌿 Sanctuary Balanced: Extinct species repopulated and predator packs stabilized!');
     }
   }
 
   update(dt: number, playerPos: THREE.Vector3, sprinting: boolean): void {
     this.elapsed += dt;
 
-    // Periodic safety check: Auto-balance if any species is wiped out
-    if (Math.floor(this.elapsed) % 60 === 0 && Math.floor(this.elapsed) > 0) {
+    // Periodic safety check: Auto-balance every 30s if any prey is wiped out or predator exceeds cap
+    if (Math.floor(this.elapsed) % 30 === 0 && Math.floor(this.elapsed) > 0) {
       const census = this.speciesCensus();
-      if (census.duck.total === 0 || census.boar.total === 0 || census.fox.total === 0 || census.wolf.total > MAX_SPECIES_CAP.wolf) {
+      if (
+        census.duck.total <= 2 ||
+        census.boar.total <= 2 ||
+        census.deer.total <= 2 ||
+        census.cow.total <= 2 ||
+        census.rabbit.total <= 2 ||
+        census.wolf.total > MAX_SPECIES_CAP.wolf ||
+        census.fox.total > MAX_SPECIES_CAP.fox
+      ) {
         this.balanceEcosystem(true);
       }
     }
@@ -942,25 +983,25 @@ export class WildlifeSystem {
 
       // 1. Aging & Maturation
       a.age += dt;
-      if (a.isBaby && a.age > 75) {
+      if (a.isBaby && a.age > 65) {
         a.isBaby = false;
         a.scale = 1.0;
         a.maxHp *= 2;
         a.hp = a.maxHp;
-        a.matingCooldown = 45;
+        a.matingCooldown = 30;
         a.root.scale.setScalar(1.0);
         this.options.notify(`🌱 A young ${SPECIES_NAME[a.species]} matured into an adult!`);
       }
 
-      // Predators get hungry very slowly (takes ~25-30 minutes of game time to starve)
+      // Predator hunger increases slowly (only hunts when hungry)
       if (PREDATORS.has(a.species)) {
-        a.hunger = Math.min(100, a.hunger + dt * 0.015);
+        a.hunger = Math.min(100, a.hunger + dt * 0.012);
       } else {
         // Herbivores naturally graze lush pasture and flora!
         if (a.mood === 'foraging' || a.mood === 'drinking' || a.mood === 'resting' || a.mood === 'wandering' || a.mood === 'seeking_mate') {
-          a.hunger = Math.max(0, a.hunger - dt * 3.0);
+          a.hunger = Math.max(0, a.hunger - dt * 3.5);
         } else {
-          a.hunger = Math.min(100, a.hunger + dt * 0.02);
+          a.hunger = Math.min(100, a.hunger + dt * 0.015);
         }
       }
       a.matingCooldown = Math.max(0, a.matingCooldown - dt);
@@ -978,19 +1019,21 @@ export class WildlifeSystem {
         }
       }
 
-      // 3. PREDATOR HUNTING: Only occurs when predator is STARVING (hunger >= 90)
-      // Predators NEVER hunt endangered species (<= 6 members), and satiated predators rest!
-      const isStarving = a.hunger >= 90;
-      if (PREDATORS.has(a.species) && isStarving && a.mood !== 'fleeing' && a.mood !== 'defending') {
+      // 3. PREDATOR HUNTING: Only occurs when predator is TRULY HUNGRY (hunger >= 75)
+      // When well-fed, predators peacefully roam, snooze, or drink.
+      // Predators NEVER hunt endangered species (<= 6 members).
+      const isHungry = a.hunger >= 75;
+      if (PREDATORS.has(a.species) && isHungry && a.mood !== 'fleeing' && a.mood !== 'defending') {
         let nearestPrey: AnimalState | null = null;
-        let minDist = 28;
+        let minDist = 32;
 
         for (const [otherId, other] of this.animals) {
           if (otherId === id || PREDATORS.has(other.species)) continue;
-          if (a.species === 'fox' && (other.species === 'boar' || other.species === 'cow' || other.species === 'deer')) continue;
+          // Foxes ONLY hunt rabbits and vulnerable ducklings, NEVER large cows, stags, or boars!
+          if (a.species === 'fox' && (other.species === 'boar' || other.species === 'cow' || other.species === 'deer' || (other.species === 'duck' && !other.isBaby))) continue;
 
           // Strict nature protection: Predators do NOT hunt endangered species!
-          if (this.getSpeciesCount(other.species) <= 6) continue;
+          if (this.getSpeciesCount(other.species) <= 5) continue;
 
           const dPrey = Math.hypot(p.x - other.root.position.x, p.z - other.root.position.z);
           if (dPrey < minDist) {
@@ -1004,23 +1047,33 @@ export class WildlifeSystem {
           a.targetPreyId = nearestPrey.id;
           a.target.set(nearestPrey.root.position.x, nearestPrey.root.position.z);
 
+          // Chase stamina: if hunt exceeds 12s, predator tires out and rests
+          a.huntStamina = (a.huntStamina || 0) + dt;
+          if (a.huntStamina > 12) {
+            a.huntStamina = 0;
+            a.mood = 'resting';
+            a.think = 16;
+            a.hunger = Math.max(0, a.hunger - 10);
+          }
+
           // Close in to strike
           if (minDist < 1.6) {
+            a.huntStamina = 0;
             const damage = a.species === 'wolf' ? 24 : 14;
             nearestPrey.hp -= damage;
             nearestPrey.mood = 'fleeing';
             nearestPrey.fleeCooldown = 4.5;
 
-            // Defensive retaliation: Prey fights back!
+            // Defensive retaliation: Large prey fights back fiercely!
             if (nearestPrey.species === 'boar') {
-              a.hp -= 38; // Boar razor tusks!
+              a.hp -= 42; // Boar razor tusks!
             } else if (nearestPrey.species === 'cow' && !nearestPrey.isBaby) {
-              a.hp -= 45; // Heavy bovine kick!
+              a.hp -= 50; // Heavy bovine kick!
             } else if (nearestPrey.species === 'deer' && nearestPrey.gender === 'male' && !nearestPrey.isBaby) {
-              a.hp -= 35; // Stag antler gore!
+              a.hp -= 40; // Stag antler gore!
             }
 
-            // Predator dies from defensive wounds!
+            // Predator wounded/killed by defensive retaliation
             if (a.hp <= 0) {
               this.failedHunts++;
               this.options.notify(`⚠️ Defending ${SPECIES_NAME[nearestPrey.species]} wounded and repelled the hungry ${SPECIES_NAME[a.species]}!`);
@@ -1029,35 +1082,47 @@ export class WildlifeSystem {
               continue;
             }
 
-            // Prey killed
+            // Prey caught
             if (nearestPrey.hp <= 0) {
               this.successfulHunts++;
-              this.options.notify(`🍂 A ${SPECIES_NAME[a.species]} hunted a ${SPECIES_NAME[nearestPrey.species]}.`);
+              this.options.notify(`🍂 A ${SPECIES_NAME[a.species]} caught a ${SPECIES_NAME[nearestPrey.species]}.`);
               nearestPrey.root.parent?.remove(nearestPrey.root);
               this.animals.delete(nearestPrey.id);
               this.checkSpeciesExtinction(nearestPrey.species);
 
-              // Satiated predator: Full meal, enters 5 minutes of quiet rest where it will NOT hunt!
+              // Satiated predator: Full meal, enters 6 minutes of quiet rest where hunting is disabled!
               a.hunger = 0;
               a.mood = 'resting';
-              a.think = 300;
+              a.think = 360;
             }
           }
+        } else {
+          // No suitable prey found: wander and explore
+          if (a.mood === 'hunting') {
+            a.mood = 'wandering';
+            a.think = 5;
+          }
         }
+      } else if (PREDATORS.has(a.species) && !isHungry && a.mood === 'hunting') {
+        // Satiated predator stops hunting immediately
+        a.mood = 'resting';
+        a.think = 10;
       }
 
-      // 4. ACTIVE MATE SEEKING: Animals actively seek partners when ready to mate!
+      // 4. ACTIVE MATE SEEKING & REPRODUCTION
+      // Animals actively seek opposite-gender partners to reproduce.
+      // Predators have very low reproduction rate and strictly controlled population limits.
       const canSeekMate = !a.isBaby && a.matingCooldown <= 0;
       const belowCap = this.getSpeciesCount(a.species) < MAX_SPECIES_CAP[a.species];
-      const predatorCanMate = !PREDATORS.has(a.species) || (belowCap && a.hunger < 30);
+      const predatorCanMate = !PREDATORS.has(a.species) || (belowCap && a.hunger < 25 && this.getSpeciesCount(a.species) < (a.species === 'wolf' ? 2 : 3));
 
       if (canSeekMate && belowCap && predatorCanMate && a.mood !== 'hunting' && a.mood !== 'fleeing') {
         let nearestMate: AnimalState | null = null;
-        let minMateDist = 120;
+        let minMateDist = 150;
 
         for (const [otherId, other] of this.animals) {
           if (otherId === id || other.species !== a.species || other.isBaby || other.gender === a.gender) continue;
-          if (other.matingCooldown > 30) continue; // Partner should also be close to ready
+          if (other.matingCooldown > 12) continue; // Partner should also be close to ready
 
           const dMate = Math.hypot(p.x - other.root.position.x, p.z - other.root.position.z);
           if (dMate < minMateDist) {
@@ -1069,39 +1134,59 @@ export class WildlifeSystem {
         if (nearestMate) {
           a.mood = 'seeking_mate';
           a.target.set(nearestMate.root.position.x, nearestMate.root.position.z);
-          a.think = 2.5;
+          a.think = 3.0;
 
-          // Courtship & Birth when meeting!
-          if (minMateDist < 3.2 && a.gender === 'female') {
-            const cooldown = a.species === 'wolf' ? 720 : a.species === 'fox' ? 500 : a.species === 'cow' ? 80 : a.species === 'duck' ? 45 : a.species === 'rabbit' ? 35 : 65;
+          // Mutual courtship attraction: partner also turns to meet!
+          if (nearestMate.mood !== 'fleeing' && nearestMate.mood !== 'hunting') {
+            nearestMate.mood = 'seeking_mate';
+            nearestMate.target.set(p.x, p.z);
+            nearestMate.think = 3.0;
+          }
+
+          // Courtship & Birth when meeting within 3.5m!
+          if (minMateDist < 3.5) {
+            // Predator mating cooldowns are very long (450s-600s), prey cooldowns are healthy and brisk
+            const cooldown =
+              a.species === 'wolf' ? 600 :
+              a.species === 'fox' ? 450 :
+              a.species === 'cow' ? 60 :
+              a.species === 'duck' ? 38 :
+              a.species === 'rabbit' ? 28 :
+              a.species === 'deer' ? 50 : 55;
+
             a.matingCooldown = cooldown;
             nearestMate.matingCooldown = cooldown;
             a.mood = 'mating';
             nearestMate.mood = 'mating';
+            a.think = 4.0;
+            nearestMate.think = 4.0;
             this.births++;
 
-            // Newborn baby
+            const mother = a.gender === 'female' ? a : nearestMate;
+            const babyGender: Gender = Math.random() > 0.48 ? 'female' : 'male';
+
+            // Primary newborn baby
             this.createAnimal(
               a.species,
-              Math.random() > 0.48 ? 'female' : 'male',
+              babyGender,
               true,
               p.x + (Math.random() - 0.5) * 1.5,
               p.z + (Math.random() - 0.5) * 1.5,
               a.chunkKey,
               a.root.parent as THREE.Group,
-              id
+              mother.id
             );
 
             // Ducks lay clutches (often 2 ducklings!)
-            if (a.species === 'duck' && Math.random() < 0.65) {
-              this.createAnimal(a.species, Math.random() > 0.5 ? 'male' : 'female', true, p.x + (Math.random() - 0.5), p.z + (Math.random() - 0.5), a.chunkKey, a.root.parent as THREE.Group, id);
+            if (a.species === 'duck' && Math.random() < 0.7) {
+              this.createAnimal(a.species, Math.random() > 0.5 ? 'male' : 'female', true, p.x + (Math.random() - 0.5) * 1.8, p.z + (Math.random() - 0.5) * 1.8, a.chunkKey, a.root.parent as THREE.Group, mother.id);
             }
             // Rabbits can have twin kits!
-            if (a.species === 'rabbit' && Math.random() < 0.55) {
-              this.createAnimal(a.species, Math.random() > 0.5 ? 'male' : 'female', true, p.x + (Math.random() - 0.5), p.z + (Math.random() - 0.5), a.chunkKey, a.root.parent as THREE.Group, id);
+            if (a.species === 'rabbit' && Math.random() < 0.65) {
+              this.createAnimal(a.species, Math.random() > 0.5 ? 'male' : 'female', true, p.x + (Math.random() - 0.5) * 1.5, p.z + (Math.random() - 0.5) * 1.5, a.chunkKey, a.root.parent as THREE.Group, mother.id);
             }
 
-            this.options.notify(`✨ A new baby ${SPECIES_NAME[a.species]} was born to seeking parents!`);
+            this.options.notify(`✨ A new baby ${SPECIES_NAME[a.species]} was born to loving parents!`);
           }
         }
       }

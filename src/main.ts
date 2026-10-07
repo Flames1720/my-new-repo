@@ -268,7 +268,7 @@ scene.background = skyColor;
 scene.fog = new THREE.Fog(0x9fc7df, 55, 160);
 
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 500);
-const renderer = new THREE.WebGLRenderer({ antialias: !LOW_POWER_MODE, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ antialias: !LOW_POWER_MODE, powerPreference: 'high-performance', preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, LOW_POWER_MODE ? 1.25 : 1.65));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = !LOW_POWER_MODE;
@@ -810,6 +810,7 @@ addEventListener('keydown', e => {
   if (e.key.toLowerCase() === 'c') mode = 'tpp';
   if (!e.repeat && e.key.toLowerCase() === 'e') interact();
   if (!e.repeat && e.key.toLowerCase() === 'b') toggleEmoteBar();
+  if (!e.repeat && e.key.toLowerCase() === 'p') togglePhotoMode();
 });
 addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
 
@@ -1257,11 +1258,136 @@ async function toggleFullscreen() {
 }
 bindAction(fullscreenBtn, toggleFullscreen);
 
+// --- PHOTO MODE: CLEAN SCREENSHOT TAKING & LOCAL DOWNLOAD ---
+const photoBtn = document.querySelector('#photoBtn') as HTMLButtonElement | null;
+const photoCloseBtn = document.querySelector('#photoCloseBtn') as HTMLButtonElement | null;
+const photoGridBtn = document.querySelector('#photoGridBtn') as HTMLButtonElement | null;
+const photoSnapBtn = document.querySelector('#photoSnapBtn') as HTMLButtonElement | null;
+const photoCleanBtn = document.querySelector('#photoCleanBtn') as HTMLButtonElement | null;
+const photoTimeBadge = document.querySelector('#photoTimeBadge') as HTMLSpanElement | null;
+const photoCamBadge = document.querySelector('#photoCamBadge') as HTMLSpanElement | null;
+const photoGrid = document.querySelector('#photoGrid') as HTMLDivElement | null;
+const photoFlash = document.querySelector('#photoFlash') as HTMLDivElement | null;
+const photoToast = document.querySelector('#photoToast') as HTMLDivElement | null;
+
+let isPhotoMode = false;
+let isPhotoClean = false;
+
+function showPhotoToast(msg: string) {
+  if (!photoToast) return;
+  photoToast.textContent = msg;
+  photoToast.classList.add('show');
+  setTimeout(() => photoToast.classList.remove('show'), 2800);
+}
+
+function updatePhotoBadges() {
+  if (photoTimeBadge) {
+    const hour = Math.floor(worldTime);
+    const minute = Math.floor((worldTime - hour) * 60);
+    photoTimeBadge.textContent = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+  if (photoCamBadge) {
+    photoCamBadge.textContent = `${Math.round(camera.fov)}° FOV`;
+  }
+}
+
+function setPhotoMode(active: boolean) {
+  isPhotoMode = active;
+  isPhotoClean = false;
+  document.body.classList.toggle('photo-mode-active', active);
+  document.body.classList.remove('photo-clean-mode');
+
+  if (active) {
+    updatePhotoBadges();
+    say('📷 Photo Mode: Press CAPTURE / Space to take screenshot · Esc or P to exit');
+  } else {
+    say('Returned to game');
+  }
+}
+
+function togglePhotoMode() {
+  setPhotoMode(!isPhotoMode);
+}
+
+function takeScreenshot() {
+  // 1. Hide all HUD & photo overlays completely for clean screenshot taking
+  document.body.classList.add('taking-screenshot');
+
+  // 2. Render fresh clean frame with Three.js renderer
+  renderer.render(scene, camera);
+
+  // 3. Shutter flash effect
+  if (photoFlash) {
+    photoFlash.classList.add('flash');
+    requestAnimationFrame(() => {
+      setTimeout(() => photoFlash.classList.remove('flash'), 50);
+    });
+  }
+
+  // 4. Capture canvas as high-res PNG and save to browser download
+  try {
+    const dataUrl = renderer.domElement.toDataURL('image/png');
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    a.href = dataUrl;
+    a.download = `wildlife-screenshot-${ts}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    showPhotoToast('📸 Screenshot saved to downloads!');
+    say('Screenshot saved to your downloads!');
+  } catch (err) {
+    console.error('Screenshot capture failed:', err);
+    showPhotoToast('⚠️ Could not save screenshot');
+  } finally {
+    document.body.classList.remove('taking-screenshot');
+  }
+}
+
+if (photoBtn) bindAction(photoBtn, () => setPhotoMode(!isPhotoMode));
+if (photoCloseBtn) bindAction(photoCloseBtn, () => setPhotoMode(false));
+if (photoSnapBtn) bindAction(photoSnapBtn, takeScreenshot);
+
+if (photoGridBtn && photoGrid) {
+  bindAction(photoGridBtn, () => {
+    photoGrid.classList.toggle('hidden');
+  });
+}
+
+if (photoCleanBtn) {
+  bindAction(photoCleanBtn, () => {
+    isPhotoClean = !isPhotoClean;
+    document.body.classList.toggle('photo-clean-mode', isPhotoClean);
+  });
+}
+
+// Tap anywhere when in clean preview mode to restore controls
+window.addEventListener('click', e => {
+  if (isPhotoMode && isPhotoClean) {
+    isPhotoClean = false;
+    document.body.classList.remove('photo-clean-mode');
+  }
+});
+
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    if (isPhotoMode) {
+      if (isPhotoClean) {
+        isPhotoClean = false;
+        document.body.classList.remove('photo-clean-mode');
+      } else {
+        setPhotoMode(false);
+      }
+      return;
+    }
     openSettings(false);
     minimap.setFullMap(false);
     openHomeWorkshop(false);
+  }
+  if (isPhotoMode && (e.key === ' ' || e.key === 'Enter') && !e.repeat) {
+    e.preventDefault();
+    takeScreenshot();
   }
 });
 
@@ -1542,7 +1668,7 @@ function update(dt: number) {
 
   const iv = input();
   const forward = moveForward.set(Math.sin(camYaw), 0, Math.cos(camYaw));
-  const right = moveRight.set(-Math.cos(camYaw), 0, Math.sin(camYaw));
+  const right = moveRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw));
   const dir = moveDirection.set(0, 0, 0).addScaledVector(right, iv.x).addScaledVector(forward, -iv.y);
   const inputMagnitude = Math.min(1, dir.length());
   const hasInput = inputMagnitude > 0.08;
@@ -1688,7 +1814,8 @@ function update(dt: number) {
     }
   }
 
-  player.animate(walkTime += dt, moving, sprinting, player.swimming, dt, horizontalSpeed, angularVelocity);
+  player.animate(walkTime += dt, moving, sprinting, player.swimming, dt, horizontalSpeed, angularVelocity, player.onGround);
+  if (isPhotoMode) updatePhotoBadges();
 
   // Record breadcrumb displacement trail
   minimap.recordPosition(p.x, p.z);

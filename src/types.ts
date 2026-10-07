@@ -132,5 +132,6 @@ export interface AnimalState {
   isFlying?: boolean;
   flyAltitude?: number;
   targetPreyId?: string;
+  huntStamina?: number;
   isAttachedToScene: boolean;
 }

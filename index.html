@@ -18,6 +18,7 @@
 
       <!-- Top Right Controls & Live Mini-Map (CODM Style) -->
       <div id="topRightBar">
+        <button id="photoBtn" aria-label="Photo Mode (clean screenshot)" title="Photo Mode (P)">📷</button>
         <button id="ecoBtn" aria-label="Ecosystem sanctuary & field guide" title="Wildlife Sanctuary">🐾</button>
         <button id="settingsBtn" aria-label="Open settings" title="Settings">⚙️</button>
         <button id="fullscreenBtn" aria-label="Toggle fullscreen" title="Fullscreen">⛶</button>
@@ -216,6 +217,50 @@
         <button id="interactBtn">USE</button>
       </div>
     </div>
+
+    <!-- Photo Mode Viewfinder & Screenshot Capture Overlay -->
+    <div id="photoOverlay">
+      <!-- Rule of Thirds Composition Grid -->
+      <div id="photoGrid" class="hidden">
+        <div class="gridLine v1"></div>
+        <div class="gridLine v2"></div>
+        <div class="gridLine h1"></div>
+        <div class="gridLine h2"></div>
+      </div>
+
+      <!-- Viewfinder Optical Framing Corners -->
+      <div class="viewfinderCorner tl"></div>
+      <div class="viewfinderCorner tr"></div>
+      <div class="viewfinderCorner bl"></div>
+      <div class="viewfinderCorner br"></div>
+      <div id="photoFocusCross"></div>
+
+      <!-- Top Photo Bar -->
+      <div id="photoTopBar">
+        <div id="photoInfo">
+          <span class="photoBadge">📷 PHOTO MODE</span>
+          <span id="photoTimeBadge">12:00</span>
+          <span id="photoCamBadge">62° FOV</span>
+        </div>
+        <button id="photoCloseBtn" title="Exit Photo Mode (Esc / P)">✕ EXIT</button>
+      </div>
+
+      <!-- Bottom Photo Control Bar -->
+      <div id="photoBottomBar">
+        <button id="photoGridBtn" class="photoToolBtn" title="Toggle Composition Grid">⊞ Grid</button>
+        <button id="photoSnapBtn" class="photoShutterBtn" title="Capture and Download Screenshot">
+          <span class="shutterIcon">📸</span>
+          <span class="shutterText">CAPTURE & SAVE</span>
+        </button>
+        <button id="photoCleanBtn" class="photoToolBtn" title="Hide UI to preview framing (tap anywhere to return)">👁️ Clean Frame</button>
+      </div>
+    </div>
+
+    <!-- Camera Shutter Flash Effect -->
+    <div id="photoFlash"></div>
+
+    <!-- Photo Mode Toast Notification -->
+    <div id="photoToast"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
