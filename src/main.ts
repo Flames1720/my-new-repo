@@ -1719,7 +1719,9 @@ function setSurveyMode(active: boolean) {
     world.visible = true;
     actors.visible = true;
     celestialGroup.visible = true;
-    distantHorizonMesh.visible = true;
+    // Survey is the finite world only. The distant horizon is an old extended-terrain
+    // background and must not leak a second procedural world outside the boundary.
+    distantHorizonMesh.visible = false;
     cloudDeckGroup.visible = true;
     splashRing.visible = false;
     surveyWasFog = scene.fog;
@@ -1784,8 +1786,8 @@ if (!document.querySelector('#surveyWorldBtn')) {
 }
 const surveyWorldBtn = document.querySelector('#surveyWorldBtn') as HTMLButtonElement | null;
 if (surveyWorldBtn) bindAction(surveyWorldBtn, () => setSurveyView('world'));
-if (surveyTerrainBtn) bindAction(surveyTerrainBtn, () => setSurveyView('terrain'));
-if (surveyHydrologyBtn) bindAction(surveyHydrologyBtn, () => setSurveyView('hydrology'));
+if (surveyTerrainBtn) bindAction(surveyTerrainBtn, () => setSurveyView(survey.currentView === 'terrain' ? 'world' : 'terrain'));
+if (surveyHydrologyBtn) bindAction(surveyHydrologyBtn, () => setSurveyView(survey.currentView === 'hydrology' ? 'world' : 'hydrology'));
 if (surveyCaptureBtn) bindAction(surveyCaptureBtn, captureSurvey);
 window.addEventListener('keydown', e => {
   if (survey.isActive) {
@@ -2249,7 +2251,8 @@ function input() {
 
 function update(dt: number) {
   if (survey.isActive) {
-    survey.update(dt);
+    // Survey is a frozen world snapshot: no weather, fauna, physics, terrain
+    // streaming, or other live simulation advances while the user inspects it.
     return;
   }
   aimTimer = Math.max(0, aimTimer - dt);
@@ -2648,7 +2651,14 @@ addEventListener('beforeunload', saveNow);
 
 function loop() {
   requestAnimationFrame(loop);
-  update(Math.min(clock.getDelta(), 0.05));
-  renderer.render(scene, survey.isActive ? survey.camera : camera);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (survey.isActive) {
+    // Only redraw the frozen survey scene when its camera actually changes.
+    // This keeps the full-world survey detailed without continuously burning GPU.
+    if (survey.update(dt)) renderer.render(scene, survey.camera);
+    return;
+  }
+  update(dt);
+  renderer.render(scene, camera);
 }
 loop();
