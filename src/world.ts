@@ -738,21 +738,25 @@ function buildHydrology(): HydrologyGrid {
       depth = clamp(1.35 + depressionDepth * 0.82, 1.35, 8.0);
       presence = 1;
     } else if (channelStrength[i] > 0.02) {
+      // Keep the waterline close to the local terrain datum. The channel
+      // bed is lowered by depth below; a large artificial hydraulic head here
+      // makes rivers look like raised platforms and creates jump-height ledges.
+      // Any true waterfall comes from a real downhill change between cells.
       surface =
         baseElevation[i] +
-        0.30 +
-        channelStrength[i] * 0.32;
+        0.025 +
+        channelStrength[i] * 0.045;
       const catchmentFactor = clamp(
         Math.log1p(flowAccumulation[i]) / Math.log1p(9000),
         0,
         1
       );
       const rawTargetDepth = clamp(
-        0.12 +
-        catchmentFactor * 2.65 +
-        Math.min(0.65, flowDrop[i] * 0.12),
-        0.12,
-        3.2
+        0.06 +
+        catchmentFactor * 1.15 +
+        Math.min(0.45, flowDrop[i] * 0.08),
+        0.06,
+        1.65
       );
       // Small headwaters taper naturally at their banks; mature rivers keep a
       // nearly full-width wet core. smoothstep avoids square hard edges.
