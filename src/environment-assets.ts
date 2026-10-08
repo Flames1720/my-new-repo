@@ -66,7 +66,8 @@ export const environmentAssets = {
     return sharedMaterials.has(material);
   },
 
-  createTree(kind: 'oak' | 'pine' | 'palm' | 'fruit' | 'ancient_oak', lod: number): THREE.Group | null {
+  createTree(kind: 'oak' | 'pine' | 'palm' | 'fruit' | 'ancient_oak' | 'rock' | 'boulder', lod: number): THREE.Group | null {
+    if (kind === 'rock' || kind === 'boulder') return null;
     const assetKind: EnvironmentAssetKind =
       kind === 'pine' ? 'pine' :
       kind === 'palm' ? 'palm' :
