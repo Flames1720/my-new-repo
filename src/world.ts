@@ -1185,11 +1185,11 @@ export function waterDepthAt(x: number, z: number): number {
   if (grid.lakeMask[cell.i]) {
     const surface = Math.max(WATER_LEVEL, bilinear(grid.filledElevation, gx, gz));
     if (surface <= terrainBaseHeightAt(x, z) + 0.02) return 0;
-    return Math.max(0, bilinear(grid.waterDepth, gx, gz));
+    return Math.min(Math.max(0, bilinear(grid.waterDepth, gx, gz)), Math.max(0, waterSurfaceAt(x, z) - 0.2));
   }
 
   if (grid.channelStrength[cell.i] > 0.02) {
-    return Math.max(0, bilinear(grid.waterDepth, gx, gz));
+    return Math.min(Math.max(0, bilinear(grid.waterDepth, gx, gz)), Math.max(0, waterSurfaceAt(x, z) - 0.2));
   }
 
   return 0;
