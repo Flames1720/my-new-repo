@@ -368,3 +368,16 @@ The previous entry said the final input patch was still building; that build sub
 - Do not merge to `main` until runtime/device verification is complete.
 
 **Next agent:** Start from commit `0c2fcfdf248c92639e18009ee3d40fda93ea0523` on `world-drainage-foundation`; do not reintroduce hand-authored river splines or make chunks authoritative for geography.
+
+## 2026-10-08 18:58 +01:00 — GPT-5.6 Luna — survey UI correction
+
+**Scope:** World Survey control completeness.
+
+**Changed:** Added a defensive DOM creation path in `src/main.ts` so the 🌍 WORLD survey button exists and is bound even though the deployed HTML template was missing it.
+
+**Verification:**
+- Typecheck: NOT RUN after this final UI-only patch.
+- Vercel: latest deployment for commit `8a0f7ceb9ebe5bf67608448ca9d98a7482cd5bda` was still BUILDING at handoff.
+- Browser/device: NOT VERIFIED.
+
+**Remaining work:** Confirm the latest deployment becomes READY, then exercise all three survey views on-device before merging to `main`.
