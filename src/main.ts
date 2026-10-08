@@ -40,7 +40,7 @@ import { WildlifeSystem, isSharedAnimalAsset, speciesColor, SPECIES_NAME, SPECIE
 import { MinimapSystem } from './minimap';
 import { settings } from './settings';
 import { WorldSurvey, type SurveyView } from './survey';
-import { voxelWorld, buildVoxelWorldVolumeMesh, type VoxelEdit } from './voxel';
+import { voxelWorld, buildVoxelWorldVolumeMesh, buildVoxelWorldWaterVolumeMesh, type VoxelEdit } from './voxel';
 
 type Save = {
   version: 2;
@@ -506,6 +506,26 @@ const voxelSurveyGroup = new THREE.Group();
 voxelSurveyGroup.name = 'voxel-survey-volume';
 voxelSurveyGroup.visible = false;
 scene.add(voxelSurveyGroup);
+
+// Survey deliberately switches from the gameplay surface meshes to the
+// volumetric terrain/water representation, so the inspection view cannot
+// accidentally hide the physical depth behind the old sheets.
+const surveyHiddenSurfaceMeshes = new Set<THREE.Object3D>();
+function setSurveySurfaceMeshesVisible(visible: boolean) {
+  if (!visible) {
+    world.traverse(o => {
+      if (!(o instanceof THREE.Mesh)) return;
+      if (o.name === 'terrain' || o.name === 'water-surface') {
+        o.visible = false;
+        surveyHiddenSurfaceMeshes.add(o);
+      }
+    });
+    return;
+  }
+
+  for (const o of surveyHiddenSurfaceMeshes) o.visible = true;
+  surveyHiddenSurfaceMeshes.clear();
+}
 
 const survey = new WorldSurvey();
 scene.add(survey.root);
@@ -1065,20 +1085,33 @@ class Chunks {
       // the compact surface representation, while WORLD Survey gets a real
       // vertical geological mass when the camera is lifted to the side.
       if (!voxelSurveyGroup.getObjectByName('voxel-world-volume')) {
-        const volume = buildVoxelWorldVolumeMesh(terrainMaterial);
+        const volume = buildVoxelWorldVolumeMesh();
         if (volume) voxelSurveyGroup.add(volume);
       }
+      if (!voxelSurveyGroup.getObjectByName('voxel-water-volume')) {
+        const waterVolume = buildVoxelWorldWaterVolumeMesh();
+        if (waterVolume) voxelSurveyGroup.add(waterVolume);
+      }
+
+      // The closed voxel meshes are now the authoritative visual surface for
+      // Survey. Roads/buildings/vegetation/actors remain visible on top.
+      setSurveySurfaceMeshesVisible(false);
       voxelSurveyGroup.visible = true;
 
       onProgress?.(total, total);
       return;
     }
     voxelSurveyGroup.visible = false;
-    const volume = voxelSurveyGroup.getObjectByName('voxel-world-volume');
-    if (volume) {
-      volume.removeFromParent();
-      if (volume instanceof THREE.Mesh) volume.geometry.dispose();
+    for (const child of [...voxelSurveyGroup.children]) {
+      child.removeFromParent();
+      const mesh = child as THREE.Mesh;
+      if (mesh.geometry instanceof THREE.BufferGeometry) mesh.geometry.dispose();
+      if (mesh.material) {
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const mat of materials) mat.dispose();
+      }
     }
+    setSurveySurfaceMeshesVisible(true);
     this.stream(player.root.position.x, player.root.position.z);
   }
 
