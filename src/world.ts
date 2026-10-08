@@ -60,6 +60,8 @@ export interface WorldFields {
   flowSpeed: number; // Flow speed in m/s
   flowAccumulation: number; // Effective upstream catchment runoff area
   flowDrop: number; // Vertical drop to the next drainage cell (m)
+  snowDepth: number; // 0 to 1 seasonal/surface snow coverage
+  iceThickness: number; // 0 to 1 frozen-water surface thickness proxy
   windVector: THREE.Vector2; // Wind direction
   windSpeed: number; // Wind speed in m/s
   biome: Biome;
@@ -309,6 +311,7 @@ interface HydrologyGrid {
   flowDz: Float32Array;
   flowDrop: Float32Array;
   channelStrength: Float32Array;
+  waterSurface: Float32Array;
   lakeMask: Uint8Array;
   oceanMask: Uint8Array;
 }
@@ -449,6 +452,7 @@ function buildHydrology(): HydrologyGrid {
   const flowDz = new Float32Array(HYDRO_COUNT);
   const flowDrop = new Float32Array(HYDRO_COUNT);
   const channelStrength = new Float32Array(HYDRO_COUNT);
+  const waterSurface = new Float32Array(HYDRO_COUNT);
   const lakeMask = new Uint8Array(HYDRO_COUNT);
   const oceanMask = new Uint8Array(HYDRO_COUNT);
 
@@ -612,13 +616,15 @@ function buildHydrology(): HydrologyGrid {
     }
   }
 
-  // A lake is an enclosed basin whose low floor is below the gameplay waterline
-  // but whose spill elevation is materially higher than that waterline.
+  // A lake is an enclosed depression with a meaningful spill depth.
+  // Absolute elevation does not decide whether a mountain or basin lake exists:
+  // a high-altitude lake is valid too.
   const candidate = new Uint8Array(HYDRO_COUNT);
   for (let i = 0; i < HYDRO_COUNT; i++) {
+    const depressionDepth = filledElevation[i] - baseElevation[i];
     if (
-      baseElevation[i] < WATER_LEVEL - 0.02 &&
-      filledElevation[i] > WATER_LEVEL + 0.80 &&
+      depressionDepth > 0.9 &&
+      filledElevation[i] > WATER_LEVEL + 0.35 &&
       !oceanMask[i]
     ) {
       candidate[i] = 1;
@@ -689,6 +695,23 @@ function buildHydrology(): HydrologyGrid {
     channelStrength[i] = clamp(strength, 0, 1);
   }
 
+  // Derive a real water surface from the geography.
+  // Ocean stays at sea level; lakes fill to their natural spill elevation;
+  // rivers/streams sit in carved channels at their local pre-carved terrain
+  // elevation, which lets high-mountain water remain high and creates real
+  // downhill surface drops for waterfalls.
+  for (let i = 0; i < HYDRO_COUNT; i++) {
+    if (oceanMask[i]) {
+      waterSurface[i] = WATER_LEVEL;
+    } else if (lakeMask[i]) {
+      waterSurface[i] = Math.max(WATER_LEVEL, filledElevation[i]);
+    } else if (channelStrength[i] > 0.02) {
+      waterSurface[i] = Math.max(WATER_LEVEL, baseElevation[i]);
+    } else {
+      waterSurface[i] = 0;
+    }
+  }
+
   return {
     baseElevation,
     filledElevation,
@@ -699,6 +722,7 @@ function buildHydrology(): HydrologyGrid {
     flowDz,
     flowDrop,
     channelStrength,
+    waterSurface,
     lakeMask,
     oceanMask,
   };
@@ -850,15 +874,25 @@ function hydrologyCarveAt(x: number, z: number): number {
   if (sample.ocean) return 0;
 
   if (sample.lake) {
+    const surface = Math.max(WATER_LEVEL, grid.waterSurface[cell.i]);
     const depressionDepth = Math.max(0, grid.filledElevation[cell.i] - base);
-    const targetDepth = clamp(0.75 + depressionDepth * 0.28, 0.75, 2.35);
-    return Math.max(0, base - (WATER_LEVEL - targetDepth));
+    // Deep central water in a properly filled basin, rather than a paper-thin
+    // decal sitting only at the global sea level.
+    const targetDepth = clamp(1.35 + depressionDepth * 0.82, 1.35, 8.0);
+    return Math.max(0, base - (surface - targetDepth));
   }
 
   if (sample.channelStrength <= 0.02) return 0;
 
-  const targetDepth = 0.45 + sample.channelStrength * 1.85;
-  return Math.max(0, base - (WATER_LEVEL - targetDepth));
+  const surface = Math.max(WATER_LEVEL, grid.waterSurface[cell.i]);
+  const targetDepth = clamp(
+    0.55 +
+    sample.channelStrength * 2.25 +
+    Math.min(0.7, sample.flowDrop * 0.16),
+    0.55,
+    3.8
+  );
+  return Math.max(0, base - (surface - targetDepth));
 }
 
 export function riverDistanceAt(x: number, z: number): number {
@@ -1056,15 +1090,58 @@ export function terrainHeightAt(x: number, z: number): number {
   return Math.max(0.2, ground - hydrologyCarveAt(x, z));
 }
 
+export function waterSurfaceAt(x: number, z: number): number {
+  if (nearHome(x, z) || nearVillage(x, z)) return WATER_LEVEL;
+
+  const sample = hydrologySampleAt(x, z);
+  if (sample.ocean) return WATER_LEVEL;
+  if (sample.lake) return Math.max(WATER_LEVEL, sample.filledElevation);
+  if (sample.channelStrength > 0.02) return Math.max(WATER_LEVEL, sample.baseElevation);
+  return WATER_LEVEL;
+}
+
 export function waterDepthAt(x: number, z: number): number {
   if (nearHome(x, z)) return 0;
+
+  const sample = hydrologySampleAt(x, z);
+  if (!sample.ocean && !sample.lake && sample.channelStrength <= 0.02) return 0;
+
+  const surface = waterSurfaceAt(x, z);
   const th = terrainHeightAt(x, z);
-  return Math.max(0, WATER_LEVEL - th);
+  return Math.max(0, surface - th);
 }
 
 export function waterAt(x: number, z: number): boolean {
   if (nearHome(x, z)) return false;
   return waterDepthAt(x, z) > 0.02;
+}
+
+export function snowDepthAt(x: number, z: number): number {
+  const elevation = terrainHeightAt(x, z);
+  if (waterAt(x, z)) return 0;
+
+  const temperature = 23.0 - elevation * 0.42;
+  const precipitation = hydrologyRainfallAt(x, z);
+  const freezeFactor = clamp((2.0 - temperature) / 7.5, 0, 1);
+  const highAlpine = clamp((elevation - 34.0) / 24.0, 0, 1);
+  return clamp(
+    freezeFactor * (0.30 + precipitation * 0.70) * 0.82 +
+    highAlpine * 0.35,
+    0,
+    1
+  );
+}
+
+export function iceThicknessAt(x: number, z: number): number {
+  const depth = waterDepthAt(x, z);
+  if (depth <= 0.25) return 0;
+
+  const elevation = terrainHeightAt(x, z);
+  const temperature = 23.0 - elevation * 0.42;
+  const sample = hydrologySampleAt(x, z);
+
+  if (!sample.lake || temperature > -2.0) return 0;
+  return clamp((-temperature - 1.5) / 10.0, 0, 1) * clamp(depth / 2.0, 0.2, 1);
 }
 
 // Slope angle calculation in radians
@@ -1174,6 +1251,8 @@ export function queryWorldFields(x: number, z: number): WorldFields {
   const mtn = mountainStructureAt(x, z);
   const climate = climateFieldsAt(x, z);
   const flow = waterFlowAt(x, z);
+  const snowDepth = snowDepthAt(x, z);
+  const iceThickness = iceThicknessAt(x, z);
 
   // Landform classification
   let landform: Landform = 'plains';
@@ -1223,6 +1302,8 @@ export function queryWorldFields(x: number, z: number): WorldFields {
     flowSpeed: flow.flowSpeed,
     flowAccumulation: flow.flowAccumulation,
     flowDrop: flow.flowDrop,
+    snowDepth,
+    iceThickness,
     windVector: PREVAILING_WIND_DIR.clone(),
     windSpeed: BASE_WIND_SPEED,
     biome,
@@ -1359,6 +1440,18 @@ export class WorldModel {
   /** Downstream water flow vector and speed */
   getWaterFlow(x: number, z: number) {
     return waterFlowAt(this.worldX(x), this.worldZ(z));
+  }
+
+  getWaterSurface(x: number, z: number): number {
+    return waterSurfaceAt(this.worldX(x), this.worldZ(z));
+  }
+
+  getSnowDepth(x: number, z: number): number {
+    return snowDepthAt(this.worldX(x), this.worldZ(z));
+  }
+
+  getIceThickness(x: number, z: number): number {
+    return iceThicknessAt(this.worldX(x), this.worldZ(z));
   }
 
   /** Biome classification at coordinate */
