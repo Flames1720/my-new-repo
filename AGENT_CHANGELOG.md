@@ -450,3 +450,23 @@ The previous entry said the final input patch was still building; that build sub
 **Verification:**
 - Code committed on world-drainage-foundation.
 - Physical-device verification of this specific change is still pending.
+
+
+## 2026-10-08 — GPT-5.6 Luna — authoritative water-mask correction
+
+**Scope:** Hydrology correctness and rendered water/terrain agreement.
+
+**Starting point:** `world-drainage-foundation`; external WORLD Survey review identified remaining water-on-slope, water-over-dry-island, and shoreline triangle artifacts.
+
+**Changed:**
+- `src/world.ts`: nearest drainage cell is now authoritative for lake/ocean/channel classification; scalar water fields are smoothed only after a point is classified as belonging to the same water body.
+- `src/world.ts`: terrain carving now consumes the same authoritative `waterDepthAt()` result used by rendering, preventing neighboring wet cells from carving or masking dry ridges/islands.
+- `src/main.ts`: water triangles now require an actually wet cell and at least two wet corners. Shoreline skirt vertices remain available for softer banks, but a dry island can no longer be covered by a full water-sheet quad.
+- No survey-performance architecture or cloud behavior changed.
+
+**Verification:**
+- Vercel build: PASS / READY for commit `803916bef2f002fb99ea96ab0f9db2f151ee3d88`.
+- An intermediate build failed only because the first mesh patch omitted the `wetVertex` declaration; corrected in the next commit and rebuilt successfully.
+- Physical-device/runtime visual verification: PENDING.
+
+**Remaining work:** Test WORLD/TERRAIN/HYDROLOGY on the phone, especially the central basin, steep high-altitude channels, lake islands/peninsulas, shoreline close-ups, and basin-to-ocean outlet. Do not merge to `main` until runtime verification passes.
