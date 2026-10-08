@@ -296,6 +296,8 @@ terrainMaterial.onBeforeCompile = shader => {
     // Riverbed & shoreline alluvial sediment displacement
     float isRiverbed = clamp((1.8 - wy) / 1.5, 0.0, 1.0);
     float riverDisp = (sin(wx * 0.65 + wz * 0.55) * 0.07) * isRiverbed;
+    // Do not perturb an authoritative wet bed back through its water surface.
+    riverDisp *= 1.0 - smoothstep(0.0, 0.42, aWaterMask);
 
     transformed.y += (mtnDisp + riverDisp) * uDispScale;
     `
