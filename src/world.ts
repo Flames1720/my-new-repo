@@ -1195,6 +1195,39 @@ export function waterDepthAt(x: number, z: number): number {
   return 0;
 }
 
+export function waterAt(x: number, z: number): boolean {
+  if (nearHome(x, z)) return false;
+  return waterDepthAt(x, z) > 0.02;
+}
+
+export function snowDepthAt(x: number, z: number): number {
+  const elevation = terrainHeightAt(x, z);
+  if (waterAt(x, z)) return 0;
+
+  const temperature = 23.0 - elevation * 0.42;
+  const precipitation = hydrologyRainfallAt(x, z);
+  const freezeFactor = clamp((2.0 - temperature) / 7.5, 0, 1);
+  const highAlpine = clamp((elevation - 34.0) / 24.0, 0, 1);
+  return clamp(
+    freezeFactor * (0.30 + precipitation * 0.70) * 0.82 +
+    highAlpine * 0.35,
+    0,
+    1
+  );
+}
+
+export function iceThicknessAt(x: number, z: number): number {
+  const depth = waterDepthAt(x, z);
+  if (depth <= 0.25) return 0;
+
+  const elevation = terrainHeightAt(x, z);
+  const temperature = 23.0 - elevation * 0.42;
+  const sample = hydrologySampleAt(x, z);
+
+  if (!sample.lake || temperature > -2.0) return 0;
+  return clamp((-temperature - 1.5) / 10.0, 0, 1) * clamp(depth / 2.0, 0.2, 1);
+}
+
 // Slope angle calculation in radians
 export function terrainSlopeAt(x: number, z: number, delta = 0.8): { slope: number; normal: THREE.Vector3 } {
   const hL = terrainHeightAt(x - delta, z);
