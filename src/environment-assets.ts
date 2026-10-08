@@ -98,7 +98,8 @@ export const environmentAssets = {
     return root;
   },
 
-  createRock(kind: 'rock' | 'boulder', lod: number): THREE.Group | null {
+  createRock(kind: 'oak' | 'pine' | 'palm' | 'fruit' | 'ancient_oak' | 'rock' | 'boulder', lod: number): THREE.Group | null {
+    if (kind !== 'rock' && kind !== 'boulder') return null;
     const template = templates.get(kind);
     if (!template) return null;
 
