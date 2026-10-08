@@ -186,6 +186,7 @@ Read ARCHITECTURE.md for protected decisions and AGENT_CHANGELOG.md for the chro
 ### Latest World Survey inspection pass
 - Status: IMPLEMENTED and Vercel BUILD VERIFIED on `world-drainage-foundation`; physical-device runtime remains NOT VERIFIED.
 - WORLD survey materializes the finite world at LOD0 once and freezes simulation; rendering is now redraw-on-change rather than continuously repainting an idle survey.
+- WORLD survey opening is now non-blocking/batched with a visible `CALCULATING…` → `RENDERING…` → `OPENING…` loader and progress feedback; physical-device runtime verification remains pending.
 - Survey pitch now reaches 0 radians for a true 90° side-on/lifted inspection, while yaw remains freely rotatable and zoom remains available.
 - Diagnostic filters are reversible: tapping the active TERRAIN or HYDROLOGY control returns to WORLD, with an explicit WORLD button also present.
 - Survey mode hides the 920m distant-horizon terrain mesh so no second procedural world appears outside the finite world boundary.
