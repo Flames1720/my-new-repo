@@ -58,7 +58,8 @@ export interface WorldFields {
   waterType: WaterType;
   flowVector: THREE.Vector2; // Downstream flow direction
   flowSpeed: number; // Flow speed in m/s
-  flowAccumulation: number; // Upstream catchment volume
+  flowAccumulation: number; // Effective upstream catchment runoff area
+  flowDrop: number; // Vertical drop to the next drainage cell (m)
   windVector: THREE.Vector2; // Wind direction
   windSpeed: number; // Wind speed in m/s
   biome: Biome;
@@ -280,87 +281,668 @@ export const mountainMaskAt = (x: number, z: number): number => {
 // ============================================================================
 // 2. HYDROLOGICAL DRAINAGE NETWORK
 // ============================================================================
+//
+// Causal world pipeline:
+// geology/elevation + rainfall -> depression conditioning -> flow directions
+// -> runoff accumulation -> streams/tributaries/rivers -> lakes/ocean.
+//
+// The 4 m lattice is a simulation/lookup mechanism, not a chunk boundary.
 
-// Main river centerline formula
-// Winds through the lower valley safely below home bluff (8, 8),
-// naturally connecting Lake Silvermere (-85, -65) with Riverwood village (64, -44)
-export function riverCenterlineZ(x: number): number {
-  return Math.sin(x * 0.02 + 0.8) * 16 + Math.cos(x * 0.012) * 10 + x * 0.15 - 52;
+const HYDRO_MIN = -320;
+const HYDRO_MAX = 320;
+const HYDRO_RESOLUTION = 4;
+const HYDRO_N = Math.floor((HYDRO_MAX - HYDRO_MIN) / HYDRO_RESOLUTION) + 1;
+const HYDRO_COUNT = HYDRO_N * HYDRO_N;
+const HYDRO_CELL_AREA = HYDRO_RESOLUTION * HYDRO_RESOLUTION;
+
+const SPRING_RUNOFF_THRESHOLD = 42;
+const STREAM_RUNOFF_THRESHOLD = 180;
+const RIVER_RUNOFF_THRESHOLD = 900;
+
+interface HydrologyGrid {
+  baseElevation: Float32Array;
+  filledElevation: Float32Array;
+  runoff: Float32Array;
+  flowAccumulation: Float32Array;
+  flowTo: Int32Array;
+  flowDx: Float32Array;
+  flowDz: Float32Array;
+  flowDrop: Float32Array;
+  channelStrength: Float32Array;
+  lakeMask: Uint8Array;
+  oceanMask: Uint8Array;
 }
 
-// Tributary stream 1: North alpine mountain stream descending into the main river
-export function tributaryCenterlineZ(x: number): number {
-  return -160 + (x + 80) * 1.1 + Math.sin(x * 0.03) * 8.0;
+interface HydrologySample {
+  baseElevation: number;
+  filledElevation: number;
+  flowAccumulation: number;
+  channelStrength: number;
+  lake: boolean;
+  ocean: boolean;
+  flowVector: THREE.Vector2;
+  flowDrop: number;
+}
+
+class MinHeap {
+  private heap: { index: number; priority: number }[] = [];
+
+  push(index: number, priority: number): void {
+    const item = { index, priority };
+    this.heap.push(item);
+    let i = this.heap.length - 1;
+
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.heap[p].priority <= item.priority) break;
+      this.heap[i] = this.heap[p];
+      i = p;
+    }
+    this.heap[i] = item;
+  }
+
+  pop(): { index: number; priority: number } | undefined {
+    if (this.heap.length === 0) return undefined;
+
+    const root = this.heap[0];
+    const last = this.heap.pop()!;
+    if (this.heap.length > 0) {
+      let i = 0;
+      while (true) {
+        const left = i * 2 + 1;
+        const right = left + 1;
+        if (left >= this.heap.length) break;
+
+        let child = left;
+        if (right < this.heap.length && this.heap[right].priority < this.heap[left].priority) {
+          child = right;
+        }
+        if (this.heap[child].priority >= last.priority) break;
+
+        this.heap[i] = this.heap[child];
+        i = child;
+      }
+      this.heap[i] = last;
+    }
+
+    return root;
+  }
+}
+
+const hydrologyDirections = [
+  { dx: 1, dz: 0 },
+  { dx: -1, dz: 0 },
+  { dx: 0, dz: 1 },
+  { dx: 0, dz: -1 },
+];
+
+function hydroIndex(ix: number, iz: number): number {
+  return iz * HYDRO_N + ix;
+}
+
+function hydroCoords(x: number, z: number): { gx: number; gz: number } {
+  return {
+    gx: clamp((x - HYDRO_MIN) / HYDRO_RESOLUTION, 0, HYDRO_N - 1),
+    gz: clamp((z - HYDRO_MIN) / HYDRO_RESOLUTION, 0, HYDRO_N - 1),
+  };
+}
+
+function baseSlopeAt(x: number, z: number): number {
+  const d = 2.0;
+  const hL = rawTerrainHeightAt(x - d, z);
+  const hR = rawTerrainHeightAt(x + d, z);
+  const hD = rawTerrainHeightAt(x, z - d);
+  const hU = rawTerrainHeightAt(x, z + d);
+  return Math.atan(Math.hypot((hR - hL) / (2 * d), (hU - hD) / (2 * d)));
+}
+
+// Solver rainfall is independent of carved water to avoid circular hydrology.
+function hydrologyRainfallAt(x: number, z: number): number {
+  const mtn = mountainStructureAt(x, z);
+  const slope = baseSlopeAt(x, z);
+  const d = 1.5;
+  const dx = (rawTerrainHeightAt(x + d, z) - rawTerrainHeightAt(x - d, z)) / (2 * d);
+  const dz = (rawTerrainHeightAt(x, z + d) - rawTerrainHeightAt(x, z - d)) / (2 * d);
+  const normal = new THREE.Vector3(-dx, 1, -dz).normalize();
+
+  const windward = clamp(
+    (normal.x * PREVAILING_WIND_DIR.x + normal.z * PREVAILING_WIND_DIR.y) * 1.5,
+    -1,
+    1
+  );
+
+  let rain = 0.47;
+  if (mtn.mask > 0.08) {
+    rain += windward > 0
+      ? windward * 0.34 * mtn.mask
+      : -Math.abs(windward) * 0.28 * mtn.mask;
+  }
+
+  rain += Math.sin(x * 0.008 + 1.0) * 0.12 + Math.cos(z * 0.009 - 0.5) * 0.10;
+
+  const runoffBias = 0.85 + clamp(slope / 0.9, 0, 1) * 0.25;
+  return clamp(rain * runoffBias, 0.08, 0.98);
+}
+
+function hydrologyBaseElevationAt(x: number, z: number): number {
+  let h = rawTerrainHeightAt(x, z);
+
+  // Keep settlement clearings out of drainage paths without altering the
+  // visible geological height field.
+  if (nearHome(x, z)) h = Math.max(h, HOME_BASE_HEIGHT + 0.65);
+  if (nearVillage(x, z)) h = Math.max(h, VILLAGE_BASE_HEIGHT + 0.65);
+
+  return h;
+}
+
+function buildHydrology(): HydrologyGrid {
+  const baseElevation = new Float32Array(HYDRO_COUNT);
+  const filledElevation = new Float32Array(HYDRO_COUNT);
+  const runoff = new Float32Array(HYDRO_COUNT);
+  const flowAccumulation = new Float32Array(HYDRO_COUNT);
+  const flowTo = new Int32Array(HYDRO_COUNT);
+  const flowDx = new Float32Array(HYDRO_COUNT);
+  const flowDz = new Float32Array(HYDRO_COUNT);
+  const flowDrop = new Float32Array(HYDRO_COUNT);
+  const channelStrength = new Float32Array(HYDRO_COUNT);
+  const lakeMask = new Uint8Array(HYDRO_COUNT);
+  const oceanMask = new Uint8Array(HYDRO_COUNT);
+
+  for (let iz = 0; iz < HYDRO_N; iz++) {
+    const z = HYDRO_MIN + iz * HYDRO_RESOLUTION;
+    for (let ix = 0; ix < HYDRO_N; ix++) {
+      const x = HYDRO_MIN + ix * HYDRO_RESOLUTION;
+      const i = hydroIndex(ix, iz);
+      const h = hydrologyBaseElevationAt(x, z);
+
+      baseElevation[i] = h;
+      filledElevation[i] = h;
+
+      const rainfall = hydrologyRainfallAt(x, z);
+      const slope = baseSlopeAt(x, z);
+      const runoffCoeff = 0.32 + clamp(slope / 0.9, 0, 1) * 0.58;
+      runoff[i] = rainfall * runoffCoeff * HYDRO_CELL_AREA;
+      flowTo[i] = -1;
+    }
+  }
+
+  // Priority-flood conditions depressions so each cell can drain toward an
+  // actual spill route. Parent links give deterministic routing across flats.
+  const visited = new Uint8Array(HYDRO_COUNT);
+  const parent = new Int32Array(HYDRO_COUNT);
+  parent.fill(-1);
+  const heap = new MinHeap();
+
+  const seedBoundary = (ix: number, iz: number) => {
+    const i = hydroIndex(ix, iz);
+    if (visited[i]) return;
+    visited[i] = 1;
+    heap.push(i, baseElevation[i]);
+  };
+
+  for (let ix = 0; ix < HYDRO_N; ix++) {
+    seedBoundary(ix, 0);
+    seedBoundary(ix, HYDRO_N - 1);
+  }
+  for (let iz = 1; iz < HYDRO_N - 1; iz++) {
+    seedBoundary(0, iz);
+    seedBoundary(HYDRO_N - 1, iz);
+  }
+
+  while (true) {
+    const item = heap.pop();
+    if (!item) break;
+
+    const i = item.index;
+    const ix = i % HYDRO_N;
+    const iz = Math.floor(i / HYDRO_N);
+
+    for (const d of hydrologyDirections) {
+      const nx = ix + d.dx;
+      const nz = iz + d.dz;
+      if (nx < 0 || nx >= HYDRO_N || nz < 0 || nz >= HYDRO_N) continue;
+
+      const ni = hydroIndex(nx, nz);
+      if (visited[ni]) continue;
+
+      visited[ni] = 1;
+      parent[ni] = i;
+      filledElevation[ni] = Math.max(baseElevation[ni], filledElevation[i]);
+      heap.push(ni, filledElevation[ni]);
+    }
+  }
+
+  // Route each cell to the steepest available lower conditioned neighbor.
+  // Flood-tree parents are the fallback for true flats/depression floors.
+  for (let iz = 0; iz < HYDRO_N; iz++) {
+    for (let ix = 0; ix < HYDRO_N; ix++) {
+      const i = hydroIndex(ix, iz);
+      let best = -1;
+      let bestElevation = filledElevation[i];
+
+      for (const d of hydrologyDirections) {
+        const nx = ix + d.dx;
+        const nz = iz + d.dz;
+        if (nx < 0 || nx >= HYDRO_N || nz < 0 || nz >= HYDRO_N) continue;
+
+        const ni = hydroIndex(nx, nz);
+        const nh = filledElevation[ni];
+
+        if (
+          nh < bestElevation - 0.0001 ||
+          (Math.abs(nh - bestElevation) < 0.0001 && baseElevation[ni] < baseElevation[i])
+        ) {
+          best = ni;
+          bestElevation = nh;
+        }
+      }
+
+      if (best < 0) best = parent[i];
+      flowTo[i] = best;
+
+      if (best >= 0) {
+        const bx = best % HYDRO_N;
+        const bz = Math.floor(best / HYDRO_N);
+        const dx = bx - ix;
+        const dz = bz - iz;
+        const len = Math.hypot(dx, dz) || 1;
+
+        flowDx[i] = dx / len;
+        flowDz[i] = dz / len;
+        flowDrop[i] = Math.max(0, baseElevation[i] - baseElevation[best]);
+      }
+    }
+  }
+
+  // Accumulate rainfall runoff from upstream to downstream. This is the
+  // defining catchment calculation missing from the former river spline.
+  const order = Array.from({ length: HYDRO_COUNT }, (_, i) => i);
+  order.sort((a, b) =>
+    filledElevation[b] - filledElevation[a] ||
+    baseElevation[b] - baseElevation[a] ||
+    a - b
+  );
+
+  for (let i = 0; i < HYDRO_COUNT; i++) flowAccumulation[i] = runoff[i];
+  for (const i of order) {
+    const target = flowTo[i];
+    if (target >= 0) flowAccumulation[target] += flowAccumulation[i];
+  }
+
+  // Open ocean is the connected component of below-waterline terrain that
+  // touches the simulation boundary. Closed below-waterline depressions remain
+  // candidates for inland lakes.
+  const oceanQueue: number[] = [];
+  const oceanVisited = new Uint8Array(HYDRO_COUNT);
+
+  const queueOcean = (i: number) => {
+    if (oceanVisited[i] || baseElevation[i] > WATER_LEVEL + 0.04) return;
+    oceanVisited[i] = 1;
+    oceanQueue.push(i);
+  };
+
+  for (let ix = 0; ix < HYDRO_N; ix++) {
+    queueOcean(hydroIndex(ix, 0));
+    queueOcean(hydroIndex(ix, HYDRO_N - 1));
+  }
+  for (let iz = 1; iz < HYDRO_N - 1; iz++) {
+    queueOcean(hydroIndex(0, iz));
+    queueOcean(hydroIndex(HYDRO_N - 1, iz));
+  }
+
+  for (let q = 0; q < oceanQueue.length; q++) {
+    const i = oceanQueue[q];
+    oceanMask[i] = 1;
+
+    const ix = i % HYDRO_N;
+    const iz = Math.floor(i / HYDRO_N);
+    for (const d of hydrologyDirections) {
+      const nx = ix + d.dx;
+      const nz = iz + d.dz;
+      if (nx < 0 || nx >= HYDRO_N || nz < 0 || nz >= HYDRO_N) continue;
+      queueOcean(hydroIndex(nx, nz));
+    }
+  }
+
+  // A lake is an enclosed basin whose low floor is below the gameplay waterline
+  // but whose spill elevation is materially higher than that waterline.
+  const candidate = new Uint8Array(HYDRO_COUNT);
+  for (let i = 0; i < HYDRO_COUNT; i++) {
+    if (
+      baseElevation[i] < WATER_LEVEL - 0.02 &&
+      filledElevation[i] > WATER_LEVEL + 0.80 &&
+      !oceanMask[i]
+    ) {
+      candidate[i] = 1;
+    }
+  }
+
+  const componentVisited = new Uint8Array(HYDRO_COUNT);
+  const component: number[] = [];
+
+  for (let i = 0; i < HYDRO_COUNT; i++) {
+    if (!candidate[i] || componentVisited[i]) continue;
+
+    component.length = 0;
+    const queue = [i];
+    componentVisited[i] = 1;
+
+    while (queue.length) {
+      const ci = queue.pop()!;
+      component.push(ci);
+
+      const ix = ci % HYDRO_N;
+      const iz = Math.floor(ci / HYDRO_N);
+      for (const d of hydrologyDirections) {
+        const nx = ix + d.dx;
+        const nz = iz + d.dz;
+        if (nx < 0 || nx >= HYDRO_N || nz < 0 || nz >= HYDRO_N) continue;
+
+        const ni = hydroIndex(nx, nz);
+        if (candidate[ni] && !componentVisited[ni]) {
+          componentVisited[ni] = 1;
+          queue.push(ni);
+        }
+      }
+    }
+
+    if (component.length >= 12) {
+      for (const ci of component) lakeMask[ci] = 1;
+    }
+  }
+
+  // Catchment size controls persistent channel strength. Rivers form where
+  // many upstream cells converge, while high alpine headwaters can become
+  // springs before their catchment is large enough for a river.
+  const logStart = Math.log1p(SPRING_RUNOFF_THRESHOLD);
+  const logRiver = Math.log1p(9000);
+
+  for (let i = 0; i < HYDRO_COUNT; i++) {
+    const a = flowAccumulation[i];
+    const t = clamp((Math.log1p(a) - logStart) / (logRiver - logStart), 0, 1);
+    let strength = t * t * (3 - 2 * t);
+
+    const ix = i % HYDRO_N;
+    const iz = Math.floor(i / HYDRO_N);
+    const x = HYDRO_MIN + ix * HYDRO_RESOLUTION;
+    const z = HYDRO_MIN + iz * HYDRO_RESOLUTION;
+    const slope = baseSlopeAt(x, z);
+
+    if (
+      a >= SPRING_RUNOFF_THRESHOLD &&
+      baseElevation[i] > 24 &&
+      slope > 0.22 &&
+      !lakeMask[i] &&
+      !oceanMask[i]
+    ) {
+      strength = Math.max(strength, 0.18);
+    }
+
+    channelStrength[i] = clamp(strength, 0, 1);
+  }
+
+  return {
+    baseElevation,
+    filledElevation,
+    runoff,
+    flowAccumulation,
+    flowTo,
+    flowDx,
+    flowDz,
+    flowDrop,
+    channelStrength,
+    lakeMask,
+    oceanMask,
+  };
+}
+
+let hydrologyCache: HydrologyGrid | null = null;
+
+function hydrologyGrid(): HydrologyGrid {
+  if (!hydrologyCache) hydrologyCache = buildHydrology();
+  return hydrologyCache;
+}
+
+function bilinear(array: Float32Array, gx: number, gz: number): number {
+  const x0 = Math.floor(gx);
+  const z0 = Math.floor(gz);
+  const x1 = Math.min(HYDRO_N - 1, x0 + 1);
+  const z1 = Math.min(HYDRO_N - 1, z0 + 1);
+  const tx = gx - x0;
+  const tz = gz - z0;
+
+  const a = array[hydroIndex(x0, z0)];
+  const b = array[hydroIndex(x1, z0)];
+  const c = array[hydroIndex(x0, z1)];
+  const d = array[hydroIndex(x1, z1)];
+
+  return lerp(lerp(a, b, tx), lerp(c, d, tx), tz);
+}
+
+function hydrologyCellAt(x: number, z: number): { ix: number; iz: number; i: number } {
+  const { gx, gz } = hydroCoords(x, z);
+  const ix = Math.max(0, Math.min(HYDRO_N - 1, Math.round(gx)));
+  const iz = Math.max(0, Math.min(HYDRO_N - 1, Math.round(gz)));
+  return { ix, iz, i: hydroIndex(ix, iz) };
+}
+
+function hydrologySampleAt(x: number, z: number): HydrologySample {
+  const grid = hydrologyGrid();
+  const { gx, gz } = hydroCoords(x, z);
+  const cell = hydrologyCellAt(x, z);
+
+  const flowVector = new THREE.Vector2(
+    bilinear(grid.flowDx, gx, gz),
+    bilinear(grid.flowDz, gx, gz)
+  );
+  if (flowVector.lengthSq() > 0.0001) flowVector.normalize();
+
+  return {
+    baseElevation: bilinear(grid.baseElevation, gx, gz),
+    filledElevation: bilinear(grid.filledElevation, gx, gz),
+    flowAccumulation: bilinear(grid.flowAccumulation, gx, gz),
+    channelStrength: bilinear(grid.channelStrength, gx, gz),
+    lake: !!grid.lakeMask[cell.i],
+    ocean: !!grid.oceanMask[cell.i],
+    flowVector,
+    flowDrop: grid.flowDrop[cell.i],
+  };
+}
+
+function hydrologyCarveAt(x: number, z: number): number {
+  if (nearHome(x, z) || nearVillage(x, z)) return 0;
+
+  const grid = hydrologyGrid();
+  const sample = hydrologySampleAt(x, z);
+  const cell = hydrologyCellAt(x, z);
+  const base = grid.baseElevation[cell.i];
+
+  if (sample.ocean) return 0;
+
+  if (sample.lake) {
+    const depressionDepth = Math.max(0, grid.filledElevation[cell.i] - base);
+    const targetDepth = clamp(0.75 + depressionDepth * 0.28, 0.75, 2.35);
+    return Math.max(0, base - (WATER_LEVEL - targetDepth));
+  }
+
+  if (sample.channelStrength <= 0.02) return 0;
+
+  const targetDepth = 0.45 + sample.channelStrength * 1.85;
+  return Math.max(0, base - (WATER_LEVEL - targetDepth));
 }
 
 export function riverDistanceAt(x: number, z: number): number {
-  if (nearHome(x, z)) return 999;
-  const expectedZ = riverCenterlineZ(x);
-  const mainDist = Math.abs(z - expectedZ) * 0.88;
+  if (nearHome(x, z) || nearVillage(x, z)) return 999;
 
-  // Tributary stream distance
-  let tribDist = 999;
-  if (x > -80 && x < 120 && z < -30) {
-    const tribZ = tributaryCenterlineZ(x);
-    tribDist = Math.abs(z - tribZ) * 0.95;
+  const sample = hydrologySampleAt(x, z);
+  if (sample.lake || sample.ocean) return 999;
+  if (sample.channelStrength > 0.03) return 0;
+
+  const grid = hydrologyGrid();
+  const { gx, gz } = hydroCoords(x, z);
+  const cx = Math.round(gx);
+  const cz = Math.round(gz);
+  let best = 999;
+
+  for (let dz = -2; dz <= 2; dz++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const ix = cx + dx;
+      const iz = cz + dz;
+      if (ix < 0 || ix >= HYDRO_N || iz < 0 || iz >= HYDRO_N) continue;
+
+      const strength = grid.channelStrength[hydroIndex(ix, iz)];
+      if (strength < 0.20) continue;
+      best = Math.min(best, Math.hypot(dx, dz) * HYDRO_RESOLUTION);
+    }
   }
 
-  return Math.min(mainDist, tribDist);
+  return best;
 }
 
 export function isRiverAt(x: number, z: number, width = 7.5): boolean {
-  if (nearHome(x, z)) return false;
-  return riverDistanceAt(x, z) < width / 2;
+  const sample = hydrologySampleAt(x, z);
+  if (sample.lake || sample.ocean) return false;
+  return sample.channelStrength > 0.03 && riverDistanceAt(x, z) <= width;
 }
 
-// Lake Silvermere basin: Lowland natural lake in the western valley
+export function lakeDepressionAt(x: number, z: number, _ground = 6.0): number {
+  if (nearHome(x, z) || nearVillage(x, z)) return 0;
+  return hydrologySampleAt(x, z).lake ? hydrologyCarveAt(x, z) : 0;
+}
+
+export function riverCarveAt(x: number, z: number, _ground = 6.0): number {
+  if (nearHome(x, z) || nearVillage(x, z)) return 0;
+
+  const sample = hydrologySampleAt(x, z);
+  if (sample.lake || sample.ocean || sample.channelStrength <= 0.02) return 0;
+  return hydrologyCarveAt(x, z);
+}
+
+// Legacy map/UI coordinates retained for compatibility. They no longer define
+// water placement or shape.
 export const LAKE_X = -85;
 export const LAKE_Z = -65;
 export const LAKE_RADIUS = 32;
 
-export function lakeSignalAt(x: number, z: number): number {
-  return Math.sin(x * 0.011 + z * 0.017) + Math.cos(x * 0.019 - z * 0.009);
-}
+export function waterFlowAt(x: number, z: number): {
+  flowVector: THREE.Vector2;
+  flowSpeed: number;
+  flowAccumulation: number;
+  waterType: WaterType;
+  flowDrop: number;
+} {
+  const sample = hydrologySampleAt(x, z);
+  const depth = waterDepthAt(x, z);
 
-export function lakeDepressionAt(x: number, z: number, ground = 6.0): number {
-  if (nearHome(x, z) || nearVillage(x, z)) return 0;
-  // Deep parabolic basin in the western valley connecting to river
-  const dLake = Math.hypot(x - LAKE_X, z - LAKE_Z);
-  if (dLake < LAKE_RADIUS) {
-    const t = 1 - dLake / LAKE_RADIUS;
-    const smooth = t * t * (3 - 2 * t);
-    const targetBed = WATER_LEVEL - 1.85; // Deep freshwater lake
-    return smooth * Math.max(0, ground - targetBed);
+  if (depth <= 0.02) {
+    return {
+      flowVector: new THREE.Vector2(),
+      flowSpeed: 0,
+      flowAccumulation: 0,
+      waterType: 'none',
+      flowDrop: 0,
+    };
   }
-  // Secondary natural lowland depression
-  const edge = clamp((lakeSignalAt(x, z) - 1.25) / 0.44, 0, 1);
-  const smooth = edge * edge * (3 - 2 * edge);
-  const lowland = clamp((WATER_LEVEL + 1.8 - rawTerrainHeightAt(x, z)) / 1.5, 0, 1);
-  return smooth * lowland * 1.5;
-}
 
-// Physical river channel cut down below WATER_LEVEL
-export function riverCarveAt(x: number, z: number, ground = 6.0): number {
-  if (nearHome(x, z) || nearVillage(x, z)) return 0;
-  const rDist = riverDistanceAt(x, z);
-  const riverHalfWidth = 7.2;
-  if (rDist > riverHalfWidth) return 0;
-  const t = 1 - rDist / riverHalfWidth;
-  const smooth = t * t * (3 - 2 * t);
-  const targetBed = WATER_LEVEL - 0.70; // 0.7m clean river depth
-  return smooth * Math.max(0, ground - targetBed);
+  if (sample.ocean) {
+    return {
+      flowVector: sample.flowVector,
+      flowSpeed: 0.35,
+      flowAccumulation: sample.flowAccumulation,
+      waterType: 'ocean',
+      flowDrop: sample.flowDrop,
+    };
+  }
+
+  if (sample.lake) {
+    return {
+      flowVector: sample.flowVector,
+      flowSpeed: 0.12,
+      flowAccumulation: sample.flowAccumulation,
+      waterType: 'lake',
+      flowDrop: 0,
+    };
+  }
+
+  if (sample.channelStrength > 0.02) {
+    let waterType: WaterType = 'stream';
+
+    if (
+      sample.flowAccumulation >= RIVER_RUNOFF_THRESHOLD ||
+      sample.channelStrength > 0.58
+    ) {
+      waterType = 'river';
+    } else if (
+      sample.flowAccumulation < STREAM_RUNOFF_THRESHOLD ||
+      sample.flowDrop > 2.2
+    ) {
+      waterType = 'spring';
+    }
+
+    const speed = clamp(
+      0.65 +
+      Math.sqrt(Math.max(0, sample.flowDrop)) * 0.8 +
+      Math.log1p(sample.flowAccumulation) * 0.075 +
+      sample.channelStrength * 1.1,
+      0.5,
+      4.8
+    );
+
+    return {
+      flowVector: sample.flowVector,
+      flowSpeed: speed,
+      flowAccumulation: sample.flowAccumulation,
+      waterType,
+      flowDrop: sample.flowDrop,
+    };
+  }
+
+  return {
+    flowVector: new THREE.Vector2(),
+    flowSpeed: 0.08,
+    flowAccumulation: 0,
+    waterType: 'wetland',
+    flowDrop: 0,
+  };
 }
 
 // ============================================================================
 // 3. ELEVATION FIELD & TOPOGRAPHY
 // ============================================================================
 
+export function geologicalBasinDepressionAt(x: number, z: number): number {
+  // These are geological depressions; the hydrology solver decides whether
+  // they become lakes.
+  const basins = [
+    { x: -85, z: -65, radius: 44, depth: 6.2 },
+    { x: 150, z: 58, radius: 30, depth: 3.8 },
+  ];
+
+  let depression = 0;
+  for (const basin of basins) {
+    const d = Math.hypot(x - basin.x, z - basin.z);
+    if (d >= basin.radius) continue;
+
+    const t = 1 - d / basin.radius;
+    const smooth = t * t * (3 - 2 * t);
+    depression = Math.max(depression, smooth * basin.depth);
+  }
+
+  // Broad continental shelf: the playable land naturally meets open ocean
+  // instead of ending in a vertical square-world wall.
+  const radial = Math.hypot(x, z);
+  const coastT = clamp((radial - 242) / 78, 0, 1);
+  const shelf = coastT * coastT * (3 - 2 * coastT) * 5.8;
+
+  return depression + shelf;
+}
+
 export function rawTerrainHeightAt(x: number, z: number): number {
   const broad = Math.sin(x * 0.015) * 1.8 + Math.cos(z * 0.018) * 1.5;
   const hills = Math.sin((x + z) * 0.038) * 0.95 + Math.cos((x - z) * 0.028) * 0.75;
   const mtn = mountainStructureAt(x, z);
 
-  return broad + hills + 5.2 + mtn.elevation;
+  return broad + hills + 5.2 + mtn.elevation - geologicalBasinDepressionAt(x, z);
 }
 
 export function terrainHeightAt(x: number, z: number): number {
@@ -381,9 +963,7 @@ export function terrainHeightAt(x: number, z: number): number {
     ground = ground + (VILLAGE_BASE_HEIGHT - ground) * (t * t * (3 - 2 * t) * 0.7);
   }
 
-  const lakeDepth = lakeDepressionAt(x, z, ground);
-  const riverDepth = riverCarveAt(x, z, ground);
-  return Math.max(0.2, ground - Math.max(lakeDepth, riverDepth));
+  return Math.max(0.2, ground - hydrologyCarveAt(x, z));
 }
 
 export function waterDepthAt(x: number, z: number): number {
@@ -467,18 +1047,18 @@ export function climateFieldsAt(x: number, z: number): {
 
   // 3. Humidity: function of rainfall, temperature, and proximity to water
   const wDepth = waterDepthAt(x, z);
-  const nearWaterBonus = wDepth > 0 ? 0.3 : isRiverAt(x, z, 18) ? 0.2 : 0;
+  const hydro = hydrologySampleAt(x, z);
+  const nearWaterBonus = wDepth > 0 ? 0.3 : hydro.channelStrength > 0.08 ? 0.2 : 0;
   const humidity = clamp(rainfall * 0.75 + nearWaterBonus + (temperature < 5 ? 0.15 : 0), 0.1, 1.0);
 
   // 4. Soil Moisture: depends on rainfall, drainage slope, and water bodies
   // Steep rocky slopes drain immediately; valleys and lake margins hold moisture
   const slopeDrainage = Math.cos(slopeInfo.slope); // 1 on flat, 0 on cliff
-  const rDist = riverDistanceAt(x, z);
-  const riverHydration = clamp((22 - rDist) / 22, 0, 1) * 0.45;
-  const lakeHydration = clamp((LAKE_RADIUS + 15 - Math.hypot(x - LAKE_X, z - LAKE_Z)) / 30, 0, 1) * 0.5;
+  const riverHydration = hydro.channelStrength * 0.5;
+  const basinHydration = hydro.lake ? 0.55 : hydro.ocean ? 0.35 : 0;
 
   const soilMoisture = clamp(
-    rainfall * 0.5 * slopeDrainage + riverHydration + lakeHydration + (wDepth > 0 ? 0.4 : 0),
+    rainfall * 0.5 * slopeDrainage + riverHydration + basinHydration + (wDepth > 0 ? 0.4 : 0),
     0.05,
     1.0
   );
@@ -570,8 +1150,9 @@ export function queryWorldFields(x: number, z: number): WorldFields {
 
   // Landform classification
   let landform: Landform = 'plains';
-  if (flow.waterType === 'lake') landform = 'basin';
-  else if (flow.waterType === 'river' || flow.waterType === 'stream') landform = 'valley';
+  if (flow.waterType === 'ocean') landform = 'ocean';
+  else if (flow.waterType === 'lake') landform = 'basin';
+  else if (flow.waterType === 'river' || flow.waterType === 'stream' || flow.waterType === 'spring') landform = 'valley';
   else if (flow.waterType === 'wetland') landform = 'wetland';
   else if (mtn.mask > 0.7 && elev > 48.0) landform = 'peak';
   else if (mtn.mask > 0.5 && elev > 32.0) landform = 'mountain_ridge';
@@ -582,7 +1163,7 @@ export function queryWorldFields(x: number, z: number): WorldFields {
 
   // Biome determination
   let biome: Biome = 'meadow';
-  if (flow.waterType === 'river' || flow.waterType === 'stream') {
+  if (flow.waterType === 'river' || flow.waterType === 'stream' || flow.waterType === 'spring') {
     biome = 'riverbank';
   } else if (flow.waterType === 'lake' || flow.waterType === 'wetland' || waterAt(x, z)) {
     biome = elev < 1.8 ? 'wetland' : 'shore';
@@ -614,6 +1195,7 @@ export function queryWorldFields(x: number, z: number): WorldFields {
     flowVector: flow.flowVector,
     flowSpeed: flow.flowSpeed,
     flowAccumulation: flow.flowAccumulation,
+    flowDrop: flow.flowDrop,
     windVector: PREVAILING_WIND_DIR.clone(),
     windSpeed: BASE_WIND_SPEED,
     biome,
