@@ -915,13 +915,23 @@ function hydrologySampleAt(x: number, z: number): HydrologySample {
   );
   if (flowVector.lengthSq() > 0.0001) flowVector.normalize();
 
+  // Classification is authoritative at the nearest drainage cell. Only the
+  // scalar fields are smoothed inside that already-classified water body.
+  // This prevents bilinear interpolation from leaking a river/lake across a
+  // dry ridge or island merely because a neighboring cell contains water.
+  const cellIsLake = !!grid.lakeMask[cell.i];
+  const cellIsOcean = !!grid.oceanMask[cell.i];
+  const cellIsChannel = grid.channelStrength[cell.i] > 0.02;
+
   return {
     baseElevation: bilinear(grid.baseElevation, gx, gz),
     filledElevation: bilinear(grid.filledElevation, gx, gz),
     flowAccumulation: bilinear(grid.flowAccumulation, gx, gz),
-    channelStrength: bilinear(grid.channelStrength, gx, gz),
-    lake: !!grid.lakeMask[cell.i],
-    ocean: !!grid.oceanMask[cell.i],
+    channelStrength: cellIsChannel
+      ? bilinearWeighted(grid.channelStrength, grid.waterPresence, gx, gz)
+      : 0,
+    lake: cellIsLake,
+    ocean: cellIsOcean,
     flowVector,
     flowDrop: grid.flowDrop[cell.i],
   };
@@ -930,18 +940,16 @@ function hydrologySampleAt(x: number, z: number): HydrologySample {
 function hydrologyCarveAt(x: number, z: number): number {
   if (nearHome(x, z) || nearVillage(x, z)) return 0;
 
-  const grid = hydrologyGrid();
-  const { gx, gz } = hydroCoords(x, z);
-  const presence = bilinear(grid.waterPresence, gx, gz);
-  const depth = bilinear(grid.waterDepth, gx, gz);
-  if (presence <= 0.001 || depth <= 0.005) return 0;
+  const depth = waterDepthAt(x, z);
+  if (depth <= 0.005) return 0;
 
   const surface = waterSurfaceAt(x, z);
-  if (surface <= WATER_LEVEL && !grid.oceanMask[hydrologyCellAt(x, z).i]) return 0;
+  if (surface <= WATER_LEVEL && !hydrologySampleAt(x, z).ocean) return 0;
 
-  // Carve the visible terrain toward the same water bed used by waterDepthAt.
-  // This keeps water physically inside the landscape instead of floating over
-  // an uncarved slope or disappearing beneath an unrelated terrain surface.
+  // Carve only where the authoritative water sampler says this point is wet.
+  // The visible terrain is driven toward the same bed used by the water mesh,
+  // eliminating the old mismatch where neighboring wet cells could carve a
+  // dry ridge or island.
   const desiredBed = surface - depth;
   const ground = terrainBaseHeightAt(x, z);
   return Math.max(0, ground - desiredBed);
@@ -1165,7 +1173,16 @@ export function waterSurfaceAt(x: number, z: number): number {
   }
 
   if (grid.channelStrength[cell.i] > 0.02) {
-    return Math.max(WATER_LEVEL, terrainBaseHeightAt(x, z));
+    // The nearest drainage cell owns the channel classification; the surface
+    // height is smoothed only within that channel. This prevents water from
+    // being interpolated over an adjacent ridge.
+    const surface = Math.max(
+      WATER_LEVEL,
+      bilinearWeighted(grid.baseElevation, grid.waterPresence, gx, gz)
+    );
+    return surface > terrainBaseHeightAt(x, z) + 0.02
+      ? surface
+      : Math.max(WATER_LEVEL, terrainBaseHeightAt(x, z));
   }
 
   return WATER_LEVEL;
@@ -1178,6 +1195,10 @@ export function waterDepthAt(x: number, z: number): number {
   const { gx, gz } = hydroCoords(x, z);
   const cell = hydrologyCellAt(x, z);
 
+  // Nearest-cell classification is deliberate: it is the authoritative wet
+  // mask. Scalar interpolation is allowed only after the point is known to be
+  // inside the same water body. This removes water leakage onto dry islands,
+  // ridges, and steep neighboring slopes.
   if (grid.oceanMask[cell.i]) {
     return Math.max(0, WATER_LEVEL - terrainBaseHeightAt(x, z));
   }
@@ -1185,11 +1206,13 @@ export function waterDepthAt(x: number, z: number): number {
   if (grid.lakeMask[cell.i]) {
     const surface = Math.max(WATER_LEVEL, bilinear(grid.filledElevation, gx, gz));
     if (surface <= terrainBaseHeightAt(x, z) + 0.02) return 0;
-    return Math.min(Math.max(0, bilinear(grid.waterDepth, gx, gz)), Math.max(0, waterSurfaceAt(x, z) - 0.2));
+    const depth = bilinearWeighted(grid.waterDepth, grid.waterPresence, gx, gz);
+    return Math.min(Math.max(0, depth), Math.max(0, surface - 0.2));
   }
 
-  if (grid.channelStrength[cell.i] > 0.02) {
-    return Math.min(Math.max(0, bilinear(grid.waterDepth, gx, gz)), Math.max(0, waterSurfaceAt(x, z) - 0.2));
+  if (grid.channelStrength[cell.i] > 0.02 && grid.waterPresence[cell.i] > 0.001) {
+    const depth = bilinearWeighted(grid.waterDepth, grid.waterPresence, gx, gz);
+    return Math.min(Math.max(0, depth), Math.max(0, waterSurfaceAt(x, z) - 0.2));
   }
 
   return 0;
