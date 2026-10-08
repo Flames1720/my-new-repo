@@ -312,6 +312,9 @@ interface HydrologyGrid {
   flowDrop: Float32Array;
   channelStrength: Float32Array;
   waterSurface: Float32Array;
+  waterDepth: Float32Array;
+  waterBed: Float32Array;
+  waterPresence: Float32Array;
   lakeMask: Uint8Array;
   oceanMask: Uint8Array;
 }
@@ -453,6 +456,9 @@ function buildHydrology(): HydrologyGrid {
   const flowDrop = new Float32Array(HYDRO_COUNT);
   const channelStrength = new Float32Array(HYDRO_COUNT);
   const waterSurface = new Float32Array(HYDRO_COUNT);
+  const waterDepth = new Float32Array(HYDRO_COUNT);
+  const waterBed = new Float32Array(HYDRO_COUNT);
+  const waterPresence = new Float32Array(HYDRO_COUNT);
   const lakeMask = new Uint8Array(HYDRO_COUNT);
   const oceanMask = new Uint8Array(HYDRO_COUNT);
 
@@ -695,21 +701,43 @@ function buildHydrology(): HydrologyGrid {
     channelStrength[i] = clamp(strength, 0, 1);
   }
 
-  // Derive a real water surface from the geography.
-  // Ocean stays at sea level; lakes fill to their natural spill elevation;
-  // rivers/streams sit in carved channels at their local pre-carved terrain
-  // elevation, which lets high-mountain water remain high and creates real
-  // downhill surface drops for waterfalls.
+  // Derive a single authoritative water surface + depth + bed field.
+  // Terrain carving consumes the same bed field that the renderer samples, so
+  // the visible ground cannot disagree with the water body it contains.
   for (let i = 0; i < HYDRO_COUNT; i++) {
+    let surface = 0;
+    let depth = 0;
+    let presence = 0;
+
     if (oceanMask[i]) {
-      waterSurface[i] = WATER_LEVEL;
+      surface = WATER_LEVEL;
+      depth = Math.max(0, surface - baseElevation[i]);
+      presence = depth > 0.02 ? 1 : 0;
     } else if (lakeMask[i]) {
-      waterSurface[i] = Math.max(WATER_LEVEL, filledElevation[i]);
+      surface = Math.max(WATER_LEVEL, filledElevation[i]);
+      const depressionDepth = Math.max(0, filledElevation[i] - baseElevation[i]);
+      depth = clamp(1.35 + depressionDepth * 0.82, 1.35, 8.0);
+      presence = 1;
     } else if (channelStrength[i] > 0.02) {
-      waterSurface[i] = Math.max(WATER_LEVEL, baseElevation[i]);
-    } else {
-      waterSurface[i] = 0;
+      surface = Math.max(WATER_LEVEL, baseElevation[i]);
+      const rawTargetDepth = clamp(
+        0.55 +
+        channelStrength[i] * 2.25 +
+        Math.min(0.7, flowDrop[i] * 0.16),
+        0.55,
+        3.8
+      );
+      // Small headwaters taper naturally at their banks; mature rivers keep a
+      // nearly full-width wet core. smoothstep avoids square hard edges.
+      const mask = clamp((channelStrength[i] - 0.02) / 0.20, 0, 1);
+      presence = mask * mask * (3 - 2 * mask);
+      depth = rawTargetDepth * presence;
     }
+
+    waterSurface[i] = surface;
+    waterDepth[i] = depth;
+    waterPresence[i] = presence;
+    waterBed[i] = surface > 0 ? surface - depth : 0;
   }
 
   return {
@@ -723,6 +751,9 @@ function buildHydrology(): HydrologyGrid {
     flowDrop,
     channelStrength,
     waterSurface,
+    waterDepth,
+    waterBed,
+    waterPresence,
     lakeMask,
     oceanMask,
   };
@@ -830,6 +861,39 @@ function bilinear(array: Float32Array, gx: number, gz: number): number {
   return lerp(lerp(a, b, tx), lerp(c, d, tx), tz);
 }
 
+function bilinearWeighted(
+  array: Float32Array,
+  weights: Float32Array,
+  gx: number,
+  gz: number
+): number {
+  const x0 = Math.floor(gx);
+  const z0 = Math.floor(gz);
+  const x1 = Math.min(HYDRO_N - 1, x0 + 1);
+  const z1 = Math.min(HYDRO_N - 1, z0 + 1);
+  const tx = gx - x0;
+  const tz = gz - z0;
+
+  const corners = [
+    { i: hydroIndex(x0, z0), w: (1 - tx) * (1 - tz) },
+    { i: hydroIndex(x1, z0), w: tx * (1 - tz) },
+    { i: hydroIndex(x0, z1), w: (1 - tx) * tz },
+    { i: hydroIndex(x1, z1), w: tx * tz },
+  ];
+
+  let sum = 0;
+  let weightSum = 0;
+  for (const corner of corners) {
+    const presence = weights[corner.i];
+    if (presence <= 0.001 || corner.w <= 0) continue;
+    const w = corner.w * presence;
+    sum += array[corner.i] * w;
+    weightSum += w;
+  }
+
+  return weightSum > 0.0001 ? sum / weightSum : 0;
+}
+
 function hydrologyCellAt(x: number, z: number): { ix: number; iz: number; i: number } {
   const { gx, gz } = hydroCoords(x, z);
   const ix = Math.max(0, Math.min(HYDRO_N - 1, Math.round(gx)));
@@ -867,32 +931,20 @@ function hydrologyCarveAt(x: number, z: number): number {
   if (nearHome(x, z) || nearVillage(x, z)) return 0;
 
   const grid = hydrologyGrid();
-  const sample = hydrologySampleAt(x, z);
-  const cell = hydrologyCellAt(x, z);
-  const base = grid.baseElevation[cell.i];
+  const { gx, gz } = hydroCoords(x, z);
+  const presence = bilinear(grid.waterPresence, gx, gz);
+  const depth = bilinear(grid.waterDepth, gx, gz);
+  if (presence <= 0.001 || depth <= 0.005) return 0;
 
-  if (sample.ocean) return 0;
+  const surface = bilinearWeighted(grid.waterSurface, grid.waterPresence, gx, gz);
+  if (surface <= 0) return 0;
 
-  if (sample.lake) {
-    const surface = Math.max(WATER_LEVEL, grid.waterSurface[cell.i]);
-    const depressionDepth = Math.max(0, grid.filledElevation[cell.i] - base);
-    // Deep central water in a properly filled basin, rather than a paper-thin
-    // decal sitting only at the global sea level.
-    const targetDepth = clamp(1.35 + depressionDepth * 0.82, 1.35, 8.0);
-    return Math.max(0, base - (surface - targetDepth));
-  }
-
-  if (sample.channelStrength <= 0.02) return 0;
-
-  const surface = Math.max(WATER_LEVEL, grid.waterSurface[cell.i]);
-  const targetDepth = clamp(
-    0.55 +
-    sample.channelStrength * 2.25 +
-    Math.min(0.7, sample.flowDrop * 0.16),
-    0.55,
-    3.8
-  );
-  return Math.max(0, base - (surface - targetDepth));
+  // Carve the visible terrain toward the same water bed used by waterDepthAt.
+  // This keeps water physically inside the landscape instead of floating over
+  // an uncarved slope or disappearing beneath an unrelated terrain surface.
+  const desiredBed = surface - depth;
+  const ground = terrainBaseHeightAt(x, z);
+  return Math.max(0, ground - desiredBed);
 }
 
 export function riverDistanceAt(x: number, z: number): number {
@@ -1073,7 +1125,7 @@ export function rawTerrainHeightAt(x: number, z: number): number {
   return broad + hills + 5.2 + mtn.elevation - geologicalBasinDepressionAt(x, z);
 }
 
-export function terrainHeightAt(x: number, z: number): number {
+function terrainBaseHeightAt(x: number, z: number): number {
   const raw = rawTerrainHeightAt(x, z);
 
   const dHome = Math.hypot(x - HOME_X, z - HOME_Z);
@@ -1091,28 +1143,29 @@ export function terrainHeightAt(x: number, z: number): number {
     ground = ground + (VILLAGE_BASE_HEIGHT - ground) * (t * t * (3 - 2 * t) * 0.7);
   }
 
-  return Math.max(0.2, ground - hydrologyCarveAt(x, z));
+  return Math.max(0.2, ground);
+}
+
+export function terrainHeightAt(x: number, z: number): number {
+  return Math.max(0.2, terrainBaseHeightAt(x, z) - hydrologyCarveAt(x, z));
+}
+
+export function waterDepthAt(x: number, z: number): number {
+  if (nearHome(x, z) || nearVillage(x, z)) return 0;
+
+  const grid = hydrologyGrid();
+  const { gx, gz } = hydroCoords(x, z);
+  return Math.max(0, bilinear(grid.waterDepth, gx, gz));
 }
 
 export function waterSurfaceAt(x: number, z: number): number {
   if (nearHome(x, z) || nearVillage(x, z)) return WATER_LEVEL;
+  if (waterDepthAt(x, z) <= 0.02) return WATER_LEVEL;
 
-  const sample = hydrologySampleAt(x, z);
-  if (sample.ocean) return WATER_LEVEL;
-  if (sample.lake) return Math.max(WATER_LEVEL, sample.filledElevation);
-  if (sample.channelStrength > 0.02) return Math.max(WATER_LEVEL, sample.baseElevation);
-  return WATER_LEVEL;
-}
-
-export function waterDepthAt(x: number, z: number): number {
-  if (nearHome(x, z)) return 0;
-
-  const sample = hydrologySampleAt(x, z);
-  if (!sample.ocean && !sample.lake && sample.channelStrength <= 0.02) return 0;
-
-  const surface = waterSurfaceAt(x, z);
-  const th = terrainHeightAt(x, z);
-  return Math.max(0, surface - th);
+  const grid = hydrologyGrid();
+  const { gx, gz } = hydroCoords(x, z);
+  const surface = bilinearWeighted(grid.waterSurface, grid.waterPresence, gx, gz);
+  return surface > 0 ? Math.max(WATER_LEVEL, surface) : WATER_LEVEL;
 }
 
 export function waterAt(x: number, z: number): boolean {
