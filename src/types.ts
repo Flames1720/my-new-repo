@@ -28,6 +28,14 @@ export type HomeLevel = 1 | 2 | 3;
 
 export type PlayerRole = 'explorer' | 'naturalist' | 'builder' | 'ranger';
 
+export type CharacterModelId =
+  | 'quaternius-adventurer'
+  | 'quaternius-animated-human'
+  | 'quaternius-animated-woman'
+  | 'kenney-adventurer'
+  | 'mixamo-walker'
+  | 'legacy-rigged';
+
 export interface PlayerProfile {
   name: string;
   gender: 'male' | 'female';
@@ -49,6 +57,7 @@ export interface SettingsState {
   chunkRadius: number;
   characterGender?: 'male' | 'female';
   characterOutfit?: 'explorer' | 'ranger' | 'scout' | 'arctic' | 'lagos';
+  characterModel?: CharacterModelId;
   lodDetail?: 'ultra' | 'balanced' | 'fast';
 }
 

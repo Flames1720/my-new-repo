@@ -11,6 +11,7 @@ export const defaultSettings: SettingsState = {
   chunkRadius: 6,
   characterGender: 'male',
   characterOutfit: 'explorer',
+  characterModel: 'quaternius-adventurer',
   lodDetail: 'ultra',
 };
 

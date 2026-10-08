@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import type { EmoteKind, Gender } from './types';
+import type { CharacterModelId, EmoteKind, Gender } from './types';
 import { clamp, lerp } from './terrain';
 
 export type CharacterOutfitKind = 'explorer' | 'ranger' | 'scout' | 'arctic' | 'lagos';
@@ -64,6 +64,19 @@ export const OUTFIT_PALETTES: Record<
   },
 };
 
+export const PLAYER_CHARACTER_MODELS: Record<CharacterModelId, { label: string; url: string }> = {
+  'quaternius-adventurer': { label: 'Quaternius Adventurer', url: '/models/characters/quaternius-adventurer.glb' },
+  'quaternius-animated-human': { label: 'Quaternius Animated Human', url: '/models/characters/quaternius-animated-human.glb' },
+  'quaternius-animated-woman': { label: 'Quaternius Animated Woman', url: '/models/characters/quaternius-animated-woman.glb' },
+  'kenney-adventurer': { label: 'Kenney Adventurer', url: '/models/kenney-adventurer.glb' },
+  'mixamo-walker': { label: 'Mixamo Walker', url: '/models/characters/mixamo-walker.glb' },
+  'legacy-rigged': { label: 'Original custom model', url: '/assets/rigged-model.glb' },
+};
+
+export function isCharacterModelId(value: unknown): value is CharacterModelId {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(PLAYER_CHARACTER_MODELS, value);
+}
+
 export class PlayerCharacter {
   root = new THREE.Group();
   velocity = new THREE.Vector3();
@@ -119,13 +132,19 @@ export class PlayerCharacter {
 
   private modelRoot: THREE.Group | null = null;
   private modelMixer: THREE.AnimationMixer | null = null;
+  private modelBaseScale = 1;
   private modelActions = new Map<string, THREE.AnimationAction>();
   private activeModelAction: THREE.AnimationAction | null = null;
   private modelReady = false;
+  private modelLoading = false;
+  private modelRequestVersion = 0;
+  private currentModelId: CharacterModelId = 'quaternius-adventurer';
   private modelAnimation = '';
-  private locomotionState: 'idle' | 'walk' | 'run' | 'backward' | 'airborne' | 'swim' = 'idle';
+  private locomotionState: 'idle' | 'walk' | 'run' | 'backward' | 'airborne' | 'swim' | 'jump' | 'emote' = 'idle';
   private wasAirborne = false;
   private landingTime = 0;
+  private wasSwimming = false;
+  private swimPoseBaseRotations = new Map<string, THREE.Euler>();
 
   private mixamoBones: {
     hips?: THREE.Object3D;
@@ -150,7 +169,7 @@ export class PlayerCharacter {
   private lastVelocityY = 0;
   private restBoneRotations = new Map<string, THREE.Euler>();
 
-  constructor(lowPowerMode: boolean, onLoaded?: () => void) {
+  constructor(lowPowerMode: boolean, modelId: CharacterModelId = 'quaternius-adventurer', onLoaded?: () => void) {
     this.root.name = 'player-character-rig';
     this.charKeyLight = new THREE.PointLight(0xfff7ea, 2.2, 5.5);
     this.charKeyLight.position.set(0, 1.6, 1.2);
@@ -162,7 +181,8 @@ export class PlayerCharacter {
     this.buildAnatomicalModel(lowPowerMode);
     this.applyOutfit(this.currentOutfit);
     this.applyGender(this.gender);
-    this.loadProductionModel(onLoaded);
+    this.currentModelId = modelId;
+    this.loadProductionModel(modelId, onLoaded);
     if (onLoaded) setTimeout(onLoaded, 50);
   }
 
@@ -334,37 +354,100 @@ export class PlayerCharacter {
     }
   }
 
-  private loadProductionModel(onLoaded?: () => void) {
+  private disposeModelResources(root: THREE.Object3D) {
+    const geometries = new Set<THREE.BufferGeometry>();
+    const materials = new Set<THREE.Material>();
+    const textures = new Set<THREE.Texture>();
+    root.traverse(object => {
+      if (!(object instanceof THREE.Mesh)) return;
+      geometries.add(object.geometry);
+      const meshMaterials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of meshMaterials) {
+        materials.add(material);
+        for (const value of Object.values(material)) {
+          if (value instanceof THREE.Texture) textures.add(value);
+        }
+      }
+    });
+    for (const texture of textures) texture.dispose();
+    for (const geometry of geometries) geometry.dispose();
+    for (const material of materials) material.dispose();
+  }
+
+  private disposeLoadedModel() {
+    if (this.modelMixer && this.modelRoot) {
+      this.modelMixer.stopAllAction();
+      this.modelMixer.uncacheRoot(this.modelRoot);
+    }
+    this.modelMixer = null;
+    this.modelActions.clear();
+    this.activeModelAction = null;
+    this.modelBaseScale = 1;
+    this.modelReady = false;
+    this.modelLoading = false;
+    this.modelAnimation = '';
+    this.locomotionState = 'idle';
+    if (this.modelRoot) {
+      this.root.remove(this.modelRoot);
+      this.disposeModelResources(this.modelRoot);
+      this.modelRoot = null;
+    }
+    this.mixamoBones = {};
+    this.restBoneRotations.clear();
+    this.swimPoseBaseRotations.clear();
+    this.wasSwimming = false;
+  }
+
+  setCharacterModel(modelId: CharacterModelId) {
+    if (!isCharacterModelId(modelId)) return;
+    if (modelId === this.currentModelId && (this.modelReady || this.modelLoading)) return;
+    this.currentModelId = modelId;
+    this.modelRequestVersion++;
+    this.disposeLoadedModel();
+    this.rigRoot.visible = true;
+    this.loadProductionModel(modelId);
+  }
+
+  private loadProductionModel(modelId: CharacterModelId, onLoaded?: () => void) {
+    const requestVersion = ++this.modelRequestVersion;
+    this.modelLoading = true;
     const loader = new GLTFLoader();
     loader.load(
-      '/assets/rigged-model.glb',
+      PLAYER_CHARACTER_MODELS[modelId].url,
       gltf => {
+        if (requestVersion !== this.modelRequestVersion) {
+          this.disposeModelResources(gltf.scene);
+          return;
+        }
         const model = gltf.scene;
         model.name = 'player-production-model';
         model.rotation.set(0, 0, 0);
         model.position.set(0, 0, 0);
-        model.scale.setScalar(1.0);
+        model.scale.setScalar(1);
+        model.updateMatrixWorld(true);
+        const bounds = new THREE.Box3().setFromObject(model);
+        const sourceHeight = bounds.max.y - bounds.min.y;
+        this.modelBaseScale = sourceHeight > 0.01 && Number.isFinite(sourceHeight) ? 1.75 / sourceHeight : 1;
+        model.scale.setScalar(this.modelBaseScale);
+        if (sourceHeight > 0.01 && Number.isFinite(sourceHeight)) {
+          model.position.y = -bounds.min.y * this.modelBaseScale;
+        }
 
         model.traverse(object => {
           if (object instanceof THREE.Mesh) {
             object.castShadow = true;
             object.receiveShadow = true;
             object.frustumCulled = false;
-            if (object.material) {
-              const m = (Array.isArray(object.material) ? object.material[0] : object.material) as THREE.MeshStandardMaterial;
-              if (!m.map && m.normalMap) {
-                m.map = m.normalMap;
-                m.normalMap = null;
+            const materials = Array.isArray(object.material) ? object.material : [object.material];
+            for (const material of materials) {
+              if (material instanceof THREE.MeshStandardMaterial) {
+                const m = material;
+                if (m.map) {
+                  m.map.colorSpace = THREE.SRGBColorSpace;
+                  m.map.needsUpdate = true;
+                }
+                m.needsUpdate = true;
               }
-              if (m.map) {
-                m.map.colorSpace = THREE.SRGBColorSpace;
-                m.map.needsUpdate = true;
-              }
-              m.roughness = 0.68;
-              m.metalness = 0.05;
-              m.color.setHex(0xffffff);
-              m.emissive = new THREE.Color(0x241c16);
-              m.needsUpdate = true;
             }
           }
         });
@@ -373,6 +456,7 @@ export class PlayerCharacter {
         this.root.add(model);
         this.rigRoot.visible = false;
         this.modelReady = true;
+        this.modelLoading = false;
         this.modelMixer = new THREE.AnimationMixer(model);
 
         const jogForward = gltf.animations.find(clip => clip.name.toLowerCase() === 'jog forward');
@@ -399,6 +483,16 @@ export class PlayerCharacter {
           this.modelActions.set('__walk_reduced', walkAction);
         }
 
+        // The user-supplied Mixamo file contains one clip named "mixamo.com";
+        // the source filename identifies it as a walking cycle.
+        if (modelId === 'mixamo-walker' && gltf.animations.length === 1) {
+          const walkAction = this.modelActions.get(gltf.animations[0].name.toLowerCase());
+          if (walkAction) {
+            this.modelActions.set('walk', walkAction);
+            this.modelActions.set('run', walkAction);
+          }
+        }
+
         this.cacheMixamoBones(model);
         this.applyOutfit(this.currentOutfit);
         this.applyGender(this.gender);
@@ -407,6 +501,10 @@ export class PlayerCharacter {
       },
       undefined,
       error => {
+        if (requestVersion !== this.modelRequestVersion) return;
+        this.modelLoading = false;
+        this.modelReady = false;
+        this.rigRoot.visible = true;
         console.warn('[PlayerCharacter] Production GLB unavailable; using procedural fallback.', error);
       }
     );
@@ -452,26 +550,58 @@ export class PlayerCharacter {
     };
     this.mixamoBones = {
       hips: find('mixamorig:Hips', 'mixamorigHips', 'Hips'),
-      spine: find('mixamorig:Spine', 'mixamorigSpine', 'Spine'),
-      spine1: find('mixamorig:Spine1', 'mixamorigSpine1', 'Spine1'),
-      spine2: find('mixamorig:Spine2', 'mixamorigSpine2', 'Spine2'),
+      spine: find('mixamorig:Spine', 'mixamorigSpine', 'Spine', 'Spine_01', 'Spine.001'),
+      spine1: find('mixamorig:Spine1', 'mixamorigSpine1', 'Spine1', 'Spine_02', 'Spine.002'),
+      spine2: find('mixamorig:Spine2', 'mixamorigSpine2', 'Spine2', 'Spine_03', 'Spine.003'),
       neck: find('mixamorig:Neck', 'mixamorigNeck', 'Neck'),
       head: find('mixamorig:Head', 'mixamorigHead', 'Head'),
-      leftUpLeg: find('mixamorig:LeftUpLeg', 'mixamorigLeftUpLeg', 'LeftUpLeg'),
-      leftLeg: find('mixamorig:LeftLeg', 'mixamorigLeftLeg', 'LeftLeg'),
-      leftFoot: find('mixamorig:LeftFoot', 'mixamorigLeftFoot', 'LeftFoot'),
-      rightUpLeg: find('mixamorig:RightUpLeg', 'mixamorigRightUpLeg', 'RightUpLeg'),
-      rightLeg: find('mixamorig:RightLeg', 'mixamorigRightLeg', 'RightLeg'),
-      rightFoot: find('mixamorig:RightFoot', 'mixamorigRightFoot', 'RightFoot'),
-      leftArm: find('mixamorig:LeftArm', 'mixamorigLeftArm', 'LeftArm'),
-      leftForeArm: find('mixamorig:LeftForeArm', 'mixamorigLeftForeArm', 'LeftForeArm'),
-      rightArm: find('mixamorig:RightArm', 'mixamorigRightArm', 'RightArm'),
-      rightForeArm: find('mixamorig:RightForeArm', 'mixamorigRightForeArm', 'RightForeArm'),
+      leftUpLeg: find('mixamorig:LeftUpLeg', 'mixamorigLeftUpLeg', 'LeftUpLeg', 'UpperLeg.L', 'UpperLeg_L'),
+      leftLeg: find('mixamorig:LeftLeg', 'mixamorigLeftLeg', 'LeftLeg', 'LowerLeg.L', 'LowerLeg_L'),
+      leftFoot: find('mixamorig:LeftFoot', 'mixamorigLeftFoot', 'LeftFoot', 'Foot.L', 'Foot_L'),
+      rightUpLeg: find('mixamorig:RightUpLeg', 'mixamorigRightUpLeg', 'RightUpLeg', 'UpperLeg.R', 'UpperLeg_R'),
+      rightLeg: find('mixamorig:RightLeg', 'mixamorigRightLeg', 'RightLeg', 'LowerLeg.R', 'LowerLeg_R'),
+      rightFoot: find('mixamorig:RightFoot', 'mixamorigRightFoot', 'RightFoot', 'Foot.R', 'Foot_R'),
+      leftArm: find('mixamorig:LeftArm', 'mixamorigLeftArm', 'LeftArm', 'UpperArm.L', 'UpperArm_L'),
+      leftForeArm: find('mixamorig:LeftForeArm', 'mixamorigLeftForeArm', 'LeftForeArm', 'LowerArm.L', 'LowerArm_L'),
+      rightArm: find('mixamorig:RightArm', 'mixamorigRightArm', 'RightArm', 'UpperArm.R', 'UpperArm_R'),
+      rightForeArm: find('mixamorig:RightForeArm', 'mixamorigRightForeArm', 'RightForeArm', 'LowerArm.R', 'LowerArm_R'),
     };
     this.restBoneRotations.clear();
     for (const [key, bone] of Object.entries(this.mixamoBones)) {
       if (bone) this.restBoneRotations.set(key, bone.rotation.clone());
     }
+    this.swimPoseBaseRotations.clear();
+  }
+
+  private applyProductionSwimPose(t: number, dt: number) {
+    const bones = this.mixamoBones;
+    if (!this.wasSwimming) {
+      this.swimPoseBaseRotations.clear();
+      for (const [key, bone] of Object.entries(bones)) {
+        if (bone) this.swimPoseBaseRotations.set(key, bone.rotation.clone());
+      }
+      this.wasSwimming = true;
+    }
+
+    const offset = (key: string, bone: THREE.Object3D | undefined, x: number, z = 0) => {
+      if (!bone) return;
+      const base = this.swimPoseBaseRotations.get(key) ?? this.restBoneRotations.get(key) ?? bone.rotation;
+      const blend = Math.min(1, dt * 12);
+      bone.rotation.x = lerp(bone.rotation.x, base.x + x, blend);
+      bone.rotation.z = lerp(bone.rotation.z, base.z + z, blend);
+    };
+
+    const sweep = 0.56 + Math.sin(t * 3.5) * 0.26;
+    const kick = Math.sin(t * 4.2);
+    offset('leftArm', bones.leftArm, -sweep, 0.07);
+    offset('rightArm', bones.rightArm, -sweep, -0.07);
+    offset('leftForeArm', bones.leftForeArm, 0.5);
+    offset('rightForeArm', bones.rightForeArm, 0.5);
+    offset('leftUpLeg', bones.leftUpLeg, kick * 0.14);
+    offset('rightUpLeg', bones.rightUpLeg, -kick * 0.14);
+    offset('leftLeg', bones.leftLeg, 0.2 + Math.max(0, -kick) * 0.13);
+    offset('rightLeg', bones.rightLeg, 0.2 + Math.max(0, kick) * 0.13);
+    offset('spine', bones.spine, 0.05);
   }
 
   private applyAirbornePose(velocityY: number, dt: number) {
@@ -534,29 +664,53 @@ export class PlayerCharacter {
     return null;
   }
 
-  private playModelAnimation(name: 'idle' | 'walk' | 'run' | 'backward', fade = 0.14) {
+  private playModelAnimation(name: 'idle' | 'walk' | 'run' | 'backward' | 'jump' | 'swim' | 'emote', fade = 0.14) {
     if (!this.modelReady || !this.modelMixer) return;
 
-    const lookup =
-      name === 'walk' ? '__walk_reduced' :
-      name === 'run' ? 'jog forward' :
-      name === 'backward' ? 'jog backward' :
-      '__walk_reduced';
+    const emoteCandidates: Record<EmoteKind, string[]> = {
+      none: ['idle_neutral', 'idle'],
+      wave: ['wave'],
+      cheer: ['cheer', 'celebrate', 'jump'],
+      sit: ['sit', 'sleep', 'idle_neutral', 'idle'],
+      dance: ['dance', 'cheer', 'wave'],
+      inspect: ['interact', 'working', 'inspect'],
+    };
+    const candidates = name === 'idle' ? ['idle_neutral', 'idle', '__walk_reduced', 'jog forward', 'walk', 'run']
+      : name === 'walk' ? ['walk', '__walk_reduced', 'jog forward', 'run']
+      : name === 'run' ? ['run', 'jog forward', 'walk']
+      : name === 'backward' ? ['jog backward', 'run_back', 'run backward', 'walk backward', 'walk', 'run']
+      : name === 'jump' ? ['jump', 'jumping', 'fall', 'idle_neutral', 'idle', 'walk', 'run']
+      : name === 'swim' ? ['swim', 'swimming', 'idle_neutral', 'idle', 'walk']
+      : emoteCandidates[this.currentEmote] ?? ['idle'];
 
-    const next = this.findModelAction(lookup);
+    let next: THREE.AnimationAction | null = null;
+    let matched = '';
+    for (const candidate of candidates) {
+      next = this.findModelAction(candidate);
+      if (next) {
+        matched = candidate;
+        break;
+      }
+    }
     if (!next) return;
 
-    const isIdle = name === 'idle';
-    const timeScale =
-      name === 'run' ? 1.0 :
-      name === 'walk' ? 0.82 :
-      name === 'backward' ? 0.9 : 0;
+    const isJumpClip = name === 'jump' && matched.startsWith('jump');
+    const freezeForIdle = name === 'idle' && !matched.startsWith('idle');
+    const timeScale = name === 'run' ? 1.12
+      : name === 'walk' ? (matched === 'run' ? 0.66 : matched === 'jog forward' ? 0.72 : 0.82)
+      : name === 'backward' ? 0.82
+      : name === 'swim' ? 0.9
+      : name === 'emote' ? 0.9
+      : 1.0;
 
     if (next !== this.activeModelAction) {
       next.reset();
       next.enabled = true;
+      next.paused = false;
       next.setEffectiveWeight(1);
       next.setEffectiveTimeScale(timeScale);
+      next.setLoop(isJumpClip ? THREE.LoopOnce : THREE.LoopRepeat, isJumpClip ? 1 : Infinity);
+      next.clampWhenFinished = isJumpClip;
       next.play();
 
       if (this.activeModelAction) {
@@ -566,16 +720,21 @@ export class PlayerCharacter {
     } else {
       next.setEffectiveTimeScale(timeScale);
       next.setEffectiveWeight(1);
+      next.setLoop(isJumpClip ? THREE.LoopOnce : THREE.LoopRepeat, isJumpClip ? 1 : Infinity);
+      next.clampWhenFinished = isJumpClip;
     }
 
-    // There is no trustworthy stationary clip in this asset. Freeze the
-    // reduced locomotion clip on its first frame instead of using the broken
-    // imported "Idle" clip that puts the character into a crawl-like pose.
-    next.paused = isIdle;
-    if (isIdle) next.time = 0;
+    // Use real idle clips where present. If a model only provides locomotion,
+    // freeze its first frame rather than looping a walk while standing still.
+    if (freezeForIdle) {
+      next.paused = true;
+      next.time = 0;
+    } else if (!isJumpClip) {
+      next.paused = false;
+    }
 
     this.modelAnimation = name;
-    this.locomotionState = name;
+    this.locomotionState = name === 'emote' ? 'emote' : name === 'jump' ? 'jump' : name;
   }
 
   private updateProductionAnimation(
@@ -591,16 +750,17 @@ export class PlayerCharacter {
     if (!this.modelReady || !this.modelRoot) return;
 
     if (swimming) {
-      this.playModelAnimation('idle', 0.22);
+      this.playModelAnimation('swim', 0.22);
       this.modelRoot.position.y = lerp(this.modelRoot.position.y, -0.32, Math.min(1, dt * 8));
       this.modelRoot.rotation.x = lerp(this.modelRoot.rotation.x, 1.25, Math.min(1, dt * 8));
+      this.wasAirborne = false;
       return;
     }
 
     this.modelRoot.position.y = lerp(this.modelRoot.position.y, 0, Math.min(1, dt * 10));
 
     if (!onGround) {
-      this.playModelAnimation('idle', 0.08);
+      this.playModelAnimation('jump', 0.08);
       this.activeModelAction?.setEffectiveWeight(1);
       this.modelRoot.rotation.x = lerp(this.modelRoot.rotation.x, 0, Math.min(1, dt * 10));
       this.modelRoot.rotation.z = lerp(this.modelRoot.rotation.z, 0, Math.min(1, dt * 10));
@@ -611,6 +771,15 @@ export class PlayerCharacter {
       this.landingTime = 0.16;
       this.triggerLanding(1);
       this.wasAirborne = false;
+    }
+
+    if (this.currentEmote !== 'none') {
+      this.emoteTime += dt;
+      if (this.emoteTime <= 4.5) {
+        this.playModelAnimation('emote', 0.16);
+        return;
+      }
+      this.currentEmote = 'none';
     }
 
     if (moving) {
@@ -627,13 +796,13 @@ export class PlayerCharacter {
     if (this.landingTime > 0) {
       this.landingTime = Math.max(0, this.landingTime - dt);
       const amount = Math.sin((this.landingTime / 0.16) * Math.PI) * 0.045;
-      this.modelRoot.scale.y = 1 - amount;
-      this.modelRoot.scale.x = 1 + amount * 0.45;
-      this.modelRoot.scale.z = 1 + amount * 0.45;
+      this.modelRoot.scale.y = this.modelBaseScale * (1 - amount);
+      this.modelRoot.scale.x = this.modelBaseScale * (1 + amount * 0.45);
+      this.modelRoot.scale.z = this.modelBaseScale * (1 + amount * 0.45);
     } else {
-      this.modelRoot.scale.y = lerp(this.modelRoot.scale.y, 1, Math.min(1, dt * 14));
-      this.modelRoot.scale.x = lerp(this.modelRoot.scale.x, 1, Math.min(1, dt * 14));
-      this.modelRoot.scale.z = lerp(this.modelRoot.scale.z, 1, Math.min(1, dt * 14));
+      this.modelRoot.scale.y = lerp(this.modelRoot.scale.y, this.modelBaseScale, Math.min(1, dt * 14));
+      this.modelRoot.scale.x = lerp(this.modelRoot.scale.x, this.modelBaseScale, Math.min(1, dt * 14));
+      this.modelRoot.scale.z = lerp(this.modelRoot.scale.z, this.modelBaseScale, Math.min(1, dt * 14));
     }
   }
 
@@ -700,10 +869,21 @@ export class PlayerCharacter {
     this.updateProductionAnimation(moving, sprinting, swimming, turnRate, dt, onGround, speed, velocityY);
     this.modelMixer?.update(Math.min(dt, 0.05));
 
+    if (swimming && !this.findModelAction('swim') && !this.findModelAction('swimming')) {
+      this.applyProductionSwimPose(t, dt);
+    } else if (!swimming && this.wasSwimming) {
+      this.wasSwimming = false;
+      this.swimPoseBaseRotations.clear();
+    }
+
     // Bone overrides happen AFTER the mixer so the jump pose is not erased by
     // the animation system on the same frame.
     if (!onGround && !swimming) {
-      this.applyAirbornePose(velocityY, dt);
+      if (this.findModelAction('jump')) {
+        this.jumpPoseActive = false;
+      } else {
+        this.applyAirbornePose(velocityY, dt);
+      }
     } else if (onGround && this.jumpPoseActive) {
       this.relaxJumpBones(dt);
       if (this.landingTime <= 0) this.jumpPoseActive = false;

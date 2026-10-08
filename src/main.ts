@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import './style.css';
-import type { Mode, EmoteKind, HomeLevel, ResourceKind, ResourceDef, PlayerProfile, Species } from './types';
+import type { Mode, EmoteKind, HomeLevel, ResourceKind, ResourceDef, PlayerProfile, Species, CharacterModelId } from './types';
 import {
   SEED,
   SIZE,
@@ -29,7 +29,7 @@ import {
   clamp,
   lerp,
 } from './terrain';
-import { PlayerCharacter } from './character';
+import { isCharacterModelId, PLAYER_CHARACTER_MODELS, PlayerCharacter } from './character';
 import { WeatherSystem } from './weather';
 import { buildHome, buildVillage, buildBridge, HOME_UPGRADE_COSTS } from './settlement';
 import { WildlifeSystem, isSharedAnimalAsset, speciesColor, SPECIES_NAME, SPECIES_ICON } from './fauna';
@@ -353,7 +353,13 @@ function updateSplash(dt: number) {
   if (splashAge >= 0.65) splashRing.visible = false;
 }
 
-const player = new PlayerCharacter(LOW_POWER_MODE);
+const initialCharacterModel: CharacterModelId = isCharacterModelId(settings.current.characterModel)
+  ? settings.current.characterModel
+  : 'quaternius-adventurer';
+if (settings.current.characterModel !== initialCharacterModel) {
+  settings.update({ characterModel: initialCharacterModel });
+}
+const player = new PlayerCharacter(LOW_POWER_MODE, initialCharacterModel);
 actors.add(player.root);
 
 let fauna: WildlifeSystem | null = null;
@@ -1038,6 +1044,7 @@ const invertYCheck = document.querySelector('#invertYCheck') as HTMLInputElement
 const weatherSelect = document.querySelector('#weatherSelect') as HTMLSelectElement;
 const graphicsSelect = document.querySelector('#graphicsSelect') as HTMLSelectElement;
 const outfitSelect = document.querySelector('#outfitSelect') as HTMLSelectElement | null;
+const characterModelSelect = document.querySelector('#characterModelSelect') as HTMLSelectElement | null;
 const lodSelect = document.querySelector('#lodSelect') as HTMLSelectElement | null;
 
 const playerGenderSelect = document.querySelector('#playerGenderSelect') as HTMLSelectElement | null;
@@ -1078,6 +1085,11 @@ function openSettings(open: boolean) {
     if (outfitSelect && settings.current.characterOutfit) {
       outfitSelect.value = settings.current.characterOutfit;
     }
+    if (characterModelSelect) {
+      characterModelSelect.value = isCharacterModelId(settings.current.characterModel)
+        ? settings.current.characterModel
+        : initialCharacterModel;
+    }
     if (lodSelect && settings.current.lodDetail) {
       lodSelect.value = settings.current.lodDetail;
     }
@@ -1099,6 +1111,17 @@ if (playerGenderSelect) {
     player.setGender(g);
     updateProfileUI();
     say(`Character Gender: ${g === 'male' ? '♂ Male' : '♀ Female'}`);
+  });
+}
+
+if (characterModelSelect) {
+  characterModelSelect.value = initialCharacterModel;
+  characterModelSelect.addEventListener('change', () => {
+    const modelId = characterModelSelect.value;
+    if (!isCharacterModelId(modelId)) return;
+    settings.update({ characterModel: modelId });
+    player.setCharacterModel(modelId);
+    say(`Character model: ${PLAYER_CHARACTER_MODELS[modelId].label}`);
   });
 }
 
