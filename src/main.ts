@@ -796,54 +796,23 @@ class Chunks {
         if (nearHome(wx, wz)) continue;
 
         const depth = waterDepthAt(wx, wz);
-        let isWetOrShore = depth > 0.005;
-        if (!isWetOrShore) {
-          if (
-            (!nearHome(wx + step, wz) && waterDepthAt(wx + step, wz) > 0.01) ||
-            (!nearHome(wx - step, wz) && waterDepthAt(wx - step, wz) > 0.01) ||
-            (!nearHome(wx, wz + step) && waterDepthAt(wx, wz + step) > 0.01) ||
-            (!nearHome(wx, wz - step) && waterDepthAt(wx, wz - step) > 0.01)
-          ) {
-            isWetOrShore = true;
-          }
-        }
-
-        if (isWetOrShore) {
+        // A water-surface vertex must be genuinely wet. Do not create a dry
+        // shoreline vertex and then bridge it to wet vertices: that produces a
+        // thin sheet of "water" over grass/high ground. The shoreline is now
+        // represented only by the physical water edge/side wall below.
+        if (depth > 0.005) {
           const vertexSlot = iz * (waterGrid + 1) + ix;
           vertIndex[vertexSlot] = nextIdx++;
-          wetVertex[vertexSlot] = depth > 0.005 ? 1 : 0;
-          // At shoreline vertices, use a nearby wet surface height instead of
-          // the global sea level. This prevents sloping water sheets from rising
-          // over a high-elevation riverbank.
-          let surfaceY = waterSurfaceAt(wx, wz);
-          if (depth <= 0.005) {
-            const neighbourSurfaces: number[] = [];
-            for (const [ox, oz] of [[step, 0], [-step, 0], [0, step], [0, -step]] as [number, number][]) {
-              const nx = wx + ox;
-              const nz = wz + oz;
-              if (waterDepthAt(nx, nz) > 0.01) neighbourSurfaces.push(waterSurfaceAt(nx, nz));
-            }
-            if (neighbourSurfaces.length) {
-              surfaceY = neighbourSurfaces.reduce((sum, value) => sum + value, 0) / neighbourSurfaces.length;
-            }
-            // A shoreline vertex is still land: never let the water sheet rise
-            // above the bank simply because a nearby wet vertex is higher.
-            surfaceY = Math.min(surfaceY, terrainHeightAt(wx, wz) + 0.018);
-          }
+          wetVertex[vertexSlot] = 1;
+          const surfaceY = waterSurfaceAt(wx, wz);
           waterPositions.push(ix * step, surfaceY, iz * step);
 
           const c = new THREE.Color();
-          if (depth <= 0.05) {
-            // Shoreline contact line: white foam
-            c.copy(shorelineFoam);
-          } else if (depth < 0.45) {
-            // Shallow crystal turquoise
+          if (depth < 0.45) {
             c.copy(shorelineFoam).lerp(turquoiseShallow, depth / 0.45);
           } else if (depth < 1.1) {
-            // Mid depth emerald
             c.copy(turquoiseShallow).lerp(emeraldMid, (depth - 0.45) / 0.65);
           } else {
-            // Deep volumetric navy
             c.copy(emeraldMid).lerp(deepNavy, clamp((depth - 1.1) / 1.2, 0, 1));
           }
           waterColors.push(c.r, c.g, c.b);
@@ -863,12 +832,16 @@ class Chunks {
         const wzMid = cz * SIZE + (iz + 0.5) * step;
         if (nearHome(wxMid, wzMid)) continue;
 
+        // Never span a triangle across dry land. This is the renderer-side
+        // enforcement of the hydrology rule: if a location has insufficient
+        // water to occupy the cell, it stays grass/terrain and the water ends.
         const hasWaterInCell =
-          waterDepthAt(wxMid, wzMid) > 0.005 || (i00 >= 0 && i10 >= 0 && i11 >= 0 && i01 >= 0);
+          waterDepthAt(wxMid, wzMid) > 0.005 &&
+          i00 >= 0 && i10 >= 0 && i11 >= 0 && i01 >= 0;
 
         if (hasWaterInCell) {
-          if (i00 >= 0 && i01 >= 0 && i11 >= 0) waterIndices.push(i00, i01, i11);
-          if (i00 >= 0 && i11 >= 0 && i10 >= 0) waterIndices.push(i00, i11, i10);
+          waterIndices.push(i00, i01, i11);
+          waterIndices.push(i00, i11, i10);
         }
       }
     }
