@@ -980,8 +980,10 @@ export function waterFlowAt(x: number, z: number): {
 
   if (sample.lake) {
     return {
-      flowVector: sample.flowVector,
-      flowSpeed: 0.12,
+      // Lakes are reservoirs, not rivers. Wind creates surface motion/waves;
+      // the drainage vector must not drag swimmers across a peaceful basin.
+      flowVector: new THREE.Vector2(),
+      flowSpeed: 0.02,
       flowAccumulation: sample.flowAccumulation,
       waterType: 'lake',
       flowDrop: 0,
@@ -997,9 +999,11 @@ export function waterFlowAt(x: number, z: number): {
     ) {
       waterType = 'river';
     } else if (
-      sample.flowAccumulation < STREAM_RUNOFF_THRESHOLD ||
-      sample.flowDrop > 2.2
+      sample.flowAccumulation < 78 &&
+      sample.flowDrop < 2.6
     ) {
+      // Springs are source-like headwaters, not simply steep points inside a
+      // mature river. Large rivers can have waterfalls without being springs.
       waterType = 'spring';
     }
 
