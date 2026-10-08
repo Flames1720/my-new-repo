@@ -1647,7 +1647,7 @@ async function toggleFullscreen() {
 bindAction(fullscreenBtn, toggleFullscreen);
 
 // --- WORLD SURVEY: AUTHORITATIVE TOPOLOGY + HYDROLOGY DIAGNOSTICS ---
-let surveyWasFog: THREE.Fog | null = gameplayFog;
+let surveyWasFog: THREE.Scene['fog'] = gameplayFog;
 function updateSurveyUI() {
   if (surveyOverlay) surveyOverlay.classList.toggle('show', survey.isActive);
   if (surveyTerrainBtn) surveyTerrainBtn.classList.toggle('active', survey.currentView === 'terrain');
