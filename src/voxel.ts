@@ -257,105 +257,211 @@ export class VoxelWorld {
 
 export const voxelWorld = new VoxelWorld();
 
-export function voxelWorldBounds(): { min: number; max: number } {
-  const half = (WORLD_RADIUS * 2 + 1) * SIZE * 0.5;
-  return { min: -half, max: half };
+export function voxelWorldBounds(): { minX: number; maxX: number; minZ: number; maxZ: number } {
+  // Chunk indices -WORLD_RADIUS..WORLD_RADIUS cover this exact asymmetric
+  // interval because chunk coordinates use floor(x / SIZE).
+  return {
+    minX: -WORLD_RADIUS * SIZE,
+    maxX: (WORLD_RADIUS + 1) * SIZE,
+    minZ: -WORLD_RADIUS * SIZE,
+    maxZ: (WORLD_RADIUS + 1) * SIZE,
+  };
+}
+
+function addQuad(
+  positions: number[],
+  colors: number[],
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  c: THREE.Vector3,
+  d: THREE.Vector3,
+  materialId: VoxelMaterial,
+): void {
+  const color = voxelMaterialColor(materialId);
+  for (const v of [a, b, c, a, c, d]) {
+    positions.push(v.x, v.y, v.z);
+    colors.push(color.r, color.g, color.b);
+  }
+}
+
+function addStratifiedVerticalFace(
+  positions: number[],
+  colors: number[],
+  topX: number,
+  topZ: number,
+  lowHeight: number,
+  highHeight: number,
+  axis: 'x' | 'z',
+  side: 1 | -1,
+): void {
+  const y0 = Math.max(VOXEL_MIN_Y, lowHeight);
+  const y1 = Math.min(VOXEL_MAX_Y + 1, highHeight);
+  if (y1 - y0 <= 0.05) return;
+
+  // Split long exposed faces into material bands so a side-on survey can
+  // actually see topsoil/loam/clay/rock rather than one uniform wall.
+  let cursor = y0;
+  const maxBandHeight = 4;
+  while (cursor < y1 - 0.01) {
+    const next = Math.min(y1, cursor + maxBandHeight);
+    const materialY = Math.min(highHeight - 0.01, (cursor + next) * 0.5);
+    const materialId = baseMaterialAt(topX, Math.floor(materialY), topZ);
+
+    if (axis === 'x') {
+      const z0 = topZ;
+      const z1 = topZ + side * VOXEL_SIZE * 4;
+      addQuad(
+        positions,
+        colors,
+        new THREE.Vector3(topX, cursor, z0),
+        new THREE.Vector3(topX, cursor, z1),
+        new THREE.Vector3(topX, next, z1),
+        new THREE.Vector3(topX, next, z0),
+        materialId,
+      );
+    } else {
+      const x0 = topX;
+      const x1 = topX + side * VOXEL_SIZE * 4;
+      addQuad(
+        positions,
+        colors,
+        new THREE.Vector3(x0, cursor, topZ),
+        new THREE.Vector3(x1, cursor, topZ),
+        new THREE.Vector3(x1, next, topZ),
+        new THREE.Vector3(x0, next, topZ),
+        materialId,
+      );
+    }
+
+    cursor = next;
+  }
 }
 
 /**
- * Build a lightweight geological cutaway along the finite world's outer rim.
+ * Build a low-resolution but genuinely volumetric geological shell.
  *
- * It is intentionally created as a survey/development aid first. The gameplay
- * terrain remains the efficient continuous surface while the actual voxel
- * volume is available underneath for the later editable terrain pass.
+ * The gameplay surface is still the existing high-quality continuous terrain.
+ * This mesh supplies the previously missing vertical material volume for the
+ * WORLD survey, especially when the camera is lifted to a side-on view.
+ *
+ * A 4 m sampling interval keeps it cheap enough for a one-time survey pass.
+ * Interior faces are omitted; only exposed height differences and the finite
+ * world rim are represented.
  */
-export function buildVoxelBoundaryShell(
-  material: THREE.Material,
-  cx: number,
-  cz: number,
-): THREE.Mesh | null {
-  if (
-    Math.abs(cx) !== WORLD_RADIUS &&
-    Math.abs(cz) !== WORLD_RADIUS
-  ) return null;
+export function buildVoxelWorldVolumeMesh(material: THREE.Material): THREE.Mesh | null {
+  const bounds = voxelWorldBounds();
+  const sampleStep = 4;
+  const nx = Math.floor((bounds.maxX - bounds.minX) / sampleStep);
+  const nz = Math.floor((bounds.maxZ - bounds.minZ) / sampleStep);
+  const heights = new Float32Array((nx + 1) * (nz + 1));
 
-  const min = voxelWorldBounds().min;
-  const max = voxelWorldBounds().max;
-  const faces: number[] = [];
+  const index = (ix: number, iz: number) => iz * (nx + 1) + ix;
+  const sampleX = (ix: number) => bounds.minX + ix * sampleStep;
+  const sampleZ = (iz: number) => bounds.minZ + iz * sampleStep;
+
+  for (let iz = 0; iz <= nz; iz++) {
+    for (let ix = 0; ix <= nx; ix++) {
+      heights[index(ix, iz)] = Math.max(
+        0.2,
+        terrainHeightAt(sampleX(ix), sampleZ(iz)),
+      );
+    }
+  }
+
+  const positions: number[] = [];
   const colors: number[] = [];
 
-  const addFace = (
-    a: THREE.Vector3,
-    b: THREE.Vector3,
-    c: THREE.Vector3,
-    d: THREE.Vector3,
-    materialId: VoxelMaterial,
-  ) => {
-    const color = voxelMaterialColor(materialId);
-    for (const v of [a, b, c, a, c, d]) {
-      faces.push(v.x, v.y, v.z);
-      colors.push(color.r, color.g, color.b);
-    }
-  };
+  // Exposed vertical faces where a higher column meets a lower one.
+  for (let iz = 0; iz <= nz; iz++) {
+    for (let ix = 0; ix < nx; ix++) {
+      const a = heights[index(ix, iz)];
+      const b = heights[index(ix + 1, iz)];
+      if (Math.abs(a - b) < 0.6) continue;
 
-  // One metre vertical strata on the exterior boundary makes the finite world
-  // a visible solid rather than a paper-thin sheet when the camera is lifted.
-  const samples = SIZE;
-  const step = SIZE / samples;
-  const addRim = (along: number, sideX: boolean) => {
-    const p = sideX
-      ? { x: along, z: along >= 0 ? max : min }
-      : { x: along >= 0 ? max : min, z: along };
-
-    const h = terrainHeightAt(p.x, p.z);
-    const top = Math.max(0.2, h);
-    for (let y = VOXEL_MIN_Y; y < Math.floor(top); y++) {
-      const matId = y === 0
-        ? VoxelMaterial.BEDROCK
-        : baseMaterialAt(p.x, y, p.z);
-      const y1 = y;
-      const y2 = y + 1;
-      if (sideX) {
-        const z = p.z;
-        const nx = p.x;
-        addFace(
-          new THREE.Vector3(nx, y1, z),
-          new THREE.Vector3(nx, y1, z + (z === max ? step : -step)),
-          new THREE.Vector3(nx, y2, z + (z === max ? step : -step)),
-          new THREE.Vector3(nx, y2, z),
-          matId,
+      if (a > b) {
+        addStratifiedVerticalFace(
+          positions, colors,
+          sampleX(ix), sampleZ(iz),
+          b, a,
+          'x',
+          -1,
         );
       } else {
-        const x = p.x;
-        const nz = p.z;
-        addFace(
-          new THREE.Vector3(x, y1, nz),
-          new THREE.Vector3(x + (x === max ? step : -step), y1, nz),
-          new THREE.Vector3(x + (x === max ? step : -step), y2, nz),
-          new THREE.Vector3(x, y2, nz),
-          matId,
+        addStratifiedVerticalFace(
+          positions, colors,
+          sampleX(ix + 1), sampleZ(iz),
+          a, b,
+          'x',
+          1,
         );
       }
     }
-  };
-
-  // Sample across the entire rim only; interior chunks remain untouched so this
-  // has negligible gameplay cost and is mainly visible in full-world survey.
-  for (let i = 0; i <= WORLD_RADIUS * 2; i++) {
-    const along = min + i * SIZE;
-    addRim(along, true);
-    addRim(along, false);
   }
 
-  if (!faces.length) return null;
+  for (let iz = 0; iz < nz; iz++) {
+    for (let ix = 0; ix <= nx; ix++) {
+      const a = heights[index(ix, iz)];
+      const b = heights[index(ix, iz + 1)];
+      if (Math.abs(a - b) < 0.6) continue;
+
+      if (a > b) {
+        addStratifiedVerticalFace(
+          positions, colors,
+          sampleX(ix), sampleZ(iz),
+          b, a,
+          'z',
+          -1,
+        );
+      } else {
+        addStratifiedVerticalFace(
+          positions, colors,
+          sampleX(ix), sampleZ(iz + 1),
+          a, b,
+          'z',
+          1,
+        );
+      }
+    }
+  }
+
+  // Finite-world rim: the ground is not paper-thin at the playable boundary.
+  for (let ix = 0; ix < nx; ix++) {
+    const x = sampleX(ix);
+    const xNext = sampleX(ix + 1);
+    const south = heights[index(ix, 0)];
+    const southNext = heights[index(ix + 1, 0)];
+    const southH = Math.max(south, southNext);
+    addStratifiedVerticalFace(positions, colors, x, bounds.minZ, 0, southH, 'z', -1);
+
+    const north = heights[index(ix, nz)];
+    const northNext = heights[index(ix + 1, nz)];
+    const northH = Math.max(north, northNext);
+    addStratifiedVerticalFace(positions, colors, x, bounds.maxZ, 0, northH, 'z', 1);
+  }
+
+  for (let iz = 0; iz < nz; iz++) {
+    const z = sampleZ(iz);
+    const zNext = sampleZ(iz + 1);
+    const west = heights[index(0, iz)];
+    const westNext = heights[index(0, iz + 1)];
+    const westH = Math.max(west, westNext);
+    addStratifiedVerticalFace(positions, colors, bounds.minX, z, 0, westH, 'x', -1);
+
+    const east = heights[index(nx, iz)];
+    const eastNext = heights[index(nx, iz + 1)];
+    const eastH = Math.max(east, eastNext);
+    addStratifiedVerticalFace(positions, colors, bounds.maxX, z, 0, eastH, 'x', 1);
+  }
+
+  if (!positions.length) return null;
 
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(faces, 3));
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geometry.computeVertexNormals();
 
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = 'voxel-boundary-shell';
-  mesh.renderOrder = 0;
+  mesh.name = 'voxel-world-volume';
+  mesh.frustumCulled = true;
   return mesh;
 }
