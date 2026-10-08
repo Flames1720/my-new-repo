@@ -488,9 +488,36 @@ The previous entry said the final input patch was still building; that build sub
 
 **Verification:**
 - Vercel build for the integrated voxel-volume commit `097946a3a6e965528e2ba7300b07ddcf90e9aa7b`: READY.
-- Vercel build for the subsequent voxel persistence/edit changes is currently BUILDING at handoff; final READY/ERROR status still pending.
+- Vercel final build after voxel persistence/edit and survey-volume optimization: PASS / READY at commit `381dd6e5c9bda3154e756a84e2cd8b02f84eeb02`.
 - Physical-device runtime verification: NOT DONE.
 
 **Architecture consequence:**
 - The project now has an explicit separation between global world truth and physical voxel representation.
 - Do not convert the entire smooth surface to visible blocks until voxel surface meshing, water integration and local collision are runtime-tested on the mobile device.
+
+
+## 2026-10-08 22:xx +01:00 — GPT-5.6 Luna — voxel handoff verification
+
+**Final status:** The voxel physical-volume foundation is BUILD VERIFIED on `world-drainage-foundation`.
+
+**Verified in repository:**
+- deterministic layered voxel material model exists;
+- sparse voxel edits are persisted in `Save.voxelEdits`;
+- chunks own voxel-volume handles;
+- WORLD Survey can display a one-time stratified vertical volume;
+- survey material generation was optimized to avoid repeated full hydrology queries.
+
+**Verified by Vercel:**
+- commit `381dd6e5c9bda3154e756a84e2cd8b02f84eeb02`
+- deployment `dpl_38hw75qgUSNJBtFZQ1geeytmRDS3`
+- state: READY
+- framework: Vite
+
+**Not yet claimed:**
+- full visible voxel block surface replacement;
+- voxel-aware player collision;
+- live dig interaction/remeshing;
+- cave/overhang rendering;
+- physical-device runtime verification of the new volume.
+
+These remain the next coherent migration steps; the existing smooth terrain and hydrology are intentionally preserved until those parts can be switched without breaking the verified mobile experience.
