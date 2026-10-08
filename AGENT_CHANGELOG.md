@@ -240,3 +240,40 @@ This is the chronological handoff record for meaningful AI-agent work. It comple
 
 **Next agent:** Do not reintroduce hand-authored river splines. Continue from `flowAccumulation`, `channelStrength`, `flowDrop`, and lake/ocean connectivity.
 
+
+
+## 2026-10-08 16:57 +01:00 — GPT-5.6 Luna
+
+**Scope:** Integrated environmental water/snow pass: terrain-aware water rendering, basin storage, local river surfaces, swimming/current behavior, waterfalls, springs, snow and ice.
+
+**Starting point:** `world-drainage-foundation` after commit `8bba83b528262186b50eaa106c713544b4a9e69e`.
+
+**Inspected:** `src/world.ts`, `src/terrain.ts`, `src/main.ts`, `PROJECT_PLAN.md`, `AGENT_CHANGELOG.md`, Vercel deployments/build events.
+
+**Changed:**
+- Added authoritative local water-surface elevation to the hydrology grid.
+- Stopped high-altitude riverbeds from being classified/painted as ordinary grass by making terrain water-aware.
+- Changed river and stream carving to use local water surfaces rather than forcing mountain channels to the global sea level.
+- Increased natural basin water storage to allow substantially deeper/full inland lakes.
+- Allowed high-altitude enclosed lakes when the depression/spill geometry supports them.
+- Made lakes effectively still water for player-current physics; wind remains responsible for surface motion/waves.
+- Reclassified springs as source-like headwaters instead of treating every large waterfall as a spring.
+- Made strong river current challenging but crossable by capping swimmer drift while retaining downstream pull.
+- Made swimming, splashes, camera water clearance and underwater detection follow each local river/lake surface.
+- Added drainage-driven waterfall visuals from flow drop and local surface descent.
+- Added lightweight alpine spring pools.
+- Added climate/elevation-driven snow coverage and cold-lake ice thickness fields.
+- Added shoreline water-vertex smoothing to reduce high-elevation water sheets over dry banks.
+
+**Verification:**
+- Build: PASS on Vercel for commit `8bba83b528262186b50eaa106c713544b4a9e69e` (the immediately preceding rendering/water pass). Later commits `1dfcc0ce...` and `922aae548...` triggered new Vercel deployments; their final READY state/build result had not yet been re-checked at this entry.
+- Typecheck: Included in the successful Vercel `npm run build` for `8bba...`.
+- Runtime/browser: NOT VERIFIED for the latest environmental pass.
+- Device: NOT VERIFIED.
+- Vercel sandbox runtime probe could not be started because the connected Vercel scope returned 403 authorization for sandbox creation.
+
+**Important findings:** The original green-over-water symptom had a concrete code cause: `terrainColorAt()` used absolute `WATER_LEVEL` rather than actual local hydrology, so a high mountain river could be submerged while still receiving green land coloring. The former global-sea-level channel carving was also incompatible with realistic mountain rivers and waterfalls.
+
+**Remaining work:** Run the latest branch in a real browser/device and inspect ocean, deep lake, high alpine stream, waterfall, spring, chunk boundaries and the previously reported mountain-gap location. Accidental holes/voids must remain distinct from intentional snow/ice/water hazards.
+
+**Next agent:** Continue from local `waterSurfaceAt()`, `flowDrop`, `flowAccumulation`, snow/ice fields and terrain/water collision continuity. Do not restore global-sea-level river carving or hand-authored river splines.
