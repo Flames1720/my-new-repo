@@ -1250,6 +1250,15 @@ function saveNow() {
   localStorage.setItem(SAVE_KEY, JSON.stringify(save));
 }
 
+// Untouched terrain keeps its continuous heightfield behavior. A voxel-edited
+// column becomes grounded by its actual top solid cell until the next remesh
+// milestone replaces the visible gameplay surface too.
+function physicalGroundHeightAt(x: number, z: number): number {
+  return voxelWorld.hasGroundOverride(x, z)
+    ? voxelWorld.groundHeight(x, z)
+    : terrainHeightAt(x, z);
+}
+
 // --- INPUTS & CONTROLS ---
 const keys = new Set<string>();
 const keyboardKeys = new Set<string>();
@@ -2574,7 +2583,7 @@ function update(dt: number) {
   player.swimming = waterAt(p.x, p.z) && waterDepthAt(p.x, p.z) > 0.65;
 
   if (player.swimming) {
-    const bedY = terrainHeightAt(p.x, p.z);
+    const bedY = physicalGroundHeightAt(p.x, p.z);
     const surfaceY = waterSurfaceAt(p.x, p.z);
     const minY = bedY + 0.15;
     // Swimming follows the local river or lake surface.
@@ -2617,7 +2626,7 @@ function update(dt: number) {
     player.velocity.y = Math.max(player.velocity.y, MAX_FALL_SPEED);
     p.y += player.velocity.y * dt;
 
-    let groundY = terrainHeightAt(p.x, p.z);
+    let groundY = physicalGroundHeightAt(p.x, p.z);
     // Solid Home Structure Collision
     const home = chunks.loaded.get('0,0')?.getObjectByName('home') as THREE.Group | undefined;
     if (home) {
