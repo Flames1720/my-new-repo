@@ -2810,7 +2810,16 @@ function update(dt: number) {
     }
   }
 
-  player.animate(walkTime += dt, moving, sprinting, player.swimming, dt, horizontalSpeed, angularVelocity, player.onGround, player.velocity.y);
+  // Choose directional animation from velocity relative to the character's facing,
+  // not raw joystick direction. Assets without a matching clip safely use locomotion.
+  const facingYaw = player.root.rotation.y;
+  const localForwardSpeed = player.velocity.x * Math.sin(facingYaw) + player.velocity.z * Math.cos(facingYaw);
+  const localSideSpeed = -player.velocity.x * Math.cos(facingYaw) + player.velocity.z * Math.sin(facingYaw);
+  const movementIntent: 'forward' | 'backward' | 'strafe-left' | 'strafe-right' =
+    Math.abs(localSideSpeed) > Math.abs(localForwardSpeed) * 1.15 && Math.abs(localSideSpeed) > 0.35
+      ? (localSideSpeed < 0 ? 'strafe-left' : 'strafe-right')
+      : localForwardSpeed < -0.35 ? 'backward' : 'forward';
+  player.animate(walkTime += dt, moving, sprinting, player.swimming, dt, horizontalSpeed, angularVelocity, player.onGround, player.velocity.y, movementIntent);
   if (isPhotoMode) updatePhotoBadges();
 
   // Record breadcrumb displacement trail
