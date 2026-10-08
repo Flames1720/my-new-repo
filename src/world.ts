@@ -975,7 +975,6 @@ function hydrologyCarveAt(x: number, z: number): number {
   if (depth <= 0.005) return 0;
 
   const surface = waterSurfaceAt(x, z);
-  if (surface <= WATER_LEVEL && !hydrologySampleAt(x, z).ocean) return 0;
 
   // Carve only where the authoritative water sampler says this point is wet.
   // The visible terrain is driven toward the same bed used by the water mesh,
