@@ -2244,9 +2244,9 @@ void environmentAssets.preload().then(() => {
 function hitResource(obj: THREE.Object3D) {
   const res = obj.userData.resource as { kind: ResourceKind; hits: number; maxHits: number };
   const def = RESOURCE_DEFS[res.kind];
-  // The production human rig includes a "Working" clip; trigger the short
-  // inspect/gather emote on each harvest hit. Assets without it fall back safely.
-  player.playEmote('inspect');
+  // The production human rig includes a "Working" clip. Play the short
+  // inspect/gather emote only while nearly stationary to avoid a sliding-work pose.
+  if (Math.hypot(player.velocity.x, player.velocity.z) < 1.0) player.playEmote('inspect');
   res.hits--;
   obj.scale.setScalar(Math.max(0.7, 1 - 0.08 * (res.maxHits - res.hits)));
 
