@@ -1772,6 +1772,16 @@ function captureSurvey() {
 }
 if (surveyBtn) bindAction(surveyBtn, () => setSurveyMode(true));
 if (surveyCloseBtn) bindAction(surveyCloseBtn, () => setSurveyMode(false));
+if (!document.querySelector('#surveyWorldBtn')) {
+  const viewButtons = document.querySelector('.surveyViewButtons');
+  if (viewButtons) {
+    const worldButton = document.createElement('button');
+    worldButton.id = 'surveyWorldBtn';
+    worldButton.className = 'surveyModeBtn active';
+    worldButton.textContent = '🌍 WORLD';
+    viewButtons.prepend(worldButton);
+  }
+}
 const surveyWorldBtn = document.querySelector('#surveyWorldBtn') as HTMLButtonElement | null;
 if (surveyWorldBtn) bindAction(surveyWorldBtn, () => setSurveyView('world'));
 if (surveyTerrainBtn) bindAction(surveyTerrainBtn, () => setSurveyView('terrain'));
