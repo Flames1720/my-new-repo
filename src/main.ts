@@ -1707,7 +1707,7 @@ function setSurveyMode(active: boolean) {
     survey.setActive(true);
     chunks.surveyAll(true);
     world.visible = true;
-    actors.visible = false;
+    actors.visible = true;
     celestialGroup.visible = false;
     distantHorizonMesh.visible = false;
     cloudDeckGroup.visible = false;
