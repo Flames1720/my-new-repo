@@ -411,3 +411,29 @@ The previous entry said the final input patch was still building; that build sub
 
 **Next agent:** Do not merge to `main) until the user/device runtime verification passes.
 
+
+## 2026-10-08 19:27 +01:00 — GPT-5.6 Luna
+
+**Scope:** World Survey opening UX / non-blocking loading.
+
+**Starting point:** `world-drainage-foundation` at the World Survey inspection pass.
+
+**Inspected:** `src/main.ts`, `src/style.css`, `index.html`, especially `ChunkManager.surveyAll()` and `setSurveyMode()`.
+
+**Changed:**
+- WORLD survey materialization is now batched and yields to `requestAnimationFrame` between small chunk batches instead of blocking the browser for the entire finite-world build.
+- Added a visible full-screen survey loader before materialization starts.
+- Loader stages: `CALCULATING…` → `RENDERING…` → `OPENING…`.
+- Added progress bar driven by actual survey chunk materialization progress.
+- The survey remains frozen once opened; this change only makes the expensive initial preparation visibly progressive and allows the browser to paint the loader.
+- LOW_POWER/mobile devices use smaller chunk batches.
+
+**Verification:**
+- Build: Vercel deployment for the latest code is currently `BUILDING`; the previous main.ts loading-stage commit is `READY`.
+- Typecheck: NOT RUN separately.
+- Runtime/browser: NOT VERIFIED.
+- Device: NOT VERIFIED.
+
+**Important findings:** The user correctly observed that entering WORLD survey can look like a crash because the finite-world LOD0 materialization is synchronous. The loader must be painted before and during that work.
+
+**Remaining work:** Verify on the physical phone that the loader appears immediately, progresses through the three stages, and then opens WORLD survey normally without changing the frozen-world behavior.
