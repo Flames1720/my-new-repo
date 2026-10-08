@@ -285,6 +285,14 @@
 
     <!-- World Survey: authoritative diagnostic view -->
     <div id="surveyOverlay">
+      <div id="surveyLoading" aria-live="polite" aria-busy="true">
+        <div class="surveyLoadingCard">
+          <div class="surveyLoadingIcon">🗺️</div>
+          <div id="surveyLoadingStage">CALCULATING…</div>
+          <div class="surveyLoadingSub">Preparing the frozen world survey</div>
+          <div class="surveyLoadingTrack"><div id="surveyLoadingBar"></div></div>
+        </div>
+      </div>
       <div class="surveyTop">
         <div>
           <span class="surveyBadge">WORLD SURVEY</span>
