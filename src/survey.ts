@@ -58,7 +58,7 @@ export class WorldSurvey {
     this.terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     this.terrainGeo.setIndex(indices);
     this.terrainGeo.computeVertexNormals();
-    this.terrain = new THREE.Mesh(this.terrainGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96 }));
+    this.terrain = new THREE.Mesh(this.terrainGeo, new THREE.MeshBasicMaterial({ vertexColors: true }));
     this.terrain.name = 'survey-terrain-topology';
     this.terrain.frustumCulled = false;
     this.root.add(this.terrain);
