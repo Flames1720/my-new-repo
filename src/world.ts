@@ -818,9 +818,12 @@ function hydrologySampleAt(x: number, z: number): HydrologySample {
   const { gx, gz } = hydroCoords(x, z);
   const cell = hydrologyCellAt(x, z);
 
+  // Direction is a topological property of the drainage graph, not a
+  // smoothly interpolated visual field. Interpolating vectors between adjacent
+  // cells can point across a ridge at a watershed boundary.
   const flowVector = new THREE.Vector2(
-    bilinear(grid.flowDx, gx, gz),
-    bilinear(grid.flowDz, gx, gz)
+    grid.flowDx[cell.i],
+    grid.flowDz[cell.i]
   );
   if (flowVector.lengthSq() > 0.0001) flowVector.normalize();
 
