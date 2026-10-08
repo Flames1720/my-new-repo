@@ -40,6 +40,7 @@ import { WildlifeSystem, isSharedAnimalAsset, speciesColor, SPECIES_NAME, SPECIE
 import { MinimapSystem } from './minimap';
 import { settings } from './settings';
 import { WorldSurvey, type SurveyView } from './survey';
+import { voxelWorld, buildVoxelWorldVolumeMesh } from './voxel';
 
 type Save = {
   version: 2;
@@ -500,6 +501,11 @@ scene.add(cloudDeckGroup);
 const world = new THREE.Group(), actors = new THREE.Group();
 scene.add(world, actors);
 
+const voxelSurveyGroup = new THREE.Group();
+voxelSurveyGroup.name = 'voxel-survey-volume';
+voxelSurveyGroup.visible = false;
+scene.add(voxelSurveyGroup);
+
 const survey = new WorldSurvey();
 scene.add(survey.root);
 survey.setWorldScene(scene, camera);
@@ -627,6 +633,9 @@ class Chunks {
     const key = this.key(cx, cz), g = new THREE.Group();
     g.name = `chunk:${key}`;
     g.userData.lod = lod;
+    // Chunks partition the physical voxel volume too. The actual base material
+    // is deterministic, while edits remain sparse inside VoxelChunk.
+    g.userData.voxelChunk = voxelWorld.chunk(cx, cz);
 
     const lodSetting = settings.current.lodDetail || 'ultra';
     const segs =
@@ -1050,8 +1059,24 @@ class Chunks {
           }
         }
       }
+
+      // The expensive full-world volume is survey-only. Normal gameplay keeps
+      // the compact surface representation, while WORLD Survey gets a real
+      // vertical geological mass when the camera is lifted to the side.
+      if (!voxelSurveyGroup.getObjectByName('voxel-world-volume')) {
+        const volume = buildVoxelWorldVolumeMesh(terrainMaterial);
+        if (volume) voxelSurveyGroup.add(volume);
+      }
+      voxelSurveyGroup.visible = true;
+
       onProgress?.(total, total);
       return;
+    }
+    voxelSurveyGroup.visible = false;
+    const volume = voxelSurveyGroup.getObjectByName('voxel-world-volume');
+    if (volume) {
+      volume.removeFromParent();
+      if (volume instanceof THREE.Mesh) volume.geometry.dispose();
     }
     this.stream(player.root.position.x, player.root.position.z);
   }
