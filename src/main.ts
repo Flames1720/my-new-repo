@@ -41,6 +41,7 @@ import { MinimapSystem } from './minimap';
 import { settings } from './settings';
 import { WorldSurvey, type SurveyView } from './survey';
 import { voxelWorld, buildVoxelWorldVolumeMesh, buildVoxelWorldWaterVolumeMesh, type VoxelEdit } from './voxel';
+import { environmentAssets } from './environment-assets';
 
 type Save = {
   version: 2;
@@ -95,6 +96,30 @@ function pickTreeKind(cx: number, cz: number, i: number, tx: number, tz: number)
 }
 
 function buildTree(kind: ResourceKind, lod: number): THREE.Group {
+  const assetTree = environmentAssets.createTree(kind, lod);
+  if (assetTree) {
+    const def = RESOURCE_DEFS[kind];
+    if (kind === 'fruit') {
+      const fruitMat = new THREE.MeshStandardMaterial({ color: def.fruitColor ?? 0xcc4433, roughness: 0.6 });
+      for (let f = 0; f < 5; f++) {
+        const fruit = new THREE.Mesh(new THREE.SphereGeometry(0.09, 5, 4), fruitMat);
+        const a = f * ((Math.PI * 2) / 5);
+        fruit.position.set(Math.cos(a) * 1.05, 2.2 + Math.sin(f * 1.7) * 0.28, Math.sin(a) * 1.05);
+        assetTree.add(fruit);
+      }
+    }
+    if (lod === 0) {
+      assetTree.traverse(o => {
+        if (o instanceof THREE.Mesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+        }
+      });
+    }
+    return assetTree;
+  }
+
+  // Lightweight deterministic fallback while the CC0 asset pack is loading.
   const g = new THREE.Group();
   const def = RESOURCE_DEFS[kind];
   const trunkMat = new THREE.MeshStandardMaterial({ color: def.trunkColor, roughness: 0.95 });
@@ -122,11 +147,9 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
       g.add(tier);
     }
   } else if (kind === 'ancient_oak') {
-    // Grand ancient oak tree (2.5x larger, majestic presence)
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.55, 3.2, lod === 0 ? 10 : 6), trunkMat);
     trunk.position.y = 1.6;
     g.add(trunk);
-    // Root buttresses
     for (let r = 0; r < 4; r++) {
       const root = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.22, 1.2, 5), trunkMat);
       const ra = r * (Math.PI / 2);
@@ -135,7 +158,6 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
       root.rotation.y = ra;
       g.add(root);
     }
-    // Main multi-layered canopy
     const c1 = new THREE.Mesh(new THREE.SphereGeometry(2.3, lod === 0 ? 10 : 6, lod === 0 ? 8 : 5), crownMat);
     c1.position.set(0, 3.8, 0);
     g.add(c1);
@@ -146,7 +168,6 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
     c3.position.set(-1.0, 4.0, 0.8);
     g.add(c3);
   } else {
-    // Standard Oak / Fruit tree
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.7, lod === 0 ? 8 : 5), trunkMat);
     trunk.position.y = 0.85;
     g.add(trunk);
@@ -163,7 +184,6 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
       }
     }
   }
-
   if (lod === 0) {
     g.traverse(o => {
       if (o instanceof THREE.Mesh) {
@@ -174,8 +194,20 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
   }
   return g;
 }
-
 function buildRock(kind: ResourceKind, lod: number): THREE.Group {
+  const assetRock = environmentAssets.createRock(kind, lod);
+  if (assetRock) {
+    if (lod === 0) {
+      assetRock.traverse(o => {
+        if (o instanceof THREE.Mesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+        }
+      });
+    }
+    return assetRock;
+  }
+
   const g = new THREE.Group();
   const def = RESOURCE_DEFS[kind];
   const mat = new THREE.MeshStandardMaterial({ color: def.rockColor, roughness: 1, flatShading: true });
@@ -189,7 +221,6 @@ function buildRock(kind: ResourceKind, lod: number): THREE.Group {
   geo.computeVertexNormals();
   const rock = new THREE.Mesh(geo, mat);
   rock.position.y = base * 0.55;
-  rock.rotation.y = hash(kind === 'boulder' ? 1 : 0, Math.round(base * 1000)) * Math.PI * 2;
   g.add(rock);
   if (lod === 0) {
     g.traverse(o => {
@@ -201,7 +232,6 @@ function buildRock(kind: ResourceKind, lod: number): THREE.Group {
   }
   return g;
 }
-
 // --- SHADERS & WATER ---
 const waterMaterial = new THREE.MeshStandardMaterial({
   color: 0xffffff,
@@ -568,7 +598,7 @@ function disposeWorldObjects(root: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
   root.traverse(o => {
     if (!(o instanceof THREE.Mesh)) return;
-    if (!isSharedAnimalAsset(o.geometry) && !geometries.has(o.geometry)) {
+    if (!isSharedAnimalAsset(o.geometry) && !environmentAssets.isSharedGeometry(o.geometry) && !geometries.has(o.geometry)) {
       geometries.add(o.geometry);
       o.geometry.dispose();
     }
@@ -580,6 +610,7 @@ function disposeWorldObjects(root: THREE.Object3D) {
         material !== waterfallMaterial &&
         material !== springMaterial &&
         !isSharedAnimalAsset(material) &&
+        !environmentAssets.isSharedMaterial(material) &&
         !materials.has(material)
       ) {
         materials.add(material);
@@ -2203,6 +2234,9 @@ fauna = new WildlifeSystem({
 });
 
 chunks.stream(save.player.x, save.player.z);
+void environmentAssets.preload().then(() => {
+  chunks.rebuildAll();
+});
 
 function hitResource(obj: THREE.Object3D) {
   const res = obj.userData.resource as { kind: ResourceKind; hits: number; maxHits: number };
