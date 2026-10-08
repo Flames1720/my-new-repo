@@ -1004,12 +1004,12 @@ export function waterFlowAt(x: number, z: number): {
     }
 
     const speed = clamp(
-      0.65 +
-      Math.sqrt(Math.max(0, sample.flowDrop)) * 0.8 +
-      Math.log1p(sample.flowAccumulation) * 0.075 +
-      sample.channelStrength * 1.1,
+      0.5 +
+      Math.sqrt(Math.max(0, sample.flowDrop)) * 0.9 +
+      Math.log1p(sample.flowAccumulation) * 0.09 +
+      sample.channelStrength * 1.45,
       0.5,
-      4.8
+      5.8
     );
 
     return {
