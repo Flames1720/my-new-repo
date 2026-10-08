@@ -851,6 +851,77 @@ class Chunks {
       const waterMesh = new THREE.Mesh(geom, waterMaterial);
       waterMesh.name = 'water-surface';
       waterGroup.add(waterMesh);
+
+      // Give gameplay water an actual shoreline cross-section. The surface
+      // remains the smooth authoritative hydrology surface, while these walls
+      // occupy the space between the waterline and the carved bed.
+      const sidePositions: number[] = [];
+      const sideColors: number[] = [];
+      const sideIndices: number[] = [];
+      const sideColor = new THREE.Color(0x1f7893);
+      const addSide = (
+        a: THREE.Vector3,
+        b: THREE.Vector3,
+        bottomA: number,
+        bottomB: number,
+        topA: number,
+        topB: number,
+      ) => {
+        const base = sidePositions.length / 3;
+        for (const v of [
+          new THREE.Vector3(a.x, bottomA, a.z),
+          new THREE.Vector3(b.x, bottomB, b.z),
+          new THREE.Vector3(b.x, topB, b.z),
+          new THREE.Vector3(a.x, topA, a.z),
+        ]) {
+          sidePositions.push(v.x, v.y, v.z);
+          sideColors.push(sideColor.r, sideColor.g, sideColor.b);
+        }
+        sideIndices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      };
+
+      for (let iz = 0; iz < waterGrid; iz++) {
+        for (let ix = 0; ix < waterGrid; ix++) {
+          const wx = cx * SIZE + (ix + 0.5) * step;
+          const wz = cz * SIZE + (iz + 0.5) * step;
+          if (waterDepthAt(wx, wz) <= 0.02) continue;
+
+          const surfaceY = waterSurfaceAt(wx, wz);
+          const half = step * 0.5;
+          const bed = Math.min(
+            surfaceY - 0.08,
+            terrainHeightAt(wx, wz) + 0.04,
+          );
+
+          // Query the neighboring cell in world space so chunk boundaries do
+          // not manufacture a false wall when the river/lake continues.
+          const neighbors = [
+            { nx: wx, nz: wz - step, a: new THREE.Vector3(ix * step, 0, iz * step), b: new THREE.Vector3((ix + 1) * step, 0, iz * step) },
+            { nx: wx, nz: wz + step, a: new THREE.Vector3((ix + 1) * step, 0, (iz + 1) * step), b: new THREE.Vector3(ix * step, 0, (iz + 1) * step) },
+            { nx: wx - step, nz: wz, a: new THREE.Vector3(ix * step, 0, (iz + 1) * step), b: new THREE.Vector3(ix * step, 0, iz * step) },
+            { nx: wx + step, nz: wz, a: new THREE.Vector3((ix + 1) * step, 0, iz * step), b: new THREE.Vector3((ix + 1) * step, 0, (iz + 1) * step) },
+          ];
+
+          for (const edge of neighbors) {
+            if (waterDepthAt(edge.nx, edge.nz) > 0.02) continue;
+            const edgeA = new THREE.Vector3(edge.a.x, 0, edge.a.z);
+            const edgeB = new THREE.Vector3(edge.b.x, 0, edge.b.z);
+            addSide(edgeA, edgeB, bed, bed, surfaceY, surfaceY);
+          }
+        }
+      }
+
+      if (sideIndices.length) {
+        const sideGeo = new THREE.BufferGeometry();
+        sideGeo.setAttribute('position', new THREE.Float32BufferAttribute(sidePositions, 3));
+        sideGeo.setAttribute('color', new THREE.Float32BufferAttribute(sideColors, 3));
+        sideGeo.setIndex(sideIndices);
+        sideGeo.computeVertexNormals();
+        const sideMesh = new THREE.Mesh(sideGeo, waterMaterial);
+        sideMesh.name = 'water-volume-sides';
+        waterGroup.add(sideMesh);
+      }
+
       g.add(waterGroup);
       g.userData.water = true;
     }
