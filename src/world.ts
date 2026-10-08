@@ -1275,36 +1275,58 @@ export interface GeologicalLayers {
  */
 export class WorldModel {
   readonly seed: number;
+  private readonly offsetX: number;
+  private readonly offsetZ: number;
 
   constructor(seed: number = SEED) {
     this.seed = seed;
+
+    // The global terrain functions intentionally remain backward-compatible
+    // with the default world. Non-default WorldModel instances get a stable
+    // coordinate offset, making the seed a real world selector rather than a
+    // decorative constructor argument.
+    let n = Math.imul(seed | 0, 0x45d9f3b);
+    n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
+    n ^= n >>> 16;
+    this.offsetX = ((n >>> 0) % 2048) - 1024;
+    this.offsetZ = (((Math.imul(n ^ 0x9e3779b9, 0x27d4eb2d) >>> 0) % 2048) - 1024);
+  }
+
+  private worldX(x: number): number {
+    return x + this.offsetX;
+  }
+
+  private worldZ(z: number): number {
+    return z + this.offsetZ;
   }
 
   /** Base Geological Layer 1: Deterministic Elevation (m) */
   getElevation(x: number, z: number): number {
-    return terrainHeightAt(x, z);
+    return terrainHeightAt(this.worldX(x), this.worldZ(z));
   }
 
   /** Base Geological Layer 2: Deterministic Slope & Normal */
   getSlope(x: number, z: number, delta = 0.8): { slope: number; normal: THREE.Vector3 } {
-    return terrainSlopeAt(x, z, delta);
+    return terrainSlopeAt(this.worldX(x), this.worldZ(z), delta);
   }
 
   /** Base Geological Layer 3: Deterministic Soil Moisture [0, 1] */
   getMoisture(x: number, z: number): number {
-    return climateFieldsAt(x, z).soilMoisture;
+    return climateFieldsAt(this.worldX(x), this.worldZ(z)).soilMoisture;
   }
 
   /** Base Geological Layer 4: Deterministic Temperature (°C) */
   getTemperature(x: number, z: number): number {
-    return climateFieldsAt(x, z).temperature;
+    return climateFieldsAt(this.worldX(x), this.worldZ(z)).temperature;
   }
 
   /** Sample the 4 primary geological layers simultaneously */
   getGeologicalLayers(x: number, z: number, delta = 0.8): GeologicalLayers {
-    const elevation = this.getElevation(x, z);
-    const { slope, normal: slopeNormal } = this.getSlope(x, z, delta);
-    const climate = climateFieldsAt(x, z);
+    const wx = this.worldX(x);
+    const wz = this.worldZ(z);
+    const elevation = terrainHeightAt(wx, wz);
+    const { slope, normal: slopeNormal } = terrainSlopeAt(wx, wz, delta);
+    const climate = climateFieldsAt(wx, wz);
     return {
       elevation,
       slope,
@@ -1316,27 +1338,27 @@ export class WorldModel {
 
   /** Query complete environmental, hydrological, and atmospheric fields */
   queryFields(x: number, z: number): WorldFields {
-    return queryWorldFields(x, z);
+    return queryWorldFields(this.worldX(x), this.worldZ(z));
   }
 
   /** Water depth at coordinate */
   getWaterDepth(x: number, z: number): number {
-    return waterDepthAt(x, z);
+    return waterDepthAt(this.worldX(x), this.worldZ(z));
   }
 
   /** True if point is submerged in water */
   hasWater(x: number, z: number): boolean {
-    return waterAt(x, z);
+    return waterAt(this.worldX(x), this.worldZ(z));
   }
 
   /** Downstream water flow vector and speed */
   getWaterFlow(x: number, z: number) {
-    return waterFlowAt(x, z);
+    return waterFlowAt(this.worldX(x), this.worldZ(z));
   }
 
   /** Biome classification at coordinate */
   getBiome(x: number, z: number): Biome {
-    return biomeAt(x, z);
+    return biomeAt(this.worldX(x), this.worldZ(z));
   }
 }
 
