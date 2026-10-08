@@ -606,3 +606,24 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 - Do not merge to `main` until the preview is tested.
 
 **Next agent:** Inspect the preview on a real mobile device and report visual regressions before further animation work.
+
+
+## 2026-10-09 22:35 +01:00 — GPT-6 Astra — verification update
+
+**Scope:** Build feedback and follow-up safety correction for player animation wiring.
+
+**Changed after the prior entry:**
+- Expanded the declared `locomotionState` union to include the new directional/environment animation names after Vercel TypeScript reported that `strafe-left` was not assignable.
+- Ensured a missing fall clip falls back to the procedural airborne pose rather than looping the jump clip.
+- Restricted the short gather/inspect animation to harvesting hits while the player is nearly stationary, avoiding an obvious work pose while moving quickly.
+
+**Verification:**
+- First Vercel build: FAIL — TypeScript error at `src/character.ts(769,5)` because the `locomotionState` type did not yet include the new animation names.
+- Correction committed afterward: YES.
+- Latest build: NOT VERIFIED. Vercel's deployment API rejected a new manual deployment with HTTP 402 because the account hit the `api-deployments-free-per-day` limit (retry after 24 hours). No successful build is claimed.
+- Local build: NOT RUN; the container could not resolve `github.com`.
+- Runtime/browser and physical-device verification: NOT VERIFIED.
+
+**Important findings:** The reported TypeScript error was fixed in a later commit, but the later code has not yet been validated by a complete build. Do not merge based on the earlier failed deployment or assume the fix compiles.
+
+**Next agent:** When deployment capacity is available, build the latest branch HEAD and fix any remaining TypeScript errors before asking the user to test the preview.
