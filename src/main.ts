@@ -1015,10 +1015,16 @@ class Chunks {
     }
   }
 
-  surveyAll(active: boolean) {
+  async surveyAll(active: boolean, onProgress?: (done: number, total: number) => void) {
     if (active) {
-      // The survey is deliberately expensive: it asks the normal chunk renderer
-      // to materialize the complete finite world at gameplay-quality LOD0.
+      // The survey is deliberately expensive: materialize the complete finite
+      // world at gameplay-quality LOD0, but yield to the browser between batches
+      // so the loading overlay can paint instead of looking like a frozen/crashed game.
+      const total = (WORLD_RADIUS * 2 + 1) ** 2;
+      let done = 0;
+      const batchSize = LOW_POWER_MODE ? 4 : 8;
+      onProgress?.(0, total);
+
       for (let x = -WORLD_RADIUS; x <= WORLD_RADIUS; x++) {
         for (let z = -WORLD_RADIUS; z <= WORLD_RADIUS; z++) {
           const key = this.key(x, z);
@@ -1031,8 +1037,15 @@ class Chunks {
             this.loaded.delete(key);
             this.build(x, z, 0);
           }
+
+          done++;
+          if (done % batchSize === 0) {
+            onProgress?.(done, total);
+            await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+          }
         }
       }
+      onProgress?.(total, total);
       return;
     }
     this.stream(player.root.position.x, player.root.position.z);
@@ -1710,12 +1723,36 @@ function updateSurveyUI() {
       ? 'ROCK + WATER · TOPOLOGY'
       : 'WATER TRUTH · FLOW';
 }
+let surveyOpening = false;
+
+function setSurveyLoading(stage: string, progress: number) {
+  const loader = document.querySelector('#surveyLoading') as HTMLElement | null;
+  const stageEl = document.querySelector('#surveyLoadingStage') as HTMLElement | null;
+  const bar = document.querySelector('#surveyLoadingBar') as HTMLElement | null;
+  if (loader) loader.classList.add('show');
+  if (stageEl) stageEl.textContent = stage;
+  if (bar) bar.style.width = String(Math.round(clamp(progress, 0, 1) * 100)) + '%';
+}
+
+function hideSurveyLoading() {
+  const loader = document.querySelector('#surveyLoading') as HTMLElement | null;
+  if (loader) loader.classList.remove('show');
+}
+
 function setSurveyMode(active: boolean) {
   if (active) {
+    if (surveyOpening || survey.isActive) return;
+    surveyOpening = true;
     isPhotoMode = false;
     document.body.classList.remove('photo-mode-active', 'photo-clean-mode');
+
+    // Show the survey shell + loader BEFORE the expensive world materialization.
+    // The browser gets a chance to paint this overlay between chunk batches.
+    document.body.classList.add('survey-active');
+    if (surveyOverlay) surveyOverlay.classList.add('show');
+    setSurveyLoading('CALCULATING…', 0.02);
+
     survey.setActive(true);
-    chunks.surveyAll(true);
     world.visible = true;
     actors.visible = true;
     celestialGroup.visible = true;
@@ -1727,12 +1764,37 @@ function setSurveyMode(active: boolean) {
     surveyWasFog = scene.fog;
     scene.fog = null;
     scene.background = new THREE.Color(0x090d12);
-    document.body.classList.add('survey-active');
     updateSurveyUI();
-    say('World Survey · drag to orbit · two fingers pan/zoom · tap a place to focus');
+
+    void (async () => {
+      try {
+        await chunks.surveyAll(true, (done, total) => {
+          setSurveyLoading('CALCULATING…', 0.02 + (done / Math.max(1, total)) * 0.68);
+        });
+
+        setSurveyLoading('RENDERING…', 0.78);
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+        setSurveyLoading('OPENING…', 0.94);
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+        updateSurveyUI();
+        hideSurveyLoading();
+        say('World Survey · drag to orbit · two fingers pan/zoom · tap a place to focus');
+      } catch (err) {
+        console.error('World survey failed to open:', err);
+        hideSurveyLoading();
+        setSurveyMode(false);
+        say('World Survey failed to open');
+      } finally {
+        surveyOpening = false;
+      }
+    })();
   } else {
+    surveyOpening = false;
+    hideSurveyLoading();
     survey.setActive(false);
-    chunks.surveyAll(false);
+    void chunks.surveyAll(false);
     world.visible = true;
     actors.visible = true;
     celestialGroup.visible = true;
