@@ -637,6 +637,7 @@ class Chunks {
     terrain.rotateX(-Math.PI / 2);
     const pos = terrain.getAttribute('position');
     const colors = new Float32Array(pos.count * 3);
+    const waterMasks = new Float32Array(pos.count);
     const chunkBiome = biomeAt(cx * SIZE + SIZE / 2, cz * SIZE + SIZE / 2);
 
     for (let i = 0; i < pos.count; i++) {
@@ -644,12 +645,14 @@ class Chunks {
       const lz = pos.getZ(i) + cz * SIZE + SIZE / 2;
       const h = terrainHeightAt(lx, lz);
       pos.setY(i, h);
+      waterMasks[i] = clamp(waterDepthAt(lx, lz) / 0.42, 0, 1);
       const c = terrainColorAt(h, lx, lz, chunkBiome);
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
       colors[i * 3 + 2] = c.b;
     }
     terrain.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    terrain.setAttribute('aWaterMask', new THREE.BufferAttribute(waterMasks, 1));
     terrain.computeVertexNormals();
 
     const ground = new THREE.Mesh(terrain, terrainMaterial);
