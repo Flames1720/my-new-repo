@@ -1151,7 +1151,10 @@ gameDom.addEventListener('pointermove', e => {
     if (surveyPointers.size >= 2) {
       const [a, b] = [...surveyPointers.values()];
       const nextDistance = Math.hypot(a.x - b.x, a.y - b.y);
-      if (surveyPinchDistance > 0) survey.zoom(surveyPinchDistance - nextDistance);
+      if (surveyPinchDistance > 0) {
+        survey.zoom(surveyPinchDistance - nextDistance);
+        surveyMoved = true;
+      }
       surveyPinchDistance = nextDistance;
     } else {
       if (Math.hypot(dx, dy) > 4) surveyMoved = true;
