@@ -1015,7 +1015,6 @@ class Chunks {
 
   surveyAll(active: boolean) {
     if (active) {
-      const oldRadius = settings.current.chunkRadius;
       // The survey is deliberately expensive: it asks the normal chunk renderer
       // to materialize the complete finite world at gameplay-quality LOD0.
       for (let x = -WORLD_RADIUS; x <= WORLD_RADIUS; x++) {
@@ -1726,7 +1725,7 @@ function setSurveyMode(active: boolean) {
     scene.background = new THREE.Color(0x090d12);
     document.body.classList.add('survey-active');
     updateSurveyUI();
-    say('World Survey · drag to pan · wheel/pinch to zoom · tap a place to focus');
+    say('World Survey · drag to orbit · two fingers pan/zoom · tap a place to focus');
   } else {
     survey.setActive(false);
     chunks.surveyAll(false);
@@ -1744,7 +1743,7 @@ function setSurveyMode(active: boolean) {
 }
 function setSurveyView(view: SurveyView) {
   survey.setView(view);
-  if (survey.isActive) world.visible = view !== 'world';
+  if (survey.isActive) world.visible = view === 'world';
   updateSurveyUI();
 }
 function captureSurvey() {
