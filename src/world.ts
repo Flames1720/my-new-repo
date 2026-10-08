@@ -1067,75 +1067,12 @@ export function climateFieldsAt(x: number, z: number): {
 }
 
 // ============================================================================
-// 5. WATER FLOW VECTORS & HYDROLOGICAL VELOCITY
+// 5. WATER FLOW API
 // ============================================================================
-
-export function waterFlowAt(x: number, z: number): {
-  flowVector: THREE.Vector2;
-  flowSpeed: number;
-  flowAccumulation: number;
-  waterType: WaterType;
-} {
-  const depth = waterDepthAt(x, z);
-  const isWet = depth > 0.02;
-
-  if (!isWet) {
-    return {
-      flowVector: new THREE.Vector2(0, 0),
-      flowSpeed: 0,
-      flowAccumulation: 0,
-      waterType: 'none',
-    };
-  }
-
-  // Check if in Lake Silvermere
-  const dLake = Math.hypot(x - LAKE_X, z - LAKE_Z);
-  if (dLake < LAKE_RADIUS) {
-    // Lake: slow circular gentle wind-driven circulation
-    const tangX = -(z - LAKE_Z) / (dLake + 0.1);
-    const tangZ = (x - LAKE_X) / (dLake + 0.1);
-    return {
-      flowVector: new THREE.Vector2(tangX, tangZ).normalize(),
-      flowSpeed: 0.25, // Gentle lake drift
-      flowAccumulation: 45,
-      waterType: 'lake',
-    };
-  }
-
-  // River flow calculation: follows river tangent downstream
-  // dx = 1, dz = d(centerlineZ)/dx
-  // Tangent = (1, dz/dx). River flows eastward (+X) toward the ocean delta
-  const rDist = riverDistanceAt(x, z);
-  if (rDist < 12) {
-    const delta = 1.0;
-    const zNext = riverCenterlineZ(x + delta);
-    const zPrev = riverCenterlineZ(x - delta);
-    const dirX = 2 * delta;
-    const dirZ = zNext - zPrev;
-    const flowVec = new THREE.Vector2(dirX, dirZ).normalize();
-
-    // Flow speed: faster on steeper drops, slower in wide bends
-    // Downstream accumulation increases towards eastern plains
-    const accumulation = clamp(10 + (x + 200) * 0.1, 5, 60);
-    const slope = terrainSlopeAt(x, z).slope;
-    const flowSpeed = clamp(1.2 + slope * 3.5 + accumulation * 0.02, 0.8, 4.2);
-
-    return {
-      flowVector: flowVec,
-      flowSpeed,
-      flowAccumulation: accumulation,
-      waterType: accumulation > 25 ? 'river' : 'stream',
-    };
-  }
-
-  // Lowland wetland / marsh
-  return {
-    flowVector: new THREE.Vector2(0, 0),
-    flowSpeed: 0.1,
-    flowAccumulation: 5,
-    waterType: 'wetland',
-  };
-}
+//
+// waterFlowAt() is implemented with the drainage grid in section 2. Keeping
+// the section marker here preserves the existing module organization without
+// maintaining a second, spline-based water system.
 
 // ============================================================================
 // 6. MASTER WORLD FIELD QUERY
