@@ -936,8 +936,8 @@ function hydrologyCarveAt(x: number, z: number): number {
   const depth = bilinear(grid.waterDepth, gx, gz);
   if (presence <= 0.001 || depth <= 0.005) return 0;
 
-  const surface = bilinearWeighted(grid.waterSurface, grid.waterPresence, gx, gz);
-  if (surface <= 0) return 0;
+  const surface = waterSurfaceAt(x, z);
+  if (surface <= WATER_LEVEL && !grid.oceanMask[hydrologyCellAt(x, z).i]) return 0;
 
   // Carve the visible terrain toward the same water bed used by waterDepthAt.
   // This keeps water physically inside the landscape instead of floating over
