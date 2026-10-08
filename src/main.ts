@@ -758,6 +758,9 @@ class Chunks {
             if (neighbourSurfaces.length) {
               surfaceY = neighbourSurfaces.reduce((sum, value) => sum + value, 0) / neighbourSurfaces.length;
             }
+            // A shoreline vertex is still land: never let the water sheet rise
+            // above the bank simply because a nearby wet vertex is higher.
+            surfaceY = Math.min(surfaceY, terrainHeightAt(wx, wz) + 0.018);
           }
           waterPositions.push(ix * step, surfaceY, iz * step);
 
