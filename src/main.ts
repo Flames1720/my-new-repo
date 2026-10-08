@@ -1181,9 +1181,12 @@ gameDom.addEventListener('pointermove', e => {
         surveyMoved = true;
       }
       surveyPinchDistance = nextDistance;
+      const prevMidX = (a.x + b.x) * 0.5 - dx * 0.5;
+      const prevMidY = (a.y + b.y) * 0.5 - dy * 0.5;
+      survey.pan((a.x + b.x) * 0.5 - prevMidX, (a.y + b.y) * 0.5 - prevMidY);
     } else {
       if (Math.hypot(dx, dy) > 4) surveyMoved = true;
-      survey.pan(dx, dy);
+      survey.orbit(dx, dy);
     }
     return;
   }
