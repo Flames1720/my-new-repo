@@ -709,6 +709,14 @@ function buildHydrology(): HydrologyGrid {
       strength = Math.max(strength, 0.18);
     }
 
+    // A terminal drainage cell has nowhere to send its runoff. Unless the
+    // solver classified it as an ocean/lake reservoir, persistent channel water
+    // would be physically unmotivated here. Treat insufficient terminal runoff
+    // as evaporation rather than leaving a stranded river segment on land.
+    if (flowTo[i] < 0 && !lakeMask[i] && !oceanMask[i]) {
+      strength = 0;
+    }
+
     channelStrength[i] = clamp(strength, 0, 1);
   }
 
@@ -734,12 +742,17 @@ function buildHydrology(): HydrologyGrid {
         baseElevation[i] +
         0.30 +
         channelStrength[i] * 0.32;
+      const catchmentFactor = clamp(
+        Math.log1p(flowAccumulation[i]) / Math.log1p(9000),
+        0,
+        1
+      );
       const rawTargetDepth = clamp(
-        0.55 +
-        channelStrength[i] * 2.25 +
-        Math.min(0.7, flowDrop[i] * 0.16),
-        0.55,
-        3.8
+        0.12 +
+        catchmentFactor * 2.65 +
+        Math.min(0.65, flowDrop[i] * 0.12),
+        0.12,
+        3.2
       );
       // Small headwaters taper naturally at their banks; mature rivers keep a
       // nearly full-width wet core. smoothstep avoids square hard edges.
