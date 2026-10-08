@@ -116,26 +116,28 @@ Later, settlements and roads should respond to water, terrain, fertile land, res
 
 ## Current world-foundation phase
 
-Status: IMPLEMENTED & RUNTIME VERIFIED (Phase 1-8 World Model & Player Systems); drainage foundation independently reworked and verified on `world-drainage-foundation`
+Status: IMPLEMENTED & RUNTIME VERIFIED (Phase 1-8 World Model & Player Systems); drainage/environmental water foundation is IMPLEMENTED and BUILD VERIFIED on `world-drainage-foundation`, with latest browser/device verification still pending
 
 Completed & Verified Components:
 1. global elevation/geology model: Intentional mountain spines with envelopes, ridges, crags, massifs, plateaus, and summits (RUNTIME VERIFIED).
 2. landform classification: plains, hills, foothills, mountain_slope, mountain_ridge, peak, plateau, valley, basin, wetland (RUNTIME VERIFIED).
-3. drainage/hydrology: deterministic elevation-grid drainage, depression conditioning, flow routing, runoff accumulation, streams/springs/rivers, enclosed lakes, and ocean connectivity (RUNTIME VERIFIED on feature branch; visual/browser runtime still pending).
-4. climate fields: Temperature lapse rate, prevailing wind, and orographic rain shadow (RUNTIME VERIFIED).
-5. biome/ecology suitability: Forest, meadow, wetland, alpine, riverbank derived causally from moisture, rainfall, elevation, and temperature (RUNTIME VERIFIED).
-6. environmental/water physics: Slope climbing resistance, fast downhill sprint agility, solid bridge deck collision, effortless river swimming exit (RUNTIME VERIFIED).
-7. weather/ocean behavior: Wind wave energy, dynamic wave shader uniforms, high cloud deck (105m) where only highest peaks intersect (BUILD VERIFIED & RUNTIME VERIFIED).
-8. celestial day/night system: Visual 3D Sun with golden corona, Moon with lunar glow, and 650 twinkling stars orbiting across the sky dome (BUILD VERIFIED & RUNTIME VERIFIED).
-9. distant mountain horizon: Single-draw-call 920m skyline mesh rendering majestic mountain silhouettes across the horizon in line of sight (BUILD VERIFIED).
-10. TPP camera anti-clipping: Terrain floor clamping and ray sweeps guaranteeing camera never clips into ground or solids (BUILD VERIFIED & RUNTIME VERIFIED).
-11. TPP action volume: Call of Duty Battle Royale style character-centered proximity targeting with contextual action prompts (BUILD VERIFIED).
-12. fauna performance & dispersal: Throttled distant updates, fixed 45s auto-balance timer, natural biome dispersal, and filtered radar markers (BUILD VERIFIED).
-13. modern HUD: Sleek unified player card, tactical compass heading, contextual keycap action pill, and hotbar inventory (BUILD VERIFIED).
+3. drainage/hydrology: deterministic elevation-grid drainage, depression conditioning, flow routing, runoff accumulation, streams/springs/rivers, enclosed lakes, and ocean connectivity (IMPLEMENTED; earlier runtime probes verified topology; latest visual/browser runtime still pending).
+4. water surfaces & environmental hydrology: local river/lake water surfaces, deeper basin storage, terrain-aware submerged colors, stronger but controllable river currents, waterfall/spring visuals, snow/ice field logic (IMPLEMENTED & BUILD VERIFIED; latest browser/device runtime still pending).
+5. climate fields: Temperature lapse rate, prevailing wind, and orographic rain shadow (RUNTIME VERIFIED).
+6. biome/ecology suitability: Forest, meadow, wetland, alpine, riverbank derived causally from moisture, rainfall, elevation, and temperature (RUNTIME VERIFIED).
+7. environmental/water physics: Slope climbing resistance, downhill agility, bridge collision, local-surface swimming, strong-but-crossable river current (IMPLEMENTED & BUILD VERIFIED; latest browser/device runtime pending).
+8. weather/ocean behavior: Wind wave energy, dynamic wave shader uniforms, high cloud deck (105m) where only highest peaks intersect (BUILD VERIFIED & RUNTIME VERIFIED).
+9. celestial day/night system: Visual 3D Sun with golden corona, Moon with lunar glow, and 650 twinkling stars orbiting across the sky dome (BUILD VERIFIED & RUNTIME VERIFIED).
+10. distant mountain horizon: Single-draw-call 920m skyline mesh rendering mountain silhouettes across the horizon in line of sight (BUILD VERIFIED).
+11. TPP camera anti-clipping: Terrain floor clamping and ray sweeps preventing camera clipping into ground or solids (BUILD VERIFIED & RUNTIME VERIFIED).
+12. TPP action volume: Character-centered proximity targeting with contextual action prompts (BUILD VERIFIED).
+13. fauna performance & dispersal: Throttled distant updates, fixed 45s auto-balance timer, natural biome dispersal, and filtered radar markers (BUILD VERIFIED).
+14. modern HUD: Sleek unified player card, tactical compass heading, contextual keycap action pill, and hotbar inventory (BUILD VERIFIED).
 
 Recommended next steps:
-- Build waterfalls/rapids from the now-authoritative per-cell `flowDrop` + channel strength; add spring emergence and river width/depth from catchment.
-- Further refine settlement trade corridors and road placement respecting slope contours.
+- Browser/device test the latest water/snow pass across ocean, high-altitude river, deep basin lake, spring, waterfall and chunk seams.
+- Add deliberate snow/ice hazards and recovery/death rules only after accidental void/geometry failures are ruled out.
+- Further refine river width/depth from catchment and settlement trade corridors respecting slope contours.
 
 ## Known prototype concerns
 
