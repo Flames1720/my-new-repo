@@ -141,7 +141,7 @@ Recommended next steps:
 
 ## World Survey / Diagnostic Camera
 
-Status: IMPLEMENTED; latest build for the final pinch-input patch is IN PROGRESS; browser/device runtime is NOT VERIFIED.
+Status: IMPLEMENTED & BUILD VERIFIED on the final code patch; browser/device runtime is NOT VERIFIED.
 
 Implemented:
 - independent survey camera, not tied to the player
