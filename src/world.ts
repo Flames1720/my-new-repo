@@ -1150,55 +1150,49 @@ export function terrainHeightAt(x: number, z: number): number {
   return Math.max(0.2, terrainBaseHeightAt(x, z) - hydrologyCarveAt(x, z));
 }
 
+export function waterSurfaceAt(x: number, z: number): number {
+  if (nearHome(x, z) || nearVillage(x, z)) return WATER_LEVEL;
+
+  const grid = hydrologyGrid();
+  const { gx, gz } = hydroCoords(x, z);
+  const cell = hydrologyCellAt(x, z);
+
+  if (grid.oceanMask[cell.i]) return WATER_LEVEL;
+
+  if (grid.lakeMask[cell.i]) {
+    const surface = Math.max(WATER_LEVEL, bilinear(grid.filledElevation, gx, gz));
+    return surface > terrainBaseHeightAt(x, z) + 0.02 ? surface : WATER_LEVEL;
+  }
+
+  if (grid.channelStrength[cell.i] > 0.02) {
+    return Math.max(WATER_LEVEL, terrainBaseHeightAt(x, z));
+  }
+
+  return WATER_LEVEL;
+}
+
 export function waterDepthAt(x: number, z: number): number {
   if (nearHome(x, z) || nearVillage(x, z)) return 0;
 
   const grid = hydrologyGrid();
   const { gx, gz } = hydroCoords(x, z);
-  return Math.max(0, bilinear(grid.waterDepth, gx, gz));
-}
+  const cell = hydrologyCellAt(x, z);
 
-export function waterSurfaceAt(x: number, z: number): number {
-  if (nearHome(x, z) || nearVillage(x, z)) return WATER_LEVEL;
-  if (waterDepthAt(x, z) <= 0.02) return WATER_LEVEL;
+  if (grid.oceanMask[cell.i]) {
+    return Math.max(0, WATER_LEVEL - terrainBaseHeightAt(x, z));
+  }
 
-  const grid = hydrologyGrid();
-  const { gx, gz } = hydroCoords(x, z);
-  const surface = bilinearWeighted(grid.waterSurface, grid.waterPresence, gx, gz);
-  return surface > 0 ? Math.max(WATER_LEVEL, surface) : WATER_LEVEL;
-}
+  if (grid.lakeMask[cell.i]) {
+    const surface = Math.max(WATER_LEVEL, bilinear(grid.filledElevation, gx, gz));
+    if (surface <= terrainBaseHeightAt(x, z) + 0.02) return 0;
+    return Math.max(0, bilinear(grid.waterDepth, gx, gz));
+  }
 
-export function waterAt(x: number, z: number): boolean {
-  if (nearHome(x, z)) return false;
-  return waterDepthAt(x, z) > 0.02;
-}
+  if (grid.channelStrength[cell.i] > 0.02) {
+    return Math.max(0, bilinear(grid.waterDepth, gx, gz));
+  }
 
-export function snowDepthAt(x: number, z: number): number {
-  const elevation = terrainHeightAt(x, z);
-  if (waterAt(x, z)) return 0;
-
-  const temperature = 23.0 - elevation * 0.42;
-  const precipitation = hydrologyRainfallAt(x, z);
-  const freezeFactor = clamp((2.0 - temperature) / 7.5, 0, 1);
-  const highAlpine = clamp((elevation - 34.0) / 24.0, 0, 1);
-  return clamp(
-    freezeFactor * (0.30 + precipitation * 0.70) * 0.82 +
-    highAlpine * 0.35,
-    0,
-    1
-  );
-}
-
-export function iceThicknessAt(x: number, z: number): number {
-  const depth = waterDepthAt(x, z);
-  if (depth <= 0.25) return 0;
-
-  const elevation = terrainHeightAt(x, z);
-  const temperature = 23.0 - elevation * 0.42;
-  const sample = hydrologySampleAt(x, z);
-
-  if (!sample.lake || temperature > -2.0) return 0;
-  return clamp((-temperature - 1.5) / 10.0, 0, 1) * clamp(depth / 2.0, 0.2, 1);
+  return 0;
 }
 
 // Slope angle calculation in radians
