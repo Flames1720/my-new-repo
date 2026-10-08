@@ -30,6 +30,7 @@ export class WorldSurvey {
   private readonly ndc = new THREE.Vector2();
   private readonly hit = new THREE.Vector3();
   private readonly plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private renderRequested = true;
 private worldScene: THREE.Scene | null = null;
 private worldCamera: THREE.Camera | null = null;
 private surveyScene = new THREE.Scene();
@@ -126,9 +127,10 @@ private surveyScene = new THREE.Scene();
   }
   get isActive(){ return this.active; }
   get currentView(){ return this.view; }
-  setActive(active:boolean){ this.active=active; this.root.visible=active; if(active){this.distanceGoal=Math.max(this.distanceGoal,SPAN*1.18);this.applyCamera();} }
+  setActive(active:boolean){ this.active=active; this.root.visible=active; if(active){this.distanceGoal=Math.max(this.distanceGoal,SPAN*1.18);this.applyCamera();this.renderRequested=true;} }
   setView(view:SurveyView){
     this.view=view;
+    this.renderRequested=true;
     this.flow.visible=view==='hydrology';
     this.terrain.visible=view!=='world';
     this.water.visible=view!=='world';
@@ -147,20 +149,31 @@ private surveyScene = new THREE.Scene();
     this.terrainGeo.getAttribute('color').needsUpdate=true;
   }
   resize(aspect:number){this.camera.aspect=aspect;this.camera.updateProjectionMatrix();}
-  zoom(amount:number){this.distanceGoal=THREE.MathUtils.clamp(this.distanceGoal*Math.exp(amount*.0022),7,980);}
+  zoom(amount:number){this.distanceGoal=THREE.MathUtils.clamp(this.distanceGoal*Math.exp(amount*.0022),7,980);this.renderRequested=true;}
   pan(dx:number,dy:number){
     const scale=this.distanceGoal*.00125;
+    this.renderRequested=true;
     this.goal.x-=Math.cos(this.yaw)*dx*scale; this.goal.z+=Math.sin(this.yaw)*dx*scale;
     this.goal.x+=Math.sin(this.yaw)*dy*scale; this.goal.z+=Math.cos(this.yaw)*dy*scale;
     this.clampTarget();
   }
-  orbit(dx:number,dy:number){this.yaw-=dx*.006;this.pitch=THREE.MathUtils.clamp(this.pitch-dy*.004,-1.48,-.28);}
+  orbit(dx:number,dy:number){this.yaw-=dx*.006;this.pitch=THREE.MathUtils.clamp(this.pitch-dy*.004,-Math.PI/2+0.015,0);this.renderRequested=true;}
   focusScreen(clientX:number,clientY:number,rect:DOMRect){
     this.ndc.set((clientX-rect.left)/rect.width*2-1,-((clientY-rect.top)/rect.height)*2+1);
     this.raycaster.setFromCamera(this.ndc,this.camera);
-    if(this.raycaster.ray.intersectPlane(this.plane,this.hit)){this.goal.x=THREE.MathUtils.clamp(this.hit.x,MIN,MAX);this.goal.z=THREE.MathUtils.clamp(this.hit.z,MIN,MAX);}
+    if(this.raycaster.ray.intersectPlane(this.plane,this.hit)){this.goal.x=THREE.MathUtils.clamp(this.hit.x,MIN,MAX);this.goal.z=THREE.MathUtils.clamp(this.hit.z,MIN,MAX);this.renderRequested=true;}
   }
-  update(dt:number){if(!this.active)return;const t=1-Math.exp(-dt*10);this.target.lerp(this.goal,t);this.distance+=(this.distanceGoal-this.distance)*t;this.applyCamera();}
+  update(dt:number){
+    if(!this.active)return false;
+    const t=1-Math.exp(-dt*10);
+    this.target.lerp(this.goal,t);
+    this.distance+=(this.distanceGoal-this.distance)*t;
+    this.applyCamera();
+    const moving=this.target.distanceToSquared(this.goal)>0.0004 || Math.abs(this.distanceGoal-this.distance)>0.02;
+    const requested=this.renderRequested;
+    this.renderRequested=false;
+    return moving || requested;
+  }
   private clampTarget(){this.goal.x=THREE.MathUtils.clamp(this.goal.x,MIN+8,MAX-8);this.goal.z=THREE.MathUtils.clamp(this.goal.z,MIN+8,MAX-8);}
   private applyCamera(){const h=Math.cos(this.pitch)*this.distance;this.camera.position.set(this.target.x+Math.sin(this.yaw)*h,this.target.y-Math.sin(this.pitch)*this.distance,this.target.z+Math.cos(this.yaw)*h);this.camera.lookAt(this.target.x,0,this.target.z);this.camera.updateMatrixWorld();}
   capture(renderer:THREE.WebGLRenderer,width:number,height:number):string{
