@@ -381,3 +381,33 @@ The previous entry said the final input patch was still building; that build sub
 - Browser/device: NOT VERIFIED.
 
 **Remaining work:** Confirm the latest deployment becomes READY, then exercise all three survey views on-device before merging to `main`.
+
+## 2026-10-08 19:xx +01:00 — GPT-5.6 Luna — static survey + 90° inspection controls
+
+**Scope:** World Survey performance, finite-world boundary isolation, reversible diagnostic filters, and survey camera inspection range.
+
+**Starting point:** `world-drainage-foundation`; current app head after the water/survey UI work.
+
+**Inspected:** `src/survey.ts`, `src/main.ts`, `index.html`, survey/world visibility logic, full-world chunk materialization, and the distant horizon mesh.
+
+**Changed:**
+- `src/survey.ts`: survey camera can now lift from the overhead/top-down view all the way to a true 90° side-on view; horizontal dragging continues to rotate around the world.
+- Survey rendering is now dirty-frame driven: the finite world is materialized once at LOD0, simulation remains frozen, and the renderer only redraws while the survey camera/view is changing or a capture is requested.
+- `src/main.ts`: removed the distant procedural horizon from survey mode. The survey now shows the authoritative finite world only, preventing an extra-looking world outside the boundary.
+- `src/main.ts`: tapping TERRAIN while already on TERRAIN, or HYDROLOGY while already on HYDROLOGY, returns to WORLD. The explicit WORLD control remains available.
+- `index.html`: added the explicit WORLD survey control and updated the gesture hint to describe rotate/lift behavior.
+
+**Verification:**
+- Vercel build: PASS / READY for commit `c26c81b92e04f19b226b3031a1b290e89efd12ac` (`Add explicit WORLD survey reset control`).
+- Runtime/browser: NOT VERIFIED on physical device.
+- Device: NOT VERIFIED.
+
+**Important findings:**
+- The previously mysterious outside-world terrain was traced to `distantHorizonMesh`: a 920m terrain plane extending beyond the finite world. It was being explicitly made visible during survey mode. Survey mode now hides it.
+- The existing WORLD survey already materializes all finite chunks at LOD0, so close inspection can use the detailed gameplay geometry without continuously advancing the world simulation.
+- The survey camera previously stopped before a true lateral view (`pitch > -0.28`); this has been extended to 0 radians, equivalent to lifting the world plane to a 90° side-on inspection.
+
+**Remaining work:** On-device QA should exercise WORLD, TERRAIN, HYDROLOGY, repeated filter toggling, 90° lift, rotation, zoom, capture, basin/outlet, shoreline, mountain gaps, and confirm the old outside-world terrain is gone.
+
+**Next agent:** Do not merge to `main) until the user/device runtime verification passes.
+
