@@ -39,6 +39,7 @@ import { buildHome, buildVillage, buildBridge, HOME_UPGRADE_COSTS } from './sett
 import { WildlifeSystem, isSharedAnimalAsset, speciesColor, SPECIES_NAME, SPECIES_ICON } from './fauna';
 import { MinimapSystem } from './minimap';
 import { settings } from './settings';
+import { WorldSurvey, type SurveyView } from './survey';
 
 type Save = {
   version: 2;
@@ -306,6 +307,7 @@ const scene = new THREE.Scene();
 const skyColor = new THREE.Color(0x9fc7df);
 scene.background = skyColor;
 scene.fog = new THREE.Fog(0x9fc7df, 140, 950);
+const gameplayFog = scene.fog;
 
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 1200);
 const renderer = new THREE.WebGLRenderer({ antialias: !LOW_POWER_MODE, powerPreference: 'high-performance', preserveDrawingBuffer: true });
@@ -492,6 +494,9 @@ scene.add(cloudDeckGroup);
 
 const world = new THREE.Group(), actors = new THREE.Group();
 scene.add(world, actors);
+
+const survey = new WorldSurvey();
+scene.add(survey.root);
 
 const splashMaterial = new THREE.MeshBasicMaterial({ color: 0xb7e5d8, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
 const splashRing = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.32, 24), splashMaterial);
@@ -1099,6 +1104,12 @@ const gameDom = renderer.domElement;
 function onLookMove(clientX: number, clientY: number) {
   const dx = clientX - lastX;
   const dy = clientY - lastY;
+  if (survey.isActive) {
+    survey.pan(dx, dy);
+    lastX = clientX;
+    lastY = clientY;
+    return;
+  }
   lastX = clientX;
   lastY = clientY;
 
@@ -1126,6 +1137,10 @@ gameDom.addEventListener('pointercancel', () => (pointer = null));
 
 gameDom.addEventListener('wheel', e => {
   e.preventDefault();
+  if (survey.isActive) {
+    survey.zoom(e.deltaY);
+    return;
+  }
   targetDistance = clamp(targetDistance + e.deltaY * 0.008, 2.2, 13);
 }, { passive: false });
 
@@ -1273,6 +1288,14 @@ const touchControls = document.querySelector('#touch') as HTMLDivElement;
 const inventoryEl = document.querySelector('#inventory') as HTMLDivElement;
 const compass = document.querySelector('#compass') as HTMLDivElement;
 const waypointBadge = document.querySelector('#waypointBadge') as HTMLDivElement;
+const surveyBtn = document.querySelector('#surveyBtn') as HTMLButtonElement | null;
+const surveyOverlay = document.querySelector('#surveyOverlay') as HTMLDivElement | null;
+const surveyCloseBtn = document.querySelector('#surveyCloseBtn') as HTMLButtonElement | null;
+const surveyTerrainBtn = document.querySelector('#surveyTerrainBtn') as HTMLButtonElement | null;
+const surveyHydrologyBtn = document.querySelector('#surveyHydrologyBtn') as HTMLButtonElement | null;
+const surveyCaptureBtn = document.querySelector('#surveyCaptureBtn') as HTMLButtonElement | null;
+const surveyCaptureSize = document.querySelector('#surveyCaptureSize') as HTMLSelectElement | null;
+const surveyStatus = document.querySelector('#surveyStatus') as HTMLSpanElement | null;
 const minimapHomeDist = document.querySelector('#minimapHomeDist') as HTMLSpanElement;
 
 // Mini-Map & Full Map
@@ -1583,6 +1606,89 @@ async function toggleFullscreen() {
   }
 }
 bindAction(fullscreenBtn, toggleFullscreen);
+
+// --- WORLD SURVEY: AUTHORITATIVE TOPOLOGY + HYDROLOGY DIAGNOSTICS ---
+let surveyWasFog: THREE.Fog | null = gameplayFog;
+function updateSurveyUI() {
+  if (surveyOverlay) surveyOverlay.classList.toggle('show', survey.isActive);
+  if (surveyTerrainBtn) surveyTerrainBtn.classList.toggle('active', survey.currentView === 'terrain');
+  if (surveyHydrologyBtn) surveyHydrologyBtn.classList.toggle('active', survey.currentView === 'hydrology');
+  if (surveyStatus) surveyStatus.textContent = survey.currentView === 'terrain'
+    ? 'ROCK + WATER · TOPOLOGY'
+    : 'WATER TRUTH · FLOW';
+}
+function setSurveyMode(active: boolean) {
+  if (active) {
+    isPhotoMode = false;
+    document.body.classList.remove('photo-mode-active', 'photo-clean-mode');
+    survey.setActive(true);
+    world.visible = false;
+    actors.visible = false;
+    celestialGroup.visible = false;
+    distantHorizonMesh.visible = false;
+    cloudDeckGroup.visible = false;
+    splashRing.visible = false;
+    surveyWasFog = scene.fog;
+    scene.fog = null;
+    scene.background = new THREE.Color(0x090d12);
+    document.body.classList.add('survey-active');
+    updateSurveyUI();
+    say('World Survey · drag to pan · wheel/pinch to zoom · tap a place to focus');
+  } else {
+    survey.setActive(false);
+    world.visible = true;
+    actors.visible = true;
+    celestialGroup.visible = true;
+    distantHorizonMesh.visible = true;
+    cloudDeckGroup.visible = true;
+    splashRing.visible = false;
+    scene.background = skyColor;
+    scene.fog = surveyWasFog;
+    document.body.classList.remove('survey-active');
+    if (surveyOverlay) surveyOverlay.classList.remove('show');
+  }
+}
+function setSurveyView(view: SurveyView) {
+  survey.setView(view);
+  updateSurveyUI();
+}
+function captureSurvey() {
+  const value = surveyCaptureSize?.value || '1920x1080';
+  const [w, h] = value.split('x').map(Number);
+  if (!Number.isFinite(w) || !Number.isFinite(h)) return;
+  try {
+    document.body.classList.add('taking-screenshot');
+    const dataUrl = survey.capture(renderer, w, h);
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = `world-survey-${survey.currentView}-${w}x${h}-${ts}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showPhotoToast(`Survey capture saved · ${w}×${h}`);
+  } catch (err) {
+    console.error('World survey capture failed:', err);
+    showPhotoToast('Survey capture failed · try a smaller size');
+  } finally {
+    document.body.classList.remove('taking-screenshot');
+  }
+}
+if (surveyBtn) bindAction(surveyBtn, () => setSurveyMode(true));
+if (surveyCloseBtn) bindAction(surveyCloseBtn, () => setSurveyMode(false));
+if (surveyTerrainBtn) bindAction(surveyTerrainBtn, () => setSurveyView('terrain'));
+if (surveyHydrologyBtn) bindAction(surveyHydrologyBtn, () => setSurveyView('hydrology'));
+if (surveyCaptureBtn) bindAction(surveyCaptureBtn, captureSurvey);
+window.addEventListener('keydown', e => {
+  if (survey.isActive) {
+    if (e.key === 'Escape') {
+      setSurveyMode(false);
+      return;
+    }
+    if (e.key === '+' || e.key === '=') survey.zoom(-90);
+    if (e.key === '-' || e.key === '_') survey.zoom(90);
+  }
+});
 
 // --- PHOTO MODE: CLEAN SCREENSHOT TAKING & LOCAL DOWNLOAD ---
 const photoBtn = document.querySelector('#photoBtn') as HTMLButtonElement | null;
@@ -2034,6 +2140,10 @@ function input() {
 }
 
 function update(dt: number) {
+  if (survey.isActive) {
+    survey.update(dt);
+    return;
+  }
   aimTimer = Math.max(0, aimTimer - dt);
 
   // Time cycle: 24h cycle
@@ -2421,6 +2531,7 @@ function update(dt: number) {
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  survey.resize(innerWidth / innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, LOW_POWER_MODE ? 1.25 : 1.65));
   renderer.setSize(innerWidth, innerHeight);
 });
@@ -2430,6 +2541,6 @@ addEventListener('beforeunload', saveNow);
 function loop() {
   requestAnimationFrame(loop);
   update(Math.min(clock.getDelta(), 0.05));
-  renderer.render(scene, camera);
+  renderer.render(scene, survey.isActive ? survey.camera : camera);
 }
 loop();
