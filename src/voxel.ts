@@ -318,197 +318,225 @@ function addQuad(
   }
 }
 
-function addStratifiedVerticalFace(
+function addTerrainQuad(
   positions: number[],
   colors: number[],
-  topX: number,
-  topZ: number,
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  c: THREE.Vector3,
+  d: THREE.Vector3,
+  x: number,
+  z: number,
+): void {
+  // Keep the top surface visually compatible with the existing world while
+  // the side walls expose the actual material stack below it.
+  const terrainY = (a.y + b.y + c.y + d.y) * 0.25;
+  const mountain = mountainMaskAt(x, z);
+  const water = waterDepthAt(x, z) > 0.02;
+  const snow = snowDepthAt(x, z);
+  const h = terrainY;
+  const baseColor = voxelMaterialColor(
+    snow > 0.45 ? VoxelMaterial.SNOW :
+    water ? VoxelMaterial.GRAVEL :
+    mountain > 0.65 || h > 32 ? VoxelMaterial.STONE :
+    VoxelMaterial.GRASS
+  );
+  for (const v of [a, b, c, a, c, d]) {
+    positions.push(v.x, v.y, v.z);
+    colors.push(baseColor.r, baseColor.g, baseColor.b);
+  }
+}
+
+function materialForExposedLayer(depthFromSurface: number, terrainY: number, x: number, z: number): VoxelMaterial {
+  const mountain = mountainMaskAt(x, z);
+  const water = waterDepthAt(x, z) > 0.02;
+  const snow = snowDepthAt(x, z);
+
+  if (depthFromSurface <= 1) {
+    if (snow > 0.45 && terrainY > 28) return VoxelMaterial.SNOW;
+    if (water) return VoxelMaterial.GRAVEL;
+    if (terrainY > 32 || mountain > 0.65) return VoxelMaterial.STONE;
+    return VoxelMaterial.GRASS;
+  }
+  if (depthFromSurface <= 3) return water ? VoxelMaterial.SAND : VoxelMaterial.LOAM;
+  if (depthFromSurface <= 7) return VoxelMaterial.CLAY;
+  if (depthFromSurface <= 15) {
+    return mountain > 0.55 ? VoxelMaterial.GRANITE : VoxelMaterial.WEATHERED_ROCK;
+  }
+  if (mountain > 0.7) return VoxelMaterial.GRANITE;
+  if (mountain > 0.35) return VoxelMaterial.SHALE;
+  return VoxelMaterial.STONE;
+}
+
+function addStratifiedFace(
+  positions: number[],
+  colors: number[],
+  a: THREE.Vector3,
+  b: THREE.Vector3,
   lowHeight: number,
   highHeight: number,
-  axis: 'x' | 'z',
-  side: 1 | -1,
+  x: number,
+  z: number,
 ): void {
   const y0 = Math.max(VOXEL_MIN_Y, lowHeight);
   const y1 = Math.min(VOXEL_MAX_Y + 1, highHeight);
-  if (y1 - y0 <= 0.05) return;
+  if (y1 <= y0 + 0.01) return;
 
-  // Fast material classification for the survey shell. The detailed voxel
-  // query is reserved for actual editable chunks; survey geometry should not
-  // repeatedly invoke the full hydrology sampler for every vertical strip.
-  const terrainY = highHeight;
-  const mountain = mountainMaskAt(topX, topZ);
-  const snow = snowDepthAt(topX, topZ);
-  const water = waterDepthAt(topX, topZ) > 0.02;
+  // One-meter geological bands are intentionally visible in survey mode.
+  for (let y = Math.floor(y0); y < Math.ceil(y1); y++) {
+    const band0 = Math.max(y0, y);
+    const band1 = Math.min(y1, y + 1);
+    if (band1 <= band0 + 0.01) continue;
 
-  let cursor = y0;
-  const maxBandHeight = 4;
-  while (cursor < y1 - 0.01) {
-    const next = Math.min(y1, cursor + maxBandHeight);
-    const materialY = Math.min(terrainY - 0.01, (cursor + next) * 0.5);
-    const depthFromSurface = terrainY - materialY;
+    const center = (band0 + band1) * 0.5;
+    const material = y <= VOXEL_MIN_Y ? VoxelMaterial.BEDROCK :
+      materialForExposedLayer(Math.max(0, highHeight - center), highHeight, x, z);
 
-    let materialId: VoxelMaterial;
-    if (materialY <= VOXEL_MIN_Y + 0.01) {
-      materialId = VoxelMaterial.BEDROCK;
-    } else if (depthFromSurface <= 1) {
-      materialId = water ? VoxelMaterial.GRAVEL : (snow > 0.45 ? VoxelMaterial.SNOW : VoxelMaterial.GRASS);
-    } else if (depthFromSurface <= 3) {
-      materialId = water ? VoxelMaterial.SAND : VoxelMaterial.LOAM;
-    } else if (depthFromSurface <= 7) {
-      materialId = VoxelMaterial.CLAY;
-    } else if (depthFromSurface <= 15) {
-      materialId = mountain > 0.55 ? VoxelMaterial.GRANITE : VoxelMaterial.WEATHERED_ROCK;
-    } else if (mountain > 0.7) {
-      materialId = VoxelMaterial.GRANITE;
-    } else if (mountain > 0.35) {
-      materialId = VoxelMaterial.SHALE;
-    } else {
-      materialId = VoxelMaterial.STONE;
-    }
-
-    if (axis === 'x') {
-      const z0 = topZ;
-      const z1 = topZ + side * VOXEL_SIZE * 4;
-      addQuad(
-        positions,
-        colors,
-        new THREE.Vector3(topX, cursor, z0),
-        new THREE.Vector3(topX, cursor, z1),
-        new THREE.Vector3(topX, next, z1),
-        new THREE.Vector3(topX, next, z0),
-        materialId,
-      );
-    } else {
-      const x0 = topX;
-      const x1 = topX + side * VOXEL_SIZE * 4;
-      addQuad(
-        positions,
-        colors,
-        new THREE.Vector3(x0, cursor, topZ),
-        new THREE.Vector3(x1, cursor, topZ),
-        new THREE.Vector3(x1, next, topZ),
-        new THREE.Vector3(x0, next, topZ),
-        materialId,
-      );
-    }
-
-    cursor = next;
+    const aa = a.clone(); aa.y = band0;
+    const bb = b.clone(); bb.y = band0;
+    const cc = b.clone(); cc.y = band1;
+    const dd = a.clone(); dd.y = band1;
+    addQuad(positions, colors, aa, bb, cc, dd, material);
   }
 }
+
 /**
- * Build a low-resolution but genuinely volumetric geological shell.
+ * Build the actual survey terrain volume.
  *
- * The gameplay surface is still the existing high-quality continuous terrain.
- * This mesh supplies the previously missing vertical material volume for the
- * WORLD survey, especially when the camera is lifted to a side-on view.
- *
- * A 4 m sampling interval keeps it cheap enough for a one-time survey pass.
- * Interior faces are omitted; only exposed height differences and the finite
- * world rim are represented.
+ * This is no longer just a few decorative cliff strips. It is a closed
+ * top+side volume down to the geological base, with one-meter stratified
+ * exposed bands. The original terrain function still defines the topography;
+ * this renderer makes the solid beneath that topography visible.
  */
-export function buildVoxelWorldVolumeMesh(material: THREE.Material): THREE.Mesh | null {
+export function buildVoxelWorldVolumeMesh(_material?: THREE.Material): THREE.Mesh | null {
   const bounds = voxelWorldBounds();
-  const sampleStep = 4;
-  const nx = Math.floor((bounds.maxX - bounds.minX) / sampleStep);
-  const nz = Math.floor((bounds.maxZ - bounds.minZ) / sampleStep);
-  const heights = new Float32Array((nx + 1) * (nz + 1));
-
-  const index = (ix: number, iz: number) => iz * (nx + 1) + ix;
-  const sampleX = (ix: number) => bounds.minX + ix * sampleStep;
-  const sampleZ = (iz: number) => bounds.minZ + iz * sampleStep;
-
-  for (let iz = 0; iz <= nz; iz++) {
-    for (let ix = 0; ix <= nx; ix++) {
-      heights[index(ix, iz)] = Math.max(
-        0.2,
-        terrainHeightAt(sampleX(ix), sampleZ(iz)),
-      );
-    }
-  }
-
+  const sampleStep = 2;
+  const nx = Math.ceil((bounds.maxX - bounds.minX) / sampleStep);
+  const nz = Math.ceil((bounds.maxZ - bounds.minZ) / sampleStep);
+  const colsX = nx + 1;
+  const colsZ = nz + 1;
+  const heights = new Float32Array(colsX * colsZ);
   const positions: number[] = [];
   const colors: number[] = [];
 
-  // Exposed vertical faces where a higher column meets a lower one.
-  for (let iz = 0; iz <= nz; iz++) {
+  const index = (ix: number, iz: number) => iz * colsX + ix;
+  const sampleX = (ix: number) => Math.min(bounds.maxX, bounds.minX + ix * sampleStep);
+  const sampleZ = (iz: number) => Math.min(bounds.maxZ, bounds.minZ + iz * sampleStep);
+
+  for (let iz = 0; iz < colsZ; iz++) {
+    for (let ix = 0; ix < colsX; ix++) {
+      const x = sampleX(ix);
+      const z = sampleZ(iz);
+      heights[index(ix, iz)] = Math.max(0.2, terrainHeightAt(x, z));
+    }
+  }
+
+  // Top surface: one connected coarse voxel-compatible surface.
+  for (let iz = 0; iz < nz; iz++) {
+    for (let ix = 0; ix < nx; ix++) {
+      const x0 = sampleX(ix), x1 = sampleX(ix + 1);
+      const z0 = sampleZ(iz), z1 = sampleZ(iz + 1);
+      const h00 = heights[index(ix, iz)];
+      const h10 = heights[index(ix + 1, iz)];
+      const h01 = heights[index(ix, iz + 1)];
+      const h11 = heights[index(ix + 1, iz + 1)];
+      addTerrainQuad(
+        positions, colors,
+        new THREE.Vector3(x0, h00, z0),
+        new THREE.Vector3(x0, h01, z1),
+        new THREE.Vector3(x1, h11, z1),
+        new THREE.Vector3(x1, h10, z0),
+        (x0 + x1) * 0.5,
+        (z0 + z1) * 0.5,
+      );
+    }
+  }
+
+  // Exposed internal faces where neighboring terrain columns differ enough to
+  // reveal a real vertical geological wall rather than an invisible underside.
+  for (let iz = 0; iz < colsZ; iz++) {
     for (let ix = 0; ix < nx; ix++) {
       const a = heights[index(ix, iz)];
       const b = heights[index(ix + 1, iz)];
-      if (Math.abs(a - b) < 0.6) continue;
+      if (Math.abs(a - b) < 0.55) continue;
 
-      if (a > b) {
-        addStratifiedVerticalFace(
-          positions, colors,
-          sampleX(ix), sampleZ(iz),
-          b, a,
-          'x',
-          -1,
-        );
-      } else {
-        addStratifiedVerticalFace(
-          positions, colors,
-          sampleX(ix + 1), sampleZ(iz),
-          a, b,
-          'x',
-          1,
-        );
-      }
+      const x = sampleX(ix + (a > b ? 1 : 0));
+      const z = sampleZ(iz);
+      const low = Math.min(a, b);
+      const high = Math.max(a, b);
+      const z0 = z;
+      const z1 = Math.min(bounds.maxZ, z + sampleStep);
+      addStratifiedFace(
+        positions, colors,
+        new THREE.Vector3(x, low, z0),
+        new THREE.Vector3(x, low, z1),
+        low, high,
+        x, (z0 + z1) * 0.5,
+      );
     }
   }
 
   for (let iz = 0; iz < nz; iz++) {
-    for (let ix = 0; ix <= nx; ix++) {
+    for (let ix = 0; ix < colsX; ix++) {
       const a = heights[index(ix, iz)];
       const b = heights[index(ix, iz + 1)];
-      if (Math.abs(a - b) < 0.6) continue;
+      if (Math.abs(a - b) < 0.55) continue;
 
-      if (a > b) {
-        addStratifiedVerticalFace(
-          positions, colors,
-          sampleX(ix), sampleZ(iz),
-          b, a,
-          'z',
-          -1,
-        );
-      } else {
-        addStratifiedVerticalFace(
-          positions, colors,
-          sampleX(ix), sampleZ(iz + 1),
-          a, b,
-          'z',
-          1,
-        );
-      }
+      const x = sampleX(ix);
+      const z = sampleZ(iz + (a > b ? 1 : 0));
+      const low = Math.min(a, b);
+      const high = Math.max(a, b);
+      const x1 = Math.min(bounds.maxX, x + sampleStep);
+      addStratifiedFace(
+        positions, colors,
+        new THREE.Vector3(x, low, z),
+        new THREE.Vector3(x1, low, z),
+        low, high,
+        (x + x1) * 0.5, z,
+      );
     }
   }
 
-  // Finite-world rim: the ground is not paper-thin at the playable boundary.
+  // The finite world has a genuine vertical outer wall rather than a paper-thin
+  // terrain edge. This is the clearest place to inspect the soil/rock sequence.
   for (let ix = 0; ix < nx; ix++) {
-    const x = sampleX(ix);
-    const xNext = sampleX(ix + 1);
-    const south = heights[index(ix, 0)];
-    const southNext = heights[index(ix + 1, 0)];
-    const southH = Math.max(south, southNext);
-    addStratifiedVerticalFace(positions, colors, x, bounds.minZ, 0, southH, 'z', -1);
-
-    const north = heights[index(ix, nz)];
-    const northNext = heights[index(ix + 1, nz)];
-    const northH = Math.max(north, northNext);
-    addStratifiedVerticalFace(positions, colors, x, bounds.maxZ, 0, northH, 'z', 1);
+    const x0 = sampleX(ix), x1 = sampleX(ix + 1);
+    const south = Math.max(heights[index(ix, 0)], heights[index(ix + 1, 0)]);
+    const north = Math.max(heights[index(ix, nz)], heights[index(ix + 1, nz)]);
+    addStratifiedFace(
+      positions, colors,
+      new THREE.Vector3(x0, 0, bounds.minZ),
+      new THREE.Vector3(x1, 0, bounds.minZ),
+      0, south,
+      (x0 + x1) * 0.5, bounds.minZ,
+    );
+    addStratifiedFace(
+      positions, colors,
+      new THREE.Vector3(x0, 0, bounds.maxZ),
+      new THREE.Vector3(x1, 0, bounds.maxZ),
+      0, north,
+      (x0 + x1) * 0.5, bounds.maxZ,
+    );
   }
 
   for (let iz = 0; iz < nz; iz++) {
-    const z = sampleZ(iz);
-    const zNext = sampleZ(iz + 1);
-    const west = heights[index(0, iz)];
-    const westNext = heights[index(0, iz + 1)];
-    const westH = Math.max(west, westNext);
-    addStratifiedVerticalFace(positions, colors, bounds.minX, z, 0, westH, 'x', -1);
-
-    const east = heights[index(nx, iz)];
-    const eastNext = heights[index(nx, iz + 1)];
-    const eastH = Math.max(east, eastNext);
-    addStratifiedVerticalFace(positions, colors, bounds.maxX, z, 0, eastH, 'x', 1);
+    const z0 = sampleZ(iz), z1 = sampleZ(iz + 1);
+    const west = Math.max(heights[index(0, iz)], heights[index(0, iz + 1)]);
+    const east = Math.max(heights[index(nx, iz)], heights[index(nx, iz + 1)]);
+    addStratifiedFace(
+      positions, colors,
+      new THREE.Vector3(bounds.minX, 0, z0),
+      new THREE.Vector3(bounds.minX, 0, z1),
+      0, west,
+      bounds.minX, (z0 + z1) * 0.5,
+    );
+    addStratifiedFace(
+      positions, colors,
+      new THREE.Vector3(bounds.maxX, 0, z0),
+      new THREE.Vector3(bounds.maxX, 0, z1),
+      0, east,
+      bounds.maxX, (z0 + z1) * 0.5,
+    );
   }
 
   if (!positions.length) return null;
@@ -518,8 +546,133 @@ export function buildVoxelWorldVolumeMesh(material: THREE.Material): THREE.Mesh 
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geometry.computeVertexNormals();
 
-  const mesh = new THREE.Mesh(geometry, material);
+  const mesh = new THREE.Mesh(
+    geometry,
+    new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
+  );
   mesh.name = 'voxel-world-volume';
+  mesh.frustumCulled = true;
+  return mesh;
+}
+
+/**
+ * Build actual water volume for survey mode: top surface + vertical shoreline
+ * walls + bottom. This keeps water visually occupied in a channel instead of
+ * making it appear as a floating sheet.
+ */
+export function buildVoxelWorldWaterVolumeMesh(): THREE.Mesh | null {
+  const bounds = voxelWorldBounds();
+  const sampleStep = 2;
+  const nx = Math.ceil((bounds.maxX - bounds.minX) / sampleStep);
+  const nz = Math.ceil((bounds.maxZ - bounds.minZ) / sampleStep);
+  const colsX = nx + 1;
+  const colsZ = nz + 1;
+  const surface = new Float32Array(colsX * colsZ);
+  const depth = new Float32Array(colsX * colsZ);
+  const wet = new Uint8Array(colsX * colsZ);
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const index = (ix: number, iz: number) => iz * colsX + ix;
+  const sampleX = (ix: number) => Math.min(bounds.maxX, bounds.minX + ix * sampleStep);
+  const sampleZ = (iz: number) => Math.min(bounds.maxZ, bounds.minZ + iz * sampleStep);
+
+  for (let iz = 0; iz < colsZ; iz++) {
+    for (let ix = 0; ix < colsX; ix++) {
+      const x = sampleX(ix), z = sampleZ(iz), d = waterDepthAt(x, z);
+      const i = index(ix, iz);
+      wet[i] = d > 0.02 ? 1 : 0;
+      depth[i] = Math.max(0, d);
+      surface[i] = waterSurfaceAt(x, z);
+    }
+  }
+
+  const waterColor = new THREE.Color(0x247d9c);
+  const addWaterQuad = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3, alphaColor = waterColor) => {
+    for (const v of [a, b, c, a, c, d]) {
+      positions.push(v.x, v.y, v.z);
+      colors.push(alphaColor.r, alphaColor.g, alphaColor.b);
+    }
+  };
+
+  for (let iz = 0; iz < nz; iz++) {
+    for (let ix = 0; ix < nx; ix++) {
+      const i00 = index(ix, iz), i10 = index(ix + 1, iz);
+      const i01 = index(ix, iz + 1), i11 = index(ix + 1, iz + 1);
+      if (!(wet[i00] || wet[i10] || wet[i01] || wet[i11])) continue;
+
+      const x0 = sampleX(ix), x1 = sampleX(ix + 1);
+      const z0 = sampleZ(iz), z1 = sampleZ(iz + 1);
+      addWaterQuad(
+        new THREE.Vector3(x0, surface[i00] + 0.02, z0),
+        new THREE.Vector3(x0, surface[i01] + 0.02, z1),
+        new THREE.Vector3(x1, surface[i11] + 0.02, z1),
+        new THREE.Vector3(x1, surface[i10] + 0.02, z0),
+      );
+
+      // Water bottom follows the authoritative water depth, never the decorative
+      // sea plane. A small cap avoids deep ocean walls overwhelming the survey.
+      const b00 = surface[i00] - Math.min(depth[i00], 12);
+      const b10 = surface[i10] - Math.min(depth[i10], 12);
+      const b01 = surface[i01] - Math.min(depth[i01], 12);
+      const b11 = surface[i11] - Math.min(depth[i11], 12);
+      addWaterQuad(
+        new THREE.Vector3(x0, b00, z0),
+        new THREE.Vector3(x1, b10, z0),
+        new THREE.Vector3(x1, b11, z1),
+        new THREE.Vector3(x0, b01, z1),
+      );
+
+      const corners = [
+        [i00, i01, x0, z0, z1, 'x'],
+        [i10, i11, x1, z0, z1, 'x'],
+        [i00, i10, z0, x0, x1, 'z'],
+        [i01, i11, z1, x0, x1, 'z'],
+      ] as const;
+
+      for (const [a, b, fixed, t0, t1, axis] of corners) {
+        const aWet = wet[a] === 1, bWet = wet[b] === 1;
+        if (aWet === bWet) continue;
+
+        const wetIndex = aWet ? a : b;
+        const top = surface[wetIndex];
+        const bottom = top - Math.min(depth[wetIndex], 12);
+
+        if (axis === 'x') {
+          addWaterQuad(
+            new THREE.Vector3(fixed, bottom, t0),
+            new THREE.Vector3(fixed, bottom, t1),
+            new THREE.Vector3(fixed, top + 0.02, t1),
+            new THREE.Vector3(fixed, top + 0.02, t0),
+          );
+        } else {
+          addWaterQuad(
+            new THREE.Vector3(t0, bottom, fixed),
+            new THREE.Vector3(t1, bottom, fixed),
+            new THREE.Vector3(t1, top + 0.02, fixed),
+            new THREE.Vector3(t0, top + 0.02, fixed),
+          );
+        }
+      }
+    }
+  }
+
+  if (!positions.length) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+
+  const mesh = new THREE.Mesh(
+    geometry,
+    new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: true,
+      side: THREE.DoubleSide,
+    }),
+  );
+  mesh.name = 'voxel-water-volume';
   mesh.frustumCulled = true;
   return mesh;
 }
