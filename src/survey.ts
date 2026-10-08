@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { SIZE, WORLD_RADIUS, terrainHeightAt, terrainSlopeAt, waterDepthAt, waterSurfaceAt, waterFlowAt } from './world';
 
-export type SurveyView = 'terrain' | 'hydrology';
+export type SurveyView = 'world' | 'terrain' | 'hydrology';
 
 const MIN = -WORLD_RADIUS * SIZE;
 const MAX = (WORLD_RADIUS + 1) * SIZE;
@@ -18,7 +18,7 @@ export class WorldSurvey {
   private readonly terrainGeo: THREE.BufferGeometry;
   private readonly waterGeo: THREE.BufferGeometry;
   private readonly flowGeo: THREE.BufferGeometry;
-  private view: SurveyView = 'terrain';
+  private view: SurveyView = 'world';
   private active = false;
   private target = new THREE.Vector3(CENTER, 0, CENTER);
   private goal = this.target.clone();
@@ -30,6 +30,9 @@ export class WorldSurvey {
   private readonly ndc = new THREE.Vector2();
   private readonly hit = new THREE.Vector3();
   private readonly plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+private worldScene: THREE.Scene | null = null;
+private worldCamera: THREE.Camera | null = null;
+private surveyScene = new THREE.Scene();
 
   constructor() {
     this.root.name = 'world-survey';
@@ -113,17 +116,34 @@ export class WorldSurvey {
     ]);
     this.border = new THREE.LineLoop(borderGeo,new THREE.LineBasicMaterial({color:0xff5f56,transparent:true,opacity:.9}));
     this.root.add(this.border);
-    this.setView('terrain');
+    this.setView('world');
     this.applyCamera();
   }
 
+  setWorldScene(scene: THREE.Scene, camera: THREE.Camera) {
+    this.worldScene = scene;
+    this.worldCamera = camera;
+  }
   get isActive(){ return this.active; }
   get currentView(){ return this.view; }
   setActive(active:boolean){ this.active=active; this.root.visible=active; if(active){this.distanceGoal=Math.max(this.distanceGoal,SPAN*1.18);this.applyCamera();} }
   setView(view:SurveyView){
-    this.view=view; this.flow.visible=view==='hydrology';
+    this.view=view;
+    this.flow.visible=view==='hydrology';
+    this.terrain.visible=view!=='world';
+    this.water.visible=view!=='world';
+    this.border.visible=view!=='world';
+    if (view === 'world') {
+      this.surveyScene.clear();
+    }
     const c=this.terrainGeo.getAttribute('color').array as Float32Array, n=128;
-    for(let z=0;z<=n;z++)for(let x=0;x<=n;x++){const i=(z*(n+1)+x)*3;if(view==='hydrology'){c[i]=.16;c[i+1]=.18;c[i+2]=.21;}else{const wx=THREE.MathUtils.lerp(MIN,MAX,x/n),wz=THREE.MathUtils.lerp(MIN,MAX,z/n),h=terrainHeightAt(wx,wz),s=THREE.MathUtils.clamp(terrainSlopeAt(wx,wz,1.6).slope/1.05,0,1),hi=THREE.MathUtils.clamp((h+4)/110,0,1);c[i]=.20+hi*.43+s*.12;c[i+1]=.22+hi*.41+s*.10;c[i+2]=.24+hi*.38+s*.08;}}
+    for(let z=0;z<=n;z++)for(let x=0;x<=n;x++){
+      const i=(z*(n+1)+x)*3;
+      const wx=THREE.MathUtils.lerp(MIN,MAX,x/n),wz=THREE.MathUtils.lerp(MIN,MAX,z/n);
+      const h=terrainHeightAt(wx,wz),s=THREE.MathUtils.clamp(terrainSlopeAt(wx,wz,1.6).slope/1.05,0,1),hi=THREE.MathUtils.clamp((h+4)/110,0,1);
+      if(view==='hydrology'){c[i]=.16;c[i+1]=.18;c[i+2]=.21;}
+      else {c[i]=.20+hi*.43+s*.12;c[i+1]=.22+hi*.41+s*.10;c[i+2]=.24+hi*.38+s*.08;}
+    }
     this.terrainGeo.getAttribute('color').needsUpdate=true;
   }
   resize(aspect:number){this.camera.aspect=aspect;this.camera.updateProjectionMatrix();}
@@ -148,7 +168,9 @@ export class WorldSurvey {
     const target=new THREE.WebGLRenderTarget(width,height,{depthBuffer:true,stencilBuffer:false});
     const previous=renderer.getRenderTarget(), xr=renderer.xr.enabled, aspect=this.camera.aspect;
     try{
-      this.camera.aspect=width/height;this.camera.updateProjectionMatrix();renderer.xr.enabled=false;renderer.setRenderTarget(target);renderer.render(this.root,this.camera);
+      this.camera.aspect=width/height;this.camera.updateProjectionMatrix();renderer.xr.enabled=false;renderer.setRenderTarget(target);
+      if(this.view==='world' && this.worldScene) renderer.render(this.worldScene,this.camera);
+      else renderer.render(this.root,this.camera);
       const pixels=new Uint8Array(width*height*4);renderer.readRenderTargetPixels(target,0,0,width,height,pixels);
       const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Canvas 2D unavailable.');
       const image=ctx.createImageData(width,height),row=width*4;
