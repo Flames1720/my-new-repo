@@ -40,7 +40,7 @@ import { WildlifeSystem, isSharedAnimalAsset, speciesColor, SPECIES_NAME, SPECIE
 import { MinimapSystem } from './minimap';
 import { settings } from './settings';
 import { WorldSurvey, type SurveyView } from './survey';
-import { voxelWorld, buildVoxelWorldVolumeMesh } from './voxel';
+import { voxelWorld, buildVoxelWorldVolumeMesh, type VoxelEdit } from './voxel';
 
 type Save = {
   version: 2;
@@ -51,6 +51,7 @@ type Save = {
   wildlifeTrust?: Record<string, number>;
   worldTime?: number;
   homeLevel?: HomeLevel;
+  voxelEdits?: VoxelEdit[];
 };
 
 const IS_TOUCH_DEVICE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
@@ -1109,6 +1110,7 @@ try {
 
 chunks.changes = save.changes || {};
 chunks.homeLevel = save.homeLevel || 1;
+voxelWorld.applyEdits(save.voxelEdits || []);
 player.root.position.set(save.player.x, save.player.y, save.player.z);
 
 // Safety validation: If saved position was inside ocean/water or invalid, spawn on dry homestead porch!
@@ -1139,6 +1141,7 @@ function saveNow() {
     wildlifeTrust: fauna?.trust ?? save.wildlifeTrust ?? {},
     worldTime,
     homeLevel: chunks.homeLevel,
+    voxelEdits: voxelWorld.edits(),
   };
   localStorage.setItem(SAVE_KEY, JSON.stringify(save));
 }
