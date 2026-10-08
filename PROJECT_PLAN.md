@@ -116,12 +116,12 @@ Later, settlements and roads should respond to water, terrain, fertile land, res
 
 ## Current world-foundation phase
 
-Status: IMPLEMENTED & RUNTIME VERIFIED (Phase 1-8 World Model & Player Systems)
+Status: IMPLEMENTED & RUNTIME VERIFIED (Phase 1-8 World Model & Player Systems); drainage foundation independently reworked and verified on `world-drainage-foundation`
 
 Completed & Verified Components:
 1. global elevation/geology model: Intentional mountain spines with envelopes, ridges, crags, massifs, plateaus, and summits (RUNTIME VERIFIED).
 2. landform classification: plains, hills, foothills, mountain_slope, mountain_ridge, peak, plateau, valley, basin, wetland (RUNTIME VERIFIED).
-3. drainage/hydrology: Riverwood river channel, Lake Silvermere basin, tributary stream, and flow vectors/accumulation (RUNTIME VERIFIED).
+3. drainage/hydrology: deterministic elevation-grid drainage, depression conditioning, flow routing, runoff accumulation, streams/springs/rivers, enclosed lakes, and ocean connectivity (RUNTIME VERIFIED on feature branch; visual/browser runtime still pending).
 4. climate fields: Temperature lapse rate, prevailing wind, and orographic rain shadow (RUNTIME VERIFIED).
 5. biome/ecology suitability: Forest, meadow, wetland, alpine, riverbank derived causally from moisture, rainfall, elevation, and temperature (RUNTIME VERIFIED).
 6. environmental/water physics: Slope climbing resistance, fast downhill sprint agility, solid bridge deck collision, effortless river swimming exit (RUNTIME VERIFIED).
@@ -134,7 +134,7 @@ Completed & Verified Components:
 13. modern HUD: Sleek unified player card, tactical compass heading, contextual keycap action pill, and hotbar inventory (BUILD VERIFIED).
 
 Recommended next steps:
-- Expand river network with additional high-elevation alpine springs and waterfalls.
+- Build waterfalls/rapids from the now-authoritative per-cell `flowDrop` + channel strength; add spring emergence and river width/depth from catchment.
 - Further refine settlement trade corridors and road placement respecting slope contours.
 
 ## Known prototype concerns
