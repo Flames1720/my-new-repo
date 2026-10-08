@@ -437,3 +437,16 @@ The previous entry said the final input patch was still building; that build sub
 **Important findings:** The user correctly observed that entering WORLD survey can look like a crash because the finite-world LOD0 materialization is synchronous. The loader must be painted before and during that work.
 
 **Remaining work:** Verify on the physical phone that the loader appears immediately, progresses through the three stages, and then opens WORLD survey normally without changing the frozen-world behavior.
+
+## 2026-10-08 19:xx +01:00 — GPT-5.6 Luna
+
+**Scope:** World Survey capture visibility.
+
+**Changed:**
+- WORLD survey hides the high-mountain cloud deck while the frozen survey is active.
+- Normal gameplay restores the cloud deck when the survey closes.
+- No world-generation or simulation logic changed.
+
+**Verification:**
+- Code committed on world-drainage-foundation.
+- Physical-device verification of this specific change is still pending.
