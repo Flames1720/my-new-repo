@@ -732,7 +732,22 @@ class Chunks {
 
         if (isWetOrShore) {
           vertIndex[iz * (waterGrid + 1) + ix] = nextIdx++;
-          waterPositions.push(ix * step, waterSurfaceAt(wx, wz), iz * step);
+          // At shoreline vertices, use a nearby wet surface height instead of
+          // the global sea level. This prevents sloping water sheets from rising
+          // over a high-elevation riverbank.
+          let surfaceY = waterSurfaceAt(wx, wz);
+          if (depth <= 0.005) {
+            const neighbourSurfaces: number[] = [];
+            for (const [ox, oz] of [[step, 0], [-step, 0], [0, step], [0, -step]] as [number, number][]) {
+              const nx = wx + ox;
+              const nz = wz + oz;
+              if (waterDepthAt(nx, nz) > 0.01) neighbourSurfaces.push(waterSurfaceAt(nx, nz));
+            }
+            if (neighbourSurfaces.length) {
+              surfaceY = neighbourSurfaces.reduce((sum, value) => sum + value, 0) / neighbourSurfaces.length;
+            }
+          }
+          waterPositions.push(ix * step, surfaceY, iz * step);
 
           const c = new THREE.Color();
           if (depth <= 0.05) {
@@ -2112,10 +2127,18 @@ function update(dt: number) {
   let currentVz = 0;
   if (worldFields.flowSpeed > 0 && (worldFields.waterType === 'river' || worldFields.waterType === 'stream' || worldFields.waterType === 'lake')) {
     // When movement input is pressed, player authority counteracts current
-    const currentImmersion = player.swimming ? (hasInput ? 0.45 : 0.85) : isWading ? clamp(wDepth / 0.65, 0.15, 0.45) : 0;
+    const currentImmersion = player.swimming
+      ? (hasInput ? 0.30 : 0.72)
+      : isWading
+      ? clamp(wDepth / 0.65, 0.12, 0.38)
+      : 0;
     if (currentImmersion > 0) {
-      currentVx = worldFields.flowVector.x * worldFields.flowSpeed * currentImmersion;
-      currentVz = worldFields.flowVector.y * worldFields.flowSpeed * currentImmersion;
+      // Rivers can be powerful, but a swimmer must retain a meaningful chance
+      // to cross them. Cap the physical drift while preserving downstream pull.
+      const maxCurrent = player.swimming ? 2.35 : 1.25;
+      const currentSpeed = Math.min(worldFields.flowSpeed * currentImmersion, maxCurrent);
+      currentVx = worldFields.flowVector.x * currentSpeed;
+      currentVz = worldFields.flowVector.y * currentSpeed;
     }
   }
 
