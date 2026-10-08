@@ -1199,17 +1199,18 @@ export function waterSurfaceAt(x: number, z: number): number {
   if (grid.oceanMask[cell.i]) return WATER_LEVEL;
 
   if (grid.lakeMask[cell.i]) {
-    const surface = Math.max(WATER_LEVEL, bilinear(grid.filledElevation, gx, gz));
-    return surface > terrainBaseHeightAt(x, z) + 0.02 ? surface : WATER_LEVEL;
+    // The lake mask defines the basin. Compare against the carved bed, not
+    // the uncarved terrain datum: requiring the surface to sit above the
+    // original ground prevents the basin from ever being carved and can make
+    // the fallback WATER_LEVEL appear as a detached, paper-thin sheet.
+    return Math.max(WATER_LEVEL, bilinear(grid.filledElevation, gx, gz));
   }
 
   if (grid.channelStrength[cell.i] > 0.02 && grid.waterPresence[cell.i] > 0.001) {
-    // The channel surface follows the real drainage elevation, with only a
-    // small hydraulic head above the original terrain. If an unsampled ridge
-    // is higher than that surface, this point is dry: water stops at the
-    // barrier rather than being allowed to climb it.
-    const surface = bilinearWeighted(grid.waterSurface, grid.waterPresence, gx, gz);
-    return surface > terrainBaseHeightAt(x, z) + 0.03 ? surface : WATER_LEVEL;
+    // A routed channel cell owns its surface elevation. The terrain is carved
+    // below this level by hydrologyCarveAt; comparing the waterline against
+    // the uncarved terrain here rejects the very water that should carve it.
+    return bilinearWeighted(grid.waterSurface, grid.waterPresence, gx, gz);
   }
 
   return WATER_LEVEL;
@@ -1232,16 +1233,14 @@ export function waterDepthAt(x: number, z: number): number {
 
   if (grid.lakeMask[cell.i]) {
     const surface = Math.max(WATER_LEVEL, bilinear(grid.filledElevation, gx, gz));
-    if (surface <= terrainBaseHeightAt(x, z) + 0.02) return 0;
     const depth = bilinearWeighted(grid.waterDepth, grid.waterPresence, gx, gz);
     return Math.min(Math.max(0, depth), Math.max(0, surface - 0.2));
   }
 
   if (grid.channelStrength[cell.i] > 0.02 && grid.waterPresence[cell.i] > 0.001) {
     const surface = waterSurfaceAt(x, z);
-    if (surface <= terrainBaseHeightAt(x, z) + 0.03) return 0;
-
     const depth = bilinearWeighted(grid.waterDepth, grid.waterPresence, gx, gz);
+    if (surface <= 0 || depth <= 0.001) return 0;
     return Math.min(Math.max(0, depth), Math.max(0, surface - 0.2));
   }
 
