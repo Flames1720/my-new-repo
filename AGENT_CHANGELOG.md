@@ -308,3 +308,15 @@ This is the chronological handoff record for meaningful AI-agent work. It comple
 **Remaining work:** Test on browser/device. Specifically inspect whole-world framing, mountain topology, narrow rivers, inland lakes/springs, high-altitude water, chunk/problem areas and 3840px capture. Then consider a second diagnostic pass that compares expected hydrology against actually rendered water geometry.
 
 **Next agent:** Read the three coordination documents before changing survey/world architecture. Do not merge to `main` until final build and runtime/device behavior are verified.
+
+
+## 2026-10-08 17:XX +01:00 — GPT-5.6 Luna — verification correction
+
+**Scope:** Final verification of the World Survey input patch.
+
+**Verification:**
+- Build: PASS. Vercel READY deployment `dpl_5NVMVdN3TtMC9inb6Q74uMFe2HVy` for commit `5a08105951515e3aa77398f7b32edc917f85c25f`.
+- Runtime/browser: NOT VERIFIED.
+- Device: NOT VERIFIED.
+
+The previous entry said the final input patch was still building; that build subsequently completed successfully. The later documentation-only commits do not change application code.
