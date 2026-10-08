@@ -761,7 +761,7 @@ export class PlayerCharacter {
     if (freezeForIdle) {
       next.paused = true;
       next.time = 0;
-    } else if (!isJumpClip) {
+    } else if (!isOneShotClip) {
       next.paused = false;
     }
 
