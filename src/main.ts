@@ -1126,6 +1126,8 @@ addEventListener('keyup', e => {
 let pointer: number | null = null, lastX = 0, lastY = 0;
 const surveyPointers = new Map<number, { x: number; y: number }>();
 let surveyPinchDistance = 0;
+let surveyLastMidX = 0;
+let surveyLastMidY = 0;
 let surveyMoved = false;
 const gameDom = renderer.domElement;
 
@@ -1156,6 +1158,8 @@ gameDom.addEventListener('pointerdown', e => {
     if (surveyPointers.size === 2) {
       const [a, b] = [...surveyPointers.values()];
       surveyPinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+      surveyLastMidX = (a.x + b.x) * 0.5;
+      surveyLastMidY = (a.y + b.y) * 0.5;
     }
     gameDom.setPointerCapture(e.pointerId);
     return;
@@ -1181,9 +1185,11 @@ gameDom.addEventListener('pointermove', e => {
         surveyMoved = true;
       }
       surveyPinchDistance = nextDistance;
-      const prevMidX = (a.x + b.x) * 0.5 - dx * 0.5;
-      const prevMidY = (a.y + b.y) * 0.5 - dy * 0.5;
-      survey.pan((a.x + b.x) * 0.5 - prevMidX, (a.y + b.y) * 0.5 - prevMidY);
+      const midX = (a.x + b.x) * 0.5;
+      const midY = (a.y + b.y) * 0.5;
+      survey.pan(midX - surveyLastMidX, midY - surveyLastMidY);
+      surveyLastMidX = midX;
+      surveyLastMidY = midY;
     } else {
       if (Math.hypot(dx, dy) > 4) surveyMoved = true;
       survey.orbit(dx, dy);
@@ -1199,7 +1205,10 @@ const endSurveyPointer = (e: PointerEvent) => {
     survey.focusScreen(e.clientX, e.clientY, gameDom.getBoundingClientRect());
   }
   surveyPointers.delete(e.pointerId);
-  if (surveyPointers.size < 2) surveyPinchDistance = 0;
+  if (surveyPointers.size < 2) {
+    surveyPinchDistance = 0;
+    surveyLastMidX = surveyLastMidY = 0;
+  }
   pointer = null;
 };
 gameDom.addEventListener('pointerup', endSurveyPointer);
