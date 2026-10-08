@@ -207,3 +207,36 @@ This is the chronological handoff record for meaningful AI-agent work. It comple
 - Sound effects for footstep terrain materials and water splashes.
 
 **Next agent:** Proceed with confidence; maintain `WorldModel` and causal principles.
+
+
+## 2026-10-08 16:20 +01:00 — GPT-5.6 Luna
+
+**Scope:** Hydrology foundation audit and replacement of Gemini's spline-based water model.
+
+**Starting point:** `world-drainage-foundation` branched from Gemini commit `4a20556d5e992f712c67034a79f744151b48db9a`.
+
+**Inspected:** `PROJECT_PLAN.md`, `AGENT_CHANGELOG.md`, `ARCHITECTURE.md`, `src/world.ts`, `src/terrain.ts`, `src/main.ts`, `src/fauna.ts`, Vercel project/deployments/build events.
+
+**Changed:**
+- Replaced the named Riverwood/tributary spline routing with a deterministic 4m hydrology lattice over the global world extent.
+- Added rainfall-derived runoff, priority-flood depression conditioning, 8-way downstream routing, upstream flow accumulation, channel strength, inland lake detection, and connected-ocean classification.
+- Made terrain water carving depend on the drainage result rather than a prescribed river centerline.
+- Added authoritative flow direction, flow drop, catchment accumulation, spring/stream/river classification.
+- Added hydrology diagnostics including cell count, channel classes, terminal cells, maximum accumulation, and cycle detection.
+- Removed the legacy spline water-flow implementation.
+- Fixed `WorldModel(seed)` so the default seed preserves the existing world exactly while non-default seeds produce distinct deterministic coordinate views.
+
+**Verification:**
+- Build: PASS on Vercel for the earlier drainage commit `1e3d10d4b94023dba257a4a5d7f1e01b92306ad0`; latest seed/routing commits are awaiting the new Vercel build result.
+- Typecheck: PASS via Vercel build on the earlier drainage implementation; latest branch was additionally executed through `tsx` runtime probes.
+- Runtime/world-model probe: PASS. 25,921 drainage cells; 0 directed cycles; 4,894 ocean cells; 64 lake cells; 6,352 channel cells; 5,419 spring-class cells; 411 stream-class cells; 522 river-class cells; 14 terminal cells; max accumulation ~52,349.
+- Seed probe: PASS. Default WorldModel coordinates match global terrain exactly; a non-default seed produced distinct terrain samples.
+- Legacy spline symbols: absent from `src/world.ts`.
+- Browser/device runtime: NOT YET VERIFIED for the latest branch.
+
+**Important findings:** The first interpolation-based flow vector test found occasional cross-ridge directions. Flow vectors are now sampled from the authoritative drainage cell instead of bilinear interpolation. A previous test's raw continuous-terrain downhill check is not considered authoritative because the drainage graph operates on conditioned cells; topology diagnostics are the correct invariant.
+
+**Remaining work:** Verify latest Vercel build, inspect browser runtime, then derive waterfalls/rapids, river width/depth, springs, wetlands and biological water availability from the authoritative drainage fields.
+
+**Next agent:** Do not reintroduce hand-authored river splines. Continue from `flowAccumulation`, `channelStrength`, `flowDrop`, and lake/ocean connectivity.
+
