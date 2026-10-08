@@ -292,6 +292,8 @@ terrainMaterial.onBeforeCompile = shader => {
     // GPU-accelerated micro-displacement for soaring alpine crags and ridges
     float isMtn = clamp((wy - 14.0) / 12.0, 0.0, 1.0);
     float mtnDisp = (sin(wx * 0.28 + wz * 0.22) * 0.52 + cos(wx * 0.42 - wz * 0.35) * 0.42) * isMtn;
+    // Keep high-altitude water beds tied to the authoritative carved surface.
+    mtnDisp *= 1.0 - smoothstep(0.0, 0.42, aWaterMask);
 
     // Riverbed & shoreline alluvial sediment displacement
     float isRiverbed = clamp((1.8 - wy) / 1.5, 0.0, 1.0);
