@@ -679,6 +679,31 @@ function buildHydrology(): HydrologyGrid {
     }
   }
 
+  // Priority-flood pools include shallow rim cells (filled > base) that the
+  // 0.9 m candidate test drops. Left dry, they sit below the lake surface and
+  // the water reads as floating above the shore. Grow each lake to every
+  // connected cell that shares its spill level.
+  const pool: number[] = [];
+  for (let i = 0; i < HYDRO_COUNT; i++) if (lakeMask[i]) pool.push(i);
+  for (let q = 0; q < pool.length; q++) {
+    const i = pool[q];
+    const ix = i % HYDRO_N;
+    const iz = Math.floor(i / HYDRO_N);
+    for (const d of hydrologyDirections) {
+      const nx = ix + d.dx;
+      const nz = iz + d.dz;
+      if (nx < 0 || nx >= HYDRO_N || nz < 0 || nz >= HYDRO_N) continue;
+
+      const ni = hydroIndex(nx, nz);
+      if (lakeMask[ni] || oceanMask[ni]) continue;
+      if (filledElevation[ni] - baseElevation[ni] <= 0.02) continue;
+      if (Math.abs(filledElevation[ni] - filledElevation[i]) > 0.01) continue;
+
+      lakeMask[ni] = 1;
+      pool.push(ni);
+    }
+  }
+
   // Catchment size controls persistent channel strength. Rivers form where
   // many upstream cells converge, while high alpine headwaters can become
   // springs before their catchment is large enough for a river.
@@ -932,6 +957,84 @@ function hydrologyCellAt(x: number, z: number): { ix: number; iz: number; i: num
   return { ix, iz, i: hydroIndex(ix, iz) };
 }
 
+// Water must sit at least this far above the final (carved) ground to count as
+// wet. Keeps a 3-7 cm hydraulic head from reading as a paper-thin film on banks.
+const SHORE_EPS = 0.08;
+
+interface WaterColumn {
+  surface: number;
+  depth: number; // full bed depth below surface (unscaled)
+  shore: number; // 0 at the wet-footprint edge -> 1 in the core
+  ocean: boolean;
+}
+
+function wetNode(grid: HydrologyGrid, i: number): number {
+  return grid.lakeMask[i] ||
+    (grid.channelStrength[i] > 0.02 && grid.waterPresence[i] > 0.001)
+    ? 1
+    : 0;
+}
+
+// Smooth bank profile. The nearest-cell footprint edge sits at t = 0.5, so the
+// carve fades to zero exactly where the wet mask ends and the bank meets the
+// dry terrain continuously instead of dropping `depth` metres in one step.
+function shoreWeight(grid: HydrologyGrid, gx: number, gz: number): number {
+  const x0 = Math.floor(gx);
+  const z0 = Math.floor(gz);
+  const x1 = Math.min(HYDRO_N - 1, x0 + 1);
+  const z1 = Math.min(HYDRO_N - 1, z0 + 1);
+  const tx = gx - x0;
+  const tz = gz - z0;
+  const t = lerp(
+    lerp(wetNode(grid, hydroIndex(x0, z0)), wetNode(grid, hydroIndex(x1, z0)), tx),
+    lerp(wetNode(grid, hydroIndex(x0, z1)), wetNode(grid, hydroIndex(x1, z1)), tx),
+    tz
+  );
+  const s = clamp((t - 0.5) * 2, 0, 1);
+  return s * s * (3 - 2 * s);
+}
+
+// Pure hydrology lookup. Must never call terrainHeightAt(): the carve depends
+// on it, and waterDepthAt depends on the carved terrain.
+function waterColumnAt(x: number, z: number): WaterColumn | null {
+  if (nearHome(x, z) || nearVillage(x, z)) return null;
+
+  const grid = hydrologyGrid();
+  const { gx, gz } = hydroCoords(x, z);
+  const cell = hydrologyCellAt(x, z);
+
+  if (grid.oceanMask[cell.i]) {
+    return { surface: WATER_LEVEL, depth: 0, shore: 1, ocean: true };
+  }
+
+  // Nearest-cell classification stays authoritative (no leakage across dry
+  // ridges); only scalar fields are interpolated inside the classified body.
+  if (grid.lakeMask[cell.i]) {
+    const surface = Math.max(WATER_LEVEL, bilinear(grid.filledElevation, gx, gz));
+    const depth = bilinearWeighted(grid.waterDepth, grid.waterPresence, gx, gz);
+    return {
+      surface,
+      depth: Math.min(Math.max(0, depth), Math.max(0, surface - 0.2)),
+      shore: shoreWeight(grid, gx, gz),
+      ocean: false,
+    };
+  }
+
+  if (grid.channelStrength[cell.i] > 0.02 && grid.waterPresence[cell.i] > 0.001) {
+    const surface = bilinearWeighted(grid.waterSurface, grid.waterPresence, gx, gz);
+    const depth = bilinearWeighted(grid.waterDepth, grid.waterPresence, gx, gz);
+    if (surface <= 0 || depth <= 0.001) return null;
+    return {
+      surface,
+      depth: Math.min(depth, Math.max(0, surface - 0.2)),
+      shore: shoreWeight(grid, gx, gz),
+      ocean: false,
+    };
+  }
+
+  return null;
+}
+
 function hydrologySampleAt(x: number, z: number): HydrologySample {
   const grid = hydrologyGrid();
   const { gx, gz } = hydroCoords(x, z);
@@ -969,20 +1072,14 @@ function hydrologySampleAt(x: number, z: number): HydrologySample {
 }
 
 function hydrologyCarveAt(x: number, z: number): number {
-  if (nearHome(x, z) || nearVillage(x, z)) return 0;
+  const col = waterColumnAt(x, z);
+  if (!col || col.ocean || col.depth <= 0.005) return 0;
 
-  const depth = waterDepthAt(x, z);
-  if (depth <= 0.005) return 0;
-
-  const surface = waterSurfaceAt(x, z);
-
-  // Carve only where the authoritative water sampler says this point is wet.
-  // The visible terrain is driven toward the same bed used by the water mesh,
-  // eliminating the old mismatch where neighboring wet cells could carve a
-  // dry ridge or island.
-  const desiredBed = surface - depth;
-  const ground = terrainBaseHeightAt(x, z);
-  return Math.max(0, ground - desiredBed);
+  // Carve toward the same bed the water column describes, scaled by the shore
+  // weight so the bank slopes down from the dry terrain instead of forming a
+  // vertical wall at the wet-cell boundary.
+  const bed = col.surface - col.depth;
+  return col.shore * Math.max(0, terrainBaseHeightAt(x, z) - bed);
 }
 
 export function riverDistanceAt(x: number, z: number): number {
@@ -1190,60 +1287,21 @@ export function terrainHeightAt(x: number, z: number): number {
 
 export function waterSurfaceAt(x: number, z: number): number {
   if (nearHome(x, z) || nearVillage(x, z)) return WATER_LEVEL;
-
-  const grid = hydrologyGrid();
-  const { gx, gz } = hydroCoords(x, z);
-  const cell = hydrologyCellAt(x, z);
-
-  if (grid.oceanMask[cell.i]) return WATER_LEVEL;
-
-  if (grid.lakeMask[cell.i]) {
-    // The lake mask defines the basin. Compare against the carved bed, not
-    // the uncarved terrain datum: requiring the surface to sit above the
-    // original ground prevents the basin from ever being carved and can make
-    // the fallback WATER_LEVEL appear as a detached, paper-thin sheet.
-    return Math.max(WATER_LEVEL, bilinear(grid.filledElevation, gx, gz));
-  }
-
-  if (grid.channelStrength[cell.i] > 0.02 && grid.waterPresence[cell.i] > 0.001) {
-    // A routed channel cell owns its surface elevation. The terrain is carved
-    // below this level by hydrologyCarveAt; comparing the waterline against
-    // the uncarved terrain here rejects the very water that should carve it.
-    return bilinearWeighted(grid.waterSurface, grid.waterPresence, gx, gz);
-  }
-
-  return WATER_LEVEL;
+  return waterColumnAt(x, z)?.surface ?? WATER_LEVEL;
 }
 
 export function waterDepthAt(x: number, z: number): number {
-  if (nearHome(x, z) || nearVillage(x, z)) return 0;
+  const col = waterColumnAt(x, z);
+  if (!col) return 0;
 
-  const grid = hydrologyGrid();
-  const { gx, gz } = hydroCoords(x, z);
-  const cell = hydrologyCellAt(x, z);
-
-  // Nearest-cell classification is deliberate: it is the authoritative wet
-  // mask. Scalar interpolation is allowed only after the point is known to be
-  // inside the same water body. This removes water leakage onto dry islands,
-  // ridges, and steep neighboring slopes.
-  if (grid.oceanMask[cell.i]) {
+  if (col.ocean) {
     return Math.max(0, WATER_LEVEL - terrainBaseHeightAt(x, z));
   }
 
-  if (grid.lakeMask[cell.i]) {
-    const surface = Math.max(WATER_LEVEL, bilinear(grid.filledElevation, gx, gz));
-    const depth = bilinearWeighted(grid.waterDepth, grid.waterPresence, gx, gz);
-    return Math.min(Math.max(0, depth), Math.max(0, surface - 0.2));
-  }
-
-  if (grid.channelStrength[cell.i] > 0.02 && grid.waterPresence[cell.i] > 0.001) {
-    const surface = waterSurfaceAt(x, z);
-    const depth = bilinearWeighted(grid.waterDepth, grid.waterPresence, gx, gz);
-    if (surface <= 0 || depth <= 0.001) return 0;
-    return Math.min(Math.max(0, depth), Math.max(0, surface - 0.2));
-  }
-
-  return 0;
+  // Depth is measured against the SAME carved terrain the mesh, colouring and
+  // player collision use, so water exists exactly where that ground is below
+  // the surface and tapers to zero at the shoreline.
+  return Math.max(0, col.surface - terrainHeightAt(x, z) - SHORE_EPS);
 }
 
 export function waterAt(x: number, z: number): boolean {
@@ -1596,4 +1654,3 @@ export class WorldModel {
 }
 
 export const defaultWorldModel = new WorldModel(SEED);
-
