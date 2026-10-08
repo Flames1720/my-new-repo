@@ -1708,9 +1708,9 @@ function setSurveyMode(active: boolean) {
     chunks.surveyAll(true);
     world.visible = true;
     actors.visible = true;
-    celestialGroup.visible = false;
-    distantHorizonMesh.visible = false;
-    cloudDeckGroup.visible = false;
+    celestialGroup.visible = true;
+    distantHorizonMesh.visible = true;
+    cloudDeckGroup.visible = true;
     splashRing.visible = false;
     surveyWasFog = scene.fog;
     scene.fog = null;
