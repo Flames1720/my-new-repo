@@ -140,7 +140,7 @@ export class PlayerCharacter {
   private modelRequestVersion = 0;
   private currentModelId: CharacterModelId = 'quaternius-adventurer';
   private modelAnimation = '';
-  private locomotionState: 'idle' | 'walk' | 'run' | 'backward' | 'airborne' | 'swim' | 'jump' | 'emote' = 'idle';
+  private locomotionState: 'idle' | 'walk' | 'run' | 'backward' | 'strafe-left' | 'strafe-right' | 'airborne' | 'swim' | 'jump' | 'fall' | 'crouch' | 'gather' | 'climb' | 'turn' | 'emote' = 'idle';
   private wasAirborne = false;
   private landingTime = 0;
   private wasSwimming = false;
