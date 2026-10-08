@@ -745,7 +745,9 @@ class Chunks {
         }
 
         if (isWetOrShore) {
-          vertIndex[iz * (waterGrid + 1) + ix] = nextIdx++;
+          const vertexSlot = iz * (waterGrid + 1) + ix;
+          vertIndex[vertexSlot] = nextIdx++;
+          wetVertex[vertexSlot] = depth > 0.005 ? 1 : 0;
           // At shoreline vertices, use a nearby wet surface height instead of
           // the global sea level. This prevents sloping water sheets from rising
           // over a high-elevation riverbank.
