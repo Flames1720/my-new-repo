@@ -123,6 +123,9 @@ export class PlayerCharacter {
   private activeModelAction: THREE.AnimationAction | null = null;
   private modelReady = false;
   private modelAnimation = '';
+  private locomotionState: 'idle' | 'walk' | 'run' | 'backward' | 'airborne' | 'swim' = 'idle';
+  private wasAirborne = false;
+  private landingTime = 0;
 
   private mixamoBones: {
     hips?: THREE.Object3D;
@@ -341,6 +344,7 @@ export class PlayerCharacter {
         model.rotation.set(0, 0, 0);
         model.position.set(0, 0, 0);
         model.scale.setScalar(1.0);
+
         model.traverse(object => {
           if (object instanceof THREE.Mesh) {
             object.castShadow = true;
@@ -364,16 +368,37 @@ export class PlayerCharacter {
             }
           }
         });
+
         this.modelRoot = model;
         this.root.add(model);
         this.rigRoot.visible = false;
         this.modelReady = true;
         this.modelMixer = new THREE.AnimationMixer(model);
+
+        const jogForward = gltf.animations.find(clip => clip.name.toLowerCase() === 'jog forward');
+        const walkClip = jogForward ? this.createReducedLocomotionClip(jogForward, 0.52) : null;
+
         for (const sourceClip of gltf.animations) {
-          const action = this.modelMixer.clipAction(sourceClip);
+          const clip = sourceClip.clone();
+          clip.tracks = clip.tracks.filter(track => {
+            const target = track.name.split('.')[0].toLowerCase();
+            const property = track.name.split('.')[1] || '';
+            // World movement owns character translation; animation must not move the player.
+            return !(target.includes('hips') && property === 'position');
+          });
+          const action = this.modelMixer!.clipAction(clip);
           action.setLoop(THREE.LoopRepeat, Infinity);
+          action.enabled = false;
           this.modelActions.set(sourceClip.name.toLowerCase(), action);
         }
+
+        if (walkClip) {
+          const walkAction = this.modelMixer!.clipAction(walkClip);
+          walkAction.setLoop(THREE.LoopRepeat, Infinity);
+          walkAction.enabled = false;
+          this.modelActions.set('__walk_reduced', walkAction);
+        }
+
         this.cacheMixamoBones(model);
         this.applyOutfit(this.currentOutfit);
         this.applyGender(this.gender);
@@ -385,6 +410,36 @@ export class PlayerCharacter {
         console.warn('[PlayerCharacter] Production GLB unavailable; using procedural fallback.', error);
       }
     );
+  }
+
+  /**
+   * The source asset only has a jog cycle. Build a lighter walk cycle by
+   * preserving the jog's first-frame standing pose and reducing every
+   * rotational excursion toward that pose. This gives us a real walk state
+   * without pretending the source "Idle" clip is usable.
+   */
+  private createReducedLocomotionClip(source: THREE.AnimationClip, amplitude: number) {
+    const clip = source.clone();
+    clip.name = '__walk_reduced';
+    clip.tracks = clip.tracks.map(track => {
+      if (!(track instanceof THREE.QuaternionKeyframeTrack)) return track.clone();
+
+      const values = track.values.slice();
+      if (values.length < 4) return track.clone();
+
+      const base = values.slice(0, 4);
+      for (let i = 0; i < values.length; i += 4) {
+        const q = new THREE.Quaternion(values[i], values[i + 1], values[i + 2], values[i + 3]);
+        const b = new THREE.Quaternion(base[0], base[1], base[2], base[3]);
+        q.slerp(b, 1 - amplitude);
+        values[i] = q.x;
+        values[i + 1] = q.y;
+        values[i + 2] = q.z;
+        values[i + 3] = q.w;
+      }
+      return new THREE.QuaternionKeyframeTrack(track.name, track.times.slice(), values);
+    });
+    return clip;
   }
 
   private cacheMixamoBones(root: THREE.Object3D) {
@@ -419,54 +474,43 @@ export class PlayerCharacter {
     }
   }
 
-  private applyProceduralJumpPose(velocityY: number, dt: number, onGround: boolean) {
+  private applyAirbornePose(velocityY: number, dt: number) {
     const b = this.mixamoBones;
-    if (!b.hips) return;
-    this.jumpAirTime = onGround ? 0 : this.jumpAirTime + dt;
-    this.lastVelocityY = velocityY;
-    const rise = clamp(velocityY / 10, -1.2, 1.2);
-    const apex = 1 - Math.min(1, Math.abs(velocityY) / 2.5);
-    const air = onGround ? 0 : 1;
+    const rise = clamp(velocityY / 8.5, -1, 1);
+    const lift = clamp(0.22 + Math.max(0, rise) * 0.12, 0.18, 0.34);
+    const fall = clamp(Math.max(0, -rise), 0, 1);
 
+    // Airborne pose is deliberately open and extended. The old implementation
+    // tucked both thighs/knees aggressively, which visually read as crouching.
     if (b.hips) {
-      b.hips.rotation.x = lerp(b.hips.rotation.x, rise * 0.12 - apex * 0.04, Math.min(1, dt * 10));
-      b.hips.position.y = lerp(b.hips.position.y, onGround ? 0 : 0.04 + apex * 0.03, Math.min(1, dt * 12));
+      b.hips.rotation.x = lerp(b.hips.rotation.x, -0.03 - fall * 0.04, Math.min(1, dt * 12));
     }
-    const torsoLean = -rise * 0.28 + (rise < 0 ? -rise * 0.15 : 0);
-    if (b.spine) b.spine.rotation.x = lerp(b.spine.rotation.x, torsoLean * 0.45, Math.min(1, dt * 9));
-    if (b.spine1) b.spine1.rotation.x = lerp(b.spine1.rotation.x, torsoLean * 0.35, Math.min(1, dt * 9));
-    if (b.spine2) b.spine2.rotation.x = lerp(b.spine2.rotation.x, torsoLean * 0.25, Math.min(1, dt * 9));
+    if (b.spine) b.spine.rotation.x = lerp(b.spine.rotation.x, 0.02 + fall * 0.04, Math.min(1, dt * 10));
+    if (b.spine1) b.spine1.rotation.x = lerp(b.spine1.rotation.x, 0.015, Math.min(1, dt * 10));
+    if (b.spine2) b.spine2.rotation.x = lerp(b.spine2.rotation.x, 0.01, Math.min(1, dt * 10));
 
-    const armRaise = air * (0.55 + rise * 0.55 + apex * 0.25);
-    const armFlare = air * (0.35 + apex * 0.2);
     if (b.leftArm) {
-      b.leftArm.rotation.x = lerp(b.leftArm.rotation.x, -armRaise * 1.1, Math.min(1, dt * 10));
-      b.leftArm.rotation.z = lerp(b.leftArm.rotation.z, armFlare, Math.min(1, dt * 10));
+      b.leftArm.rotation.x = lerp(b.leftArm.rotation.x, -lift, Math.min(1, dt * 10));
+      b.leftArm.rotation.z = lerp(b.leftArm.rotation.z, 0.16, Math.min(1, dt * 10));
     }
     if (b.rightArm) {
-      b.rightArm.rotation.x = lerp(b.rightArm.rotation.x, -armRaise * 1.1, Math.min(1, dt * 10));
-      b.rightArm.rotation.z = lerp(b.rightArm.rotation.z, -armFlare, Math.min(1, dt * 10));
+      b.rightArm.rotation.x = lerp(b.rightArm.rotation.x, -lift, Math.min(1, dt * 10));
+      b.rightArm.rotation.z = lerp(b.rightArm.rotation.z, -0.16, Math.min(1, dt * 10));
     }
-    const elbow = air * (0.4 + apex * 0.35);
-    if (b.leftForeArm) b.leftForeArm.rotation.x = lerp(b.leftForeArm.rotation.x, elbow, Math.min(1, dt * 10));
-    if (b.rightForeArm) b.rightForeArm.rotation.x = lerp(b.rightForeArm.rotation.x, elbow, Math.min(1, dt * 10));
+    if (b.leftForeArm) b.leftForeArm.rotation.x = lerp(b.leftForeArm.rotation.x, 0.18, Math.min(1, dt * 10));
+    if (b.rightForeArm) b.rightForeArm.rotation.x = lerp(b.rightForeArm.rotation.x, 0.18, Math.min(1, dt * 10));
 
-    const thighTuck = air * (0.55 + Math.max(0, rise) * 0.45 - Math.max(0, -rise) * 0.2);
-    const kneeBend = air * (0.85 + apex * 0.4);
-    if (b.leftUpLeg) b.leftUpLeg.rotation.x = lerp(b.leftUpLeg.rotation.x, -thighTuck * 0.9, Math.min(1, dt * 10));
-    if (b.rightUpLeg) b.rightUpLeg.rotation.x = lerp(b.rightUpLeg.rotation.x, -thighTuck * 1.05, Math.min(1, dt * 10));
-    if (b.leftLeg) b.leftLeg.rotation.x = lerp(b.leftLeg.rotation.x, kneeBend, Math.min(1, dt * 10));
-    if (b.rightLeg) b.rightLeg.rotation.x = lerp(b.rightLeg.rotation.x, kneeBend * 1.05, Math.min(1, dt * 10));
-    if (b.leftFoot) b.leftFoot.rotation.x = lerp(b.leftFoot.rotation.x, air * -0.35, Math.min(1, dt * 8));
-    if (b.rightFoot) b.rightFoot.rotation.x = lerp(b.rightFoot.rotation.x, air * -0.35, Math.min(1, dt * 8));
-    if (b.head) b.head.rotation.x = lerp(b.head.rotation.x, -torsoLean * 0.35, Math.min(1, dt * 8));
-    if (b.neck) b.neck.rotation.x = lerp(b.neck.rotation.x, -torsoLean * 0.15, Math.min(1, dt * 8));
-    this.jumpPoseActive = !onGround;
+    const knee = 0.12 + fall * 0.10;
+    if (b.leftUpLeg) b.leftUpLeg.rotation.x = lerp(b.leftUpLeg.rotation.x, 0.03, Math.min(1, dt * 10));
+    if (b.rightUpLeg) b.rightUpLeg.rotation.x = lerp(b.rightUpLeg.rotation.x, 0.03, Math.min(1, dt * 10));
+    if (b.leftLeg) b.leftLeg.rotation.x = lerp(b.leftLeg.rotation.x, knee, Math.min(1, dt * 10));
+    if (b.rightLeg) b.rightLeg.rotation.x = lerp(b.rightLeg.rotation.x, knee, Math.min(1, dt * 10));
+    if (b.leftFoot) b.leftFoot.rotation.x = lerp(b.leftFoot.rotation.x, -0.08, Math.min(1, dt * 8));
+    if (b.rightFoot) b.rightFoot.rotation.x = lerp(b.rightFoot.rotation.x, -0.08, Math.min(1, dt * 8));
   }
 
   private relaxJumpBones(dt: number) {
-    if (!this.jumpPoseActive) return;
-    const rate = Math.min(1, dt * 6);
+    const rate = Math.min(1, dt * 8);
     for (const [key, bone] of Object.entries(this.mixamoBones)) {
       if (!bone) continue;
       const rest = this.restBoneRotations.get(key);
@@ -478,8 +522,6 @@ export class PlayerCharacter {
     if (this.mixamoBones.hips) {
       this.mixamoBones.hips.position.y = lerp(this.mixamoBones.hips.position.y, 0, rate);
     }
-    this.jumpAirTime = 0;
-    this.jumpPoseActive = false;
   }
 
   private findModelAction(name: string): THREE.AnimationAction | null {
@@ -492,21 +534,48 @@ export class PlayerCharacter {
     return null;
   }
 
-  private playModelAnimation(name: 'idle' | 'walk' | 'run' | 'backward', fade = 0.18) {
+  private playModelAnimation(name: 'idle' | 'walk' | 'run' | 'backward', fade = 0.14) {
     if (!this.modelReady || !this.modelMixer) return;
-    const lookup = name === 'walk' || name === 'run' ? 'jog forward' : name === 'backward' ? 'jog backward' : 'idle';
-    const next = this.findModelAction(lookup) || this.findModelAction(name) || this.findModelAction('idle');
+
+    const lookup =
+      name === 'walk' ? '__walk_reduced' :
+      name === 'run' ? 'jog forward' :
+      name === 'backward' ? 'jog backward' :
+      '__walk_reduced';
+
+    const next = this.findModelAction(lookup);
     if (!next) return;
-    const timeScale = name === 'run' ? 1.22 : name === 'walk' ? 0.82 : 1.0;
-    next.setEffectiveTimeScale(timeScale);
-    if (next === this.activeModelAction) return;
-    next.reset();
-    next.enabled = true;
-    next.setEffectiveWeight(1.0);
-    next.play();
-    if (this.activeModelAction) this.activeModelAction.crossFadeTo(next, fade, true);
-    this.activeModelAction = next;
+
+    const isIdle = name === 'idle';
+    const timeScale =
+      name === 'run' ? 1.0 :
+      name === 'walk' ? 0.82 :
+      name === 'backward' ? 0.9 : 0;
+
+    if (next !== this.activeModelAction) {
+      next.reset();
+      next.enabled = true;
+      next.setEffectiveWeight(1);
+      next.setEffectiveTimeScale(timeScale);
+      next.play();
+
+      if (this.activeModelAction) {
+        this.activeModelAction.crossFadeTo(next, fade, false);
+      }
+      this.activeModelAction = next;
+    } else {
+      next.setEffectiveTimeScale(timeScale);
+      next.setEffectiveWeight(1);
+    }
+
+    // There is no trustworthy stationary clip in this asset. Freeze the
+    // reduced locomotion clip on its first frame instead of using the broken
+    // imported "Idle" clip that puts the character into a crawl-like pose.
+    next.paused = isIdle;
+    if (isIdle) next.time = 0;
+
     this.modelAnimation = name;
+    this.locomotionState = name;
   }
 
   private updateProductionAnimation(
@@ -520,34 +589,51 @@ export class PlayerCharacter {
     velocityY = 0
   ) {
     if (!this.modelReady || !this.modelRoot) return;
+
     if (swimming) {
-      this.playModelAnimation('idle', 0.25);
-      this.modelRoot.rotation.x = lerp(this.modelRoot.rotation.x, 1.25, Math.min(1, dt * 8));
+      this.playModelAnimation('idle', 0.22);
       this.modelRoot.position.y = lerp(this.modelRoot.position.y, -0.32, Math.min(1, dt * 8));
-      this.jumpPoseActive = false;
+      this.modelRoot.rotation.x = lerp(this.modelRoot.rotation.x, 1.25, Math.min(1, dt * 8));
+      return;
+    }
+
+    this.modelRoot.position.y = lerp(this.modelRoot.position.y, 0, Math.min(1, dt * 10));
+
+    if (!onGround) {
+      this.playModelAnimation('idle', 0.08);
+      this.activeModelAction?.setEffectiveWeight(1);
+      this.modelRoot.rotation.x = lerp(this.modelRoot.rotation.x, 0, Math.min(1, dt * 10));
+      this.modelRoot.rotation.z = lerp(this.modelRoot.rotation.z, 0, Math.min(1, dt * 10));
+      return;
+    }
+
+    if (this.wasAirborne) {
+      this.landingTime = 0.16;
+      this.triggerLanding(1);
+      this.wasAirborne = false;
+    }
+
+    if (moving) {
+      this.playModelAnimation(sprinting || speed > 5.5 ? 'run' : 'walk');
     } else {
-      if (!onGround) {
-        this.playModelAnimation('walk', 0.12);
-        if (this.activeModelAction) this.activeModelAction.setEffectiveWeight(0.15);
-        this.modelRoot.position.y = lerp(this.modelRoot.position.y, 0.06, Math.min(1, dt * 10));
-        this.applyProceduralJumpPose(velocityY, dt, false);
-      } else {
-        if (this.activeModelAction) this.activeModelAction.setEffectiveWeight(1.0);
-        if (this.jumpPoseActive) this.relaxJumpBones(dt);
-        if (moving) this.playModelAnimation(sprinting || speed > 5.5 ? 'run' : 'walk');
-        else this.playModelAnimation('idle');
-        this.modelRoot.position.y = lerp(this.modelRoot.position.y, 0, Math.min(1, dt * 8));
-      }
-      if (onGround) {
-        const forwardLean = moving ? (sprinting ? 0.15 : 0.06) : 0;
-        const bankLean = moving ? clamp(-turnRate * 0.22, -0.14, 0.14) : 0;
-        this.modelRoot.rotation.x = lerp(this.modelRoot.rotation.x, forwardLean, Math.min(1, dt * 8));
-        this.modelRoot.rotation.z = lerp(this.modelRoot.rotation.z, bankLean, Math.min(1, dt * 8));
-      } else {
-        const airPitch = clamp(-velocityY / 14, -0.22, 0.18);
-        this.modelRoot.rotation.x = lerp(this.modelRoot.rotation.x, airPitch, Math.min(1, dt * 10));
-        this.modelRoot.rotation.z = lerp(this.modelRoot.rotation.z, 0, Math.min(1, dt * 8));
-      }
+      this.playModelAnimation('idle');
+    }
+
+    const forwardLean = moving ? (sprinting ? 0.10 : 0.035) : 0;
+    const bankLean = moving ? clamp(-turnRate * 0.12, -0.09, 0.09) : 0;
+    this.modelRoot.rotation.x = lerp(this.modelRoot.rotation.x, forwardLean, Math.min(1, dt * 8));
+    this.modelRoot.rotation.z = lerp(this.modelRoot.rotation.z, bankLean, Math.min(1, dt * 8));
+
+    if (this.landingTime > 0) {
+      this.landingTime = Math.max(0, this.landingTime - dt);
+      const amount = Math.sin((this.landingTime / 0.16) * Math.PI) * 0.045;
+      this.modelRoot.scale.y = 1 - amount;
+      this.modelRoot.scale.x = 1 + amount * 0.45;
+      this.modelRoot.scale.z = 1 + amount * 0.45;
+    } else {
+      this.modelRoot.scale.y = lerp(this.modelRoot.scale.y, 1, Math.min(1, dt * 14));
+      this.modelRoot.scale.x = lerp(this.modelRoot.scale.x, 1, Math.min(1, dt * 14));
+      this.modelRoot.scale.z = lerp(this.modelRoot.scale.z, 1, Math.min(1, dt * 14));
     }
   }
 
@@ -582,13 +668,15 @@ export class PlayerCharacter {
   }
 
   playJump() {
-    this.landingSquash = 0.35;
+    this.landingSquash = 0;
     this.jumpAirTime = 0;
     this.jumpPoseActive = true;
+    this.wasAirborne = true;
   }
 
   triggerLanding(intensity = 1.0) {
-    this.landingSquash = Math.min(1.0, 0.35 * Math.abs(intensity));
+    this.landingSquash = Math.min(1.0, 0.12 * Math.abs(intensity));
+    this.landingTime = 0.16;
   }
 
   animate(
@@ -604,9 +692,21 @@ export class PlayerCharacter {
   ) {
     if (!this.modelReady) {
       this.update(dt, t, moving, sprinting, swimming, speed, turnRate);
-    } else {
-      this.updateProductionAnimation(moving, sprinting, swimming, turnRate, dt, onGround, speed, velocityY);
-      this.modelMixer?.update(Math.min(dt, 0.05));
+      return;
+    }
+
+    if (!onGround && !swimming) this.wasAirborne = true;
+
+    this.updateProductionAnimation(moving, sprinting, swimming, turnRate, dt, onGround, speed, velocityY);
+    this.modelMixer?.update(Math.min(dt, 0.05));
+
+    // Bone overrides happen AFTER the mixer so the jump pose is not erased by
+    // the animation system on the same frame.
+    if (!onGround && !swimming) {
+      this.applyAirbornePose(velocityY, dt);
+    } else if (onGround && this.jumpPoseActive) {
+      this.relaxJumpBones(dt);
+      if (this.landingTime <= 0) this.jumpPoseActive = false;
     }
   }
 
