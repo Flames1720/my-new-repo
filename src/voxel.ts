@@ -141,6 +141,7 @@ export class VoxelChunk {
   // Only mutations are stored. Unedited cells come from deterministic base
   // generation, making the voxel layer cheap to keep resident.
   private readonly edits = new Map<number, VoxelMaterial>();
+  private readonly columnTopOverrides = new Map<number, number>();
 
   constructor(cx: number, cz: number) {
     this.cx = cx;
@@ -167,6 +168,32 @@ export class VoxelChunk {
     );
   }
 
+  private columnKey(lx: number, lz: number): number {
+    return lz * SIZE + lx;
+  }
+
+  private baseColumnTop(lx: number, lz: number): number {
+    return Math.floor(terrainHeightAt(this.cx * SIZE + lx + 0.5, this.cz * SIZE + lz + 0.5)) + 1;
+  }
+
+  private recomputeColumnTop(lx: number, lz: number, fromY: number): void {
+    const key = this.columnKey(lx, lz);
+    const fallbackTop = this.baseColumnTop(lx, lz);
+    let top = Math.max(0, Math.min(fromY, VOXEL_MAX_Y + 1));
+
+    for (let y = Math.min(VOXEL_MAX_Y, top - 1); y >= VOXEL_MIN_Y; y--) {
+      if (isSolidVoxel(this.getLocal(lx, y, lz))) {
+        this.columnTopOverrides.set(key, y + 1);
+        if (y + 1 === fallbackTop && this.getLocal(lx, fallbackTop - 1, lz) === baseMaterialAt(this.cx * SIZE + lx, fallbackTop - 1, this.cz * SIZE + lz)) {
+          this.columnTopOverrides.delete(key);
+        }
+        return;
+      }
+    }
+
+    this.columnTopOverrides.set(key, 0);
+  }
+
   setLocal(lx: number, y: number, lz: number, material: VoxelMaterial): void {
     if (lx < 0 || lx >= SIZE || lz < 0 || lz >= SIZE || y < VOXEL_MIN_Y || y > VOXEL_MAX_Y) return;
 
@@ -175,6 +202,33 @@ export class VoxelChunk {
 
     if (material === base) this.edits.delete(key);
     else this.edits.set(key, material);
+
+    const top = this.columnTopOverrides.get(this.columnKey(lx, lz)) ?? this.baseColumnTop(lx, lz);
+
+    if (isSolidVoxel(material) && y + 1 > top) {
+      this.columnTopOverrides.set(this.columnKey(lx, lz), y + 1);
+    } else if (!isSolidVoxel(material) && y + 1 >= top) {
+      this.recomputeColumnTop(lx, lz, top);
+    } else if (material === base && y + 1 >= top) {
+      this.recomputeColumnTop(lx, lz, Math.max(top, y + 1));
+    }
+
+    // Once a column returns exactly to the procedural surface, stop storing a
+    // derived override. Sparse edits remain the only persistent state.
+    const currentTop = this.columnTopOverrides.get(this.columnKey(lx, lz));
+    if (currentTop !== undefined && currentTop === this.baseColumnTop(lx, lz)) {
+      const baseAtTop = baseMaterialAt(this.cx * SIZE + lx, currentTop - 1, this.cz * SIZE + lz);
+      const currentAtTop = this.getLocal(lx, currentTop - 1, lz);
+      if (currentAtTop === baseAtTop) this.columnTopOverrides.delete(this.columnKey(lx, lz));
+    }
+  }
+
+  hasGroundOverride(lx: number, lz: number): boolean {
+    return this.columnTopOverrides.has(this.columnKey(lx, lz));
+  }
+
+  getGroundTop(lx: number, lz: number): number {
+    return this.columnTopOverrides.get(this.columnKey(lx, lz)) ?? this.baseColumnTop(lx, lz);
   }
 
   editsArray(): VoxelEdit[] {
@@ -196,6 +250,7 @@ export class VoxelChunk {
 
   clearEdits(): void {
     this.edits.clear();
+    this.columnTopOverrides.clear();
   }
 }
 
@@ -230,14 +285,30 @@ export class VoxelWorld {
     this.chunk(cx, cz).setLocal(x - cx * SIZE, y, z - cz * SIZE, material);
   }
 
-  /** Height of the top solid block in the deterministic voxel column. */
+  /** Height of the top solid block, using sparse edits when a column changed. */
   groundVoxelTop(x: number, z: number): number {
-    return Math.floor(terrainHeightAt(x + 0.5, z + 0.5)) + 1;
+    const wx = Math.floor(x);
+    const wz = Math.floor(z);
+    const cx = Math.floor(wx / SIZE);
+    const cz = Math.floor(wz / SIZE);
+    const lx = wx - cx * SIZE;
+    const lz = wz - cz * SIZE;
+    const chunk = this.chunk(cx, cz);
+    return chunk.getGroundTop(lx, lz);
   }
 
-  /** Floating-point position just above the top voxel, for future voxel physics. */
+  /** True only for columns whose persistent voxel edits can change grounding. */
+  hasGroundOverride(x: number, z: number): boolean {
+    const wx = Math.floor(x);
+    const wz = Math.floor(z);
+    const cx = Math.floor(wx / SIZE);
+    const cz = Math.floor(wz / SIZE);
+    return this.chunk(cx, cz).hasGroundOverride(wx - cx * SIZE, wz - cz * SIZE);
+  }
+
+  /** Floating-point position just above the top voxel. */
   groundHeight(x: number, z: number): number {
-    return this.groundVoxelTop(Math.floor(x), Math.floor(z));
+    return this.groundVoxelTop(x, z);
   }
 
   edits(): VoxelEdit[] {
