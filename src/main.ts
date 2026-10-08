@@ -497,6 +497,7 @@ scene.add(world, actors);
 
 const survey = new WorldSurvey();
 scene.add(survey.root);
+survey.setWorldScene(scene, camera);
 
 const splashMaterial = new THREE.MeshBasicMaterial({ color: 0xb7e5d8, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
 const splashRing = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.32, 24), splashMaterial);
@@ -1654,17 +1655,21 @@ let surveyWasFog: THREE.Scene['fog'] = gameplayFog;
 function updateSurveyUI() {
   if (surveyOverlay) surveyOverlay.classList.toggle('show', survey.isActive);
   if (surveyTerrainBtn) surveyTerrainBtn.classList.toggle('active', survey.currentView === 'terrain');
+  const surveyWorldBtn = document.querySelector('#surveyWorldBtn') as HTMLButtonElement | null;
+  if (surveyWorldBtn) surveyWorldBtn.classList.toggle('active', survey.currentView === 'world');
   if (surveyHydrologyBtn) surveyHydrologyBtn.classList.toggle('active', survey.currentView === 'hydrology');
-  if (surveyStatus) surveyStatus.textContent = survey.currentView === 'terrain'
-    ? 'ROCK + WATER · TOPOLOGY'
-    : 'WATER TRUTH · FLOW';
+  if (surveyStatus) surveyStatus.textContent = survey.currentView === 'world'
+    ? 'FULL WORLD · ALL RENDERED'
+    : survey.currentView === 'terrain'
+      ? 'ROCK + WATER · TOPOLOGY'
+      : 'WATER TRUTH · FLOW';
 }
 function setSurveyMode(active: boolean) {
   if (active) {
     isPhotoMode = false;
     document.body.classList.remove('photo-mode-active', 'photo-clean-mode');
     survey.setActive(true);
-    world.visible = false;
+    world.visible = survey.currentView !== 'world';
     actors.visible = false;
     celestialGroup.visible = false;
     distantHorizonMesh.visible = false;
@@ -1692,6 +1697,7 @@ function setSurveyMode(active: boolean) {
 }
 function setSurveyView(view: SurveyView) {
   survey.setView(view);
+  if (survey.isActive) world.visible = view !== 'world';
   updateSurveyUI();
 }
 function captureSurvey() {
@@ -1718,6 +1724,8 @@ function captureSurvey() {
 }
 if (surveyBtn) bindAction(surveyBtn, () => setSurveyMode(true));
 if (surveyCloseBtn) bindAction(surveyCloseBtn, () => setSurveyMode(false));
+const surveyWorldBtn = document.querySelector('#surveyWorldBtn') as HTMLButtonElement | null;
+if (surveyWorldBtn) bindAction(surveyWorldBtn, () => setSurveyView('world'));
 if (surveyTerrainBtn) bindAction(surveyTerrainBtn, () => setSurveyView('terrain'));
 if (surveyHydrologyBtn) bindAction(surveyHydrologyBtn, () => setSurveyView('hydrology'));
 if (surveyCaptureBtn) bindAction(surveyCaptureBtn, captureSurvey);
