@@ -104,7 +104,7 @@ export const environmentAssets = {
     const root = new THREE.Group();
     const model = template.clone(true);
     model.scale.setScalar(kind === 'boulder' ? 2.8 : 2.1);
-    model.rotation.y = Math.random() * Math.PI * 2;
+    // Rotation is assigned by the deterministic world builder after placement.
     if (lod > 0) {
       model.traverse(object => {
         if (object instanceof THREE.Mesh) {
