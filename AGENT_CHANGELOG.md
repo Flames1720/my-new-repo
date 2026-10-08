@@ -521,3 +521,11 @@ The previous entry said the final input patch was still building; that build sub
 - physical-device runtime verification of the new volume.
 
 These remain the next coherent migration steps; the existing smooth terrain and hydrology are intentionally preserved until those parts can be switched without breaking the verified mobile experience.
+### 2026-10-08 22:31 +01:00 — GPT-5.6 Luna — visible voxel volume pass
+- Replaced decorative survey cliff strips with a closed voxel-compatible terrain volume: full top surface, exposed internal faces, finite outer walls, and one-meter geological material bands.
+- Added a survey water volume with top, capped bottom, and shoreline side walls driven by the authoritative hydrology fields.
+- World Survey now hides the old gameplay terrain/water sheets while the voxel volume is displayed, so geological depth can be directly inspected.
+- Added gameplay water shoreline depth walls so rivers/lakes occupy visible vertical space at wet/dry boundaries.
+- Connected sparse voxel ground edits to player grounding only for edited columns; untouched terrain keeps the existing smooth heightfield behavior.
+- Vercel preview build verified READY on commit cf867c8f689318c59515d9820c92a3ab461bcaf3 (deployment dpl_2L6FqAAyqkVQhXmbhn5anCiNYzo5).
+- Not merged to main. Physical device runtime still needs verification, and full live voxel remeshing/cave/overhang rendering remains a later milestone.
