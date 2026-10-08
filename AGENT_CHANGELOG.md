@@ -570,3 +570,39 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 - `voxel.ts` and `survey.ts` consume the same world.ts water/terrain API; check that the voxel water volume and survey views still agree with the new shoreline.
 
 **Next agent:** Start from `f06ff1b6ac50107ccf24f618bc6161cb7c6fa47a`. Do not merge to `main` until build, runtime and device checks pass. Keep the invariant that water exists only where the final carved terrain is below the water surface.
+
+
+## 2026-10-09 22:00 +01:00 — GPT-6 Astra
+
+**Scope:** Player character animation wiring and asset-clip inspection.
+
+**Starting point:** `world-drainage-foundation`, after Claude's water visuals work.
+
+**Inspected:**
+- `src/character.ts`: GLTF animation loading, clip-action lookup, locomotion selection, jump/fall/swim fallbacks and emotes.
+- `src/main.ts`: movement velocity/facing and resource-harvest interaction.
+- Parsed the GLB JSON chunk for `public/models/characters/quaternius-animated-human.glb` and confirmed these real clip names: `Human Armature|ArmatureAction.002`, `Human Armature|Death`, `Human Armature|Idle`, `Human Armature|Jump`, `Human Armature|Punch`, `Human Armature|Run`, `Human Armature|Walk`, `Human Armature|Working`.
+
+**Changed:**
+- `src/character.ts`: registers semantic aliases for clips when the loaded asset contains matching names, including idle/walk/run/jump/swim, backward/strafe, crouch, gather, climb, fall and turn. Aliases are optional; unavailable actions continue to fall back to existing locomotion/procedural poses.
+- `src/character.ts`: passes movement intent through the animation controller and selects backward/strafe clips only when the model actually provides them. Falling can use a fall clip while keeping it looping; jump clips remain one-shot.
+- `src/character.ts`: shortened the inspect emote duration to about one second so interaction animations do not hold for the full emote duration.
+- `src/main.ts`: derives movement intent from player velocity relative to character facing, and triggers the inspect/gather animation on resource-harvest hits.
+
+**Verification:**
+- GLB clip inspection: VERIFIED for `quaternius-animated-human.glb`; other GLB assets were not all decoded in this pass.
+- Build/typecheck: NOT RUN at log-entry time.
+- Runtime/browser: NOT VERIFIED.
+- Device: NOT VERIFIED.
+
+**Important findings:**
+- The animated human asset has a real `Working` clip, so resource gathering can reuse an existing animation rather than requiring a new asset.
+- This patch does not create new crouch/climb/strafe animations. Those semantic states use matching clips only when present; otherwise existing safe fallbacks remain.
+
+**Remaining work:**
+- Deploy a preview and confirm TypeScript/Vite build success.
+- Test movement transitions, jumping/falling, and harvesting in the running game, particularly whether the one-second gather animation interrupts movement acceptably.
+- Verify animation clip names in the animated woman and adventurer GLBs separately.
+- Do not merge to `main` until the preview is tested.
+
+**Next agent:** Inspect the preview on a real mobile device and report visual regressions before further animation work.
