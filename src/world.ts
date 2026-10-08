@@ -1285,11 +1285,16 @@ export class WorldModel {
     // with the default world. Non-default WorldModel instances get a stable
     // coordinate offset, making the seed a real world selector rather than a
     // decorative constructor argument.
-    let n = Math.imul(seed | 0, 0x45d9f3b);
-    n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
-    n ^= n >>> 16;
-    this.offsetX = ((n >>> 0) % 2048) - 1024;
-    this.offsetZ = (((Math.imul(n ^ 0x9e3779b9, 0x27d4eb2d) >>> 0) % 2048) - 1024);
+    if (seed === SEED) {
+      this.offsetX = 0;
+      this.offsetZ = 0;
+    } else {
+      let n = Math.imul(seed | 0, 0x45d9f3b);
+      n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
+      n ^= n >>> 16;
+      this.offsetX = ((n >>> 0) % 2048) - 1024;
+      this.offsetZ = (((Math.imul(n ^ 0x9e3779b9, 0x27d4eb2d) >>> 0) % 2048) - 1024);
+    }
   }
 
   private worldX(x: number): number {
