@@ -1759,7 +1759,8 @@ function setSurveyMode(active: boolean) {
     // Survey is the finite world only. The distant horizon is an old extended-terrain
     // background and must not leak a second procedural world outside the boundary.
     distantHorizonMesh.visible = false;
-    cloudDeckGroup.visible = true;
+    // WORLD survey is an inspection/capture mode: the atmospheric cloud deck must not occlude the finite world.
+    cloudDeckGroup.visible = false;
     splashRing.visible = false;
     surveyWasFog = scene.fog;
     scene.fog = null;
