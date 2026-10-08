@@ -139,6 +139,30 @@ Recommended next steps:
 - Add deliberate snow/ice hazards and recovery/death rules only after accidental void/geometry failures are ruled out.
 - Further refine river width/depth from catchment and settlement trade corridors respecting slope contours.
 
+## Voxel / Geological Volume Foundation
+
+Status: IMPLEMENTED & BUILD VERIFIED on `world-drainage-foundation`; physical/device runtime NOT VERIFIED.
+
+Implemented:
+- `src/voxel.ts` adds a deterministic 3D voxel material model over the existing global world fields.
+- Base volume is procedural rather than fully stored; sparse voxel edits are the persistent representation for future digging/building.
+- Layered materials now include grass, topsoil, loam, clay, sand, gravel, weathered rock, stone, granite, shale, bedrock, snow, ice and water.
+- Water can occupy voxel cells above the carved terrain bed, providing the physical-volume model needed for later caves, trenches and excavation.
+- Each streamed chunk owns a `VoxelChunk` handle, while the existing smooth gameplay surface remains the current visual surface for this migration step.
+- WORLD Survey receives a one-time low-resolution vertical geological volume mesh so the finite world has visible depth during lifted/side-on inspection.
+
+Architecture decision:
+- The deterministic geological/hydrological model remains the geographic authority.
+- Voxels are the physical material representation and sparse mutation layer.
+- Do NOT replace the global drainage grid with chunk-local voxel simulation.
+
+Next voxel milestones:
+1. runtime-check the survey volume on the physical phone, especially 90° side view and terrain layers.
+2. add local voxel surface/cut-face remeshing around edits.
+3. switch nearby gameplay ground/collision to voxel truth without sacrificing mobile performance.
+4. add a deliberate DIG interaction and persist edits through `voxelEdits`.
+5. add caves/overhangs and water-volume interaction only after the local voxel renderer/collision is verified.
+
 ## World Survey / Diagnostic Camera
 
 Status: IMPLEMENTED & BUILD VERIFIED on the final code patch; browser/device runtime is NOT VERIFIED.
