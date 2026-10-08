@@ -1004,6 +1004,30 @@ class Chunks {
     }
   }
 
+  surveyAll(active: boolean) {
+    if (active) {
+      const oldRadius = settings.current.chunkRadius;
+      // The survey is deliberately expensive: it asks the normal chunk renderer
+      // to materialize the complete finite world at gameplay-quality LOD0.
+      for (let x = -WORLD_RADIUS; x <= WORLD_RADIUS; x++) {
+        for (let z = -WORLD_RADIUS; z <= WORLD_RADIUS; z++) {
+          const key = this.key(x, z);
+          if (!this.loaded.has(key)) this.build(x, z, 0);
+          else if (this.loaded.get(key)?.userData.lod !== 0) {
+            const old = this.loaded.get(key)!;
+            fauna?.removeChunk(key);
+            this.releaseChunk(old);
+            world.remove(old);
+            this.loaded.delete(key);
+            this.build(x, z, 0);
+          }
+        }
+      }
+      return;
+    }
+    this.stream(player.root.position.x, player.root.position.z);
+  }
+
   rebuildAll() {
     for (const [k, g] of this.loaded) {
       this.releaseChunk(g);
@@ -1669,7 +1693,8 @@ function setSurveyMode(active: boolean) {
     isPhotoMode = false;
     document.body.classList.remove('photo-mode-active', 'photo-clean-mode');
     survey.setActive(true);
-    world.visible = survey.currentView !== 'world';
+    chunks.surveyAll(true);
+    world.visible = true;
     actors.visible = false;
     celestialGroup.visible = false;
     distantHorizonMesh.visible = false;
@@ -1683,6 +1708,7 @@ function setSurveyMode(active: boolean) {
     say('World Survey · drag to pan · wheel/pinch to zoom · tap a place to focus');
   } else {
     survey.setActive(false);
+    chunks.surveyAll(false);
     world.visible = true;
     actors.visible = true;
     celestialGroup.visible = true;
