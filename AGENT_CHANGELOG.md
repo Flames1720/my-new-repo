@@ -470,3 +470,27 @@ The previous entry said the final input patch was still building; that build sub
 - Physical-device/runtime visual verification: PENDING.
 
 **Remaining work:** Test WORLD/TERRAIN/HYDROLOGY on the phone, especially the central basin, steep high-altitude channels, lake islands/peninsulas, shoreline close-ups, and basin-to-ocean outlet. Do not merge to `main` until runtime verification passes.
+
+
+## 2026-10-08 21:xx +01:00 — GPT-5.6 Luna — voxel physical-volume foundation
+
+**Scope:** Move the world from surface-only thinking toward a real volumetric ground model without discarding the deterministic geography/hydrology system.
+
+**Changed:**
+- Added `src/voxel.ts` with a deterministic 3D voxel material layer covering solid ground, underground strata, snow/ice and water volume.
+- Base voxels are procedural; sparse edits are stored as voxel deltas so a future dig/cave system does not require a huge dense 3D array on mobile.
+- Added material layers: grass, topsoil, loam, clay, sand, gravel, weathered rock, stone, granite, shale and bedrock.
+- Added sparse spherical excavation data operation for the future DIG interaction.
+- Chunk objects now own a `VoxelChunk` handle, keeping the voxel physical representation partitioned with the existing chunk system.
+- Saved player state now persists `voxelEdits` for future excavation/building mutations.
+- WORLD Survey now receives a one-time low-resolution stratified vertical geological volume mesh for genuine side-on depth inspection; normal gameplay does not continuously render this extra shell.
+- Existing smooth surface terrain remains the gameplay visual during this migration stage so hydrology, vegetation and current player placement are not simultaneously destabilized.
+
+**Verification:**
+- Vercel build for the integrated voxel-volume commit `097946a3a6e965528e2ba7300b07ddcf90e9aa7b`: READY.
+- Vercel build for the subsequent voxel persistence/edit changes is currently BUILDING at handoff; final READY/ERROR status still pending.
+- Physical-device runtime verification: NOT DONE.
+
+**Architecture consequence:**
+- The project now has an explicit separation between global world truth and physical voxel representation.
+- Do not convert the entire smooth surface to visible blocks until voxel surface meshing, water integration and local collision are runtime-tested on the mobile device.
