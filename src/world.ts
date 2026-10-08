@@ -374,6 +374,10 @@ const hydrologyDirections = [
   { dx: -1, dz: 0 },
   { dx: 0, dz: 1 },
   { dx: 0, dz: -1 },
+  { dx: 1, dz: 1 },
+  { dx: 1, dz: -1 },
+  { dx: -1, dz: 1 },
+  { dx: -1, dz: -1 },
 ];
 
 function hydroIndex(ix: number, iz: number): number {
@@ -470,8 +474,11 @@ function buildHydrology(): HydrologyGrid {
   // actual spill route. Parent links give deterministic routing across flats.
   const visited = new Uint8Array(HYDRO_COUNT);
   const parent = new Int32Array(HYDRO_COUNT);
+  const floodOrder = new Int32Array(HYDRO_COUNT);
+  floodOrder.fill(-1);
   parent.fill(-1);
   const heap = new MinHeap();
+  let nextFloodOrder = 0;
 
   const seedBoundary = (ix: number, iz: number) => {
     const i = hydroIndex(ix, iz);
@@ -494,6 +501,7 @@ function buildHydrology(): HydrologyGrid {
     if (!item) break;
 
     const i = item.index;
+    floodOrder[i] = nextFloodOrder++;
     const ix = i % HYDRO_N;
     const iz = Math.floor(i / HYDRO_N);
 
@@ -528,10 +536,9 @@ function buildHydrology(): HydrologyGrid {
         const ni = hydroIndex(nx, nz);
         const nh = filledElevation[ni];
 
-        if (
-          nh < bestElevation - 0.0001 ||
-          (Math.abs(nh - bestElevation) < 0.0001 && baseElevation[ni] < baseElevation[i])
-        ) {
+        // Only strictly lower conditioned terrain can override the flood-tree
+        // parent. Equal-height flats follow their parent toward an outlet.
+        if (nh < bestElevation - 0.0001) {
           best = ni;
           bestElevation = nh;
         }
@@ -559,6 +566,7 @@ function buildHydrology(): HydrologyGrid {
   const order = Array.from({ length: HYDRO_COUNT }, (_, i) => i);
   order.sort((a, b) =>
     filledElevation[b] - filledElevation[a] ||
+    floodOrder[b] - floodOrder[a] ||
     baseElevation[b] - baseElevation[a] ||
     a - b
   );
@@ -697,6 +705,85 @@ function buildHydrology(): HydrologyGrid {
 }
 
 let hydrologyCache: HydrologyGrid | null = null;
+
+export interface HydrologyDiagnostics {
+  cells: number;
+  oceanCells: number;
+  lakeCells: number;
+  channelCells: number;
+  springCells: number;
+  streamCells: number;
+  riverCells: number;
+  terminalCells: number;
+  cycleCount: number;
+  maxFlowAccumulation: number;
+}
+
+export function getHydrologyDiagnostics(): HydrologyDiagnostics {
+  const grid = hydrologyGrid();
+  let oceanCells = 0;
+  let lakeCells = 0;
+  let channelCells = 0;
+  let springCells = 0;
+  let streamCells = 0;
+  let riverCells = 0;
+  let terminalCells = 0;
+  let maxFlowAccumulation = 0;
+
+  for (let i = 0; i < HYDRO_COUNT; i++) {
+    const a = grid.flowAccumulation[i];
+    maxFlowAccumulation = Math.max(maxFlowAccumulation, a);
+    if (grid.oceanMask[i]) oceanCells++;
+    if (grid.lakeMask[i]) lakeCells++;
+    if (grid.channelStrength[i] > 0.03 && !grid.oceanMask[i] && !grid.lakeMask[i]) {
+      channelCells++;
+      if (a < STREAM_RUNOFF_THRESHOLD || grid.flowDrop[i] > 2.2) springCells++;
+      else if (a < RIVER_RUNOFF_THRESHOLD && grid.channelStrength[i] <= 0.58) streamCells++;
+      else riverCells++;
+    }
+    if (grid.flowTo[i] < 0) terminalCells++;
+  }
+
+  // Every drainage cell has one outgoing edge; count directed cycles explicitly.
+  // Valid watersheds terminate at the simulation boundary or an outlet.
+  const state = new Uint8Array(HYDRO_COUNT);
+  let cycleCount = 0;
+
+  for (let start = 0; start < HYDRO_COUNT; start++) {
+    if (state[start] === 2) continue;
+
+    let current = start;
+    const path: number[] = [];
+    const local = new Map<number, number>();
+
+    while (current >= 0 && state[current] !== 2) {
+      const seenAt = local.get(current);
+      if (seenAt !== undefined) {
+        cycleCount++;
+        break;
+      }
+      local.set(current, path.length);
+      path.push(current);
+      state[current] = 1;
+      current = grid.flowTo[current];
+    }
+
+    for (const i of path) state[i] = 2;
+  }
+
+  return {
+    cells: HYDRO_COUNT,
+    oceanCells,
+    lakeCells,
+    channelCells,
+    springCells,
+    streamCells,
+    riverCells,
+    terminalCells,
+    cycleCount,
+    maxFlowAccumulation,
+  };
+}
 
 function hydrologyGrid(): HydrologyGrid {
   if (!hydrologyCache) hydrologyCache = buildHydrology();
