@@ -707,7 +707,7 @@ export class PlayerCharacter {
       : name === 'strafe-left' ? ['strafe-left', 'strafe left', 'sidestep left', 'left strafe', 'walk']
       : name === 'strafe-right' ? ['strafe-right', 'strafe right', 'sidestep right', 'right strafe', 'walk']
       : name === 'jump' ? ['jump', 'jumping', 'idle_neutral', 'idle', 'walk', 'run']
-      : name === 'fall' ? ['fall', 'falling', 'freefall', 'jump', 'idle', 'walk']
+      : name === 'fall' ? ['fall', 'falling', 'freefall', 'idle', 'walk']
       : name === 'swim' ? ['swim', 'swimming', 'idle_neutral', 'idle', 'walk']
       : name === 'crouch' ? ['crouch', 'sneak', 'idle']
       : name === 'gather' ? ['gather', 'harvest', 'chop', 'mine', 'interact', 'working', 'inspect', 'idle']
