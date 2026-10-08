@@ -277,3 +277,34 @@ This is the chronological handoff record for meaningful AI-agent work. It comple
 **Remaining work:** Run the latest branch in a real browser/device and inspect ocean, deep lake, high alpine stream, waterfall, spring, chunk boundaries and the previously reported mountain-gap location. Accidental holes/voids must remain distinct from intentional snow/ice/water hazards.
 
 **Next agent:** Continue from local `waterSurfaceAt()`, `flowDrop`, `flowAccumulation`, snow/ice fields and terrain/water collision continuity. Do not restore global-sea-level river carving or hand-authored river splines.
+
+
+## 2026-10-08 17:XX +01:00 — GPT-5.6 Luna
+
+**Scope:** Independent World Survey diagnostic camera and stripped world-debug views.
+
+**Starting point:** `world-drainage-foundation` after the integrated environmental water/snow work.
+
+**Inspected:** `PROJECT_PLAN.md`, `AGENT_CHANGELOG.md`, `ARCHITECTURE.md`, `src/main.ts`, `src/world.ts`, `src/terrain.ts`, `index.html`, `src/style.css`, and current branch comparison against `main`.
+
+**Changed:**
+- Added `src/survey.ts` with an independent camera and authoritative world survey renderer.
+- Added a stripped **ROCK + WATER / TERRAIN** diagnostic view that removes gameplay decoration and exposes topology.
+- Added a stripped **HYDROLOGY / WATER TRUTH** view with authoritative water surfaces and downstream flow arrows.
+- Added whole-world overview, pan, zoom, tap-to-focus and mobile pinch navigation.
+- Added 1920×1080, 2560×1440 and 3840×2160 survey PNG capture using a dedicated WebGL render target.
+- Added survey UI and kept normal TPP/FPP camera independent.
+- Survey geometry samples the authoritative world functions directly; it does not derive geography from streamed chunks.
+
+**Verification:**
+- Build: PASS on commit `aef13d26fe2b148d90192c1655c29cecfda91ed3` via Vercel READY deployment.
+- Latest final-input patch commit: `5a08105951515e3aa77398f7b32edc917f85c25f`; its Vercel Git deployment was BUILDING when this entry was written, so final build is NOT YET VERIFIED.
+- Runtime/browser: NOT VERIFIED.
+- Device: NOT VERIFIED.
+- Vercel protected deployment could not be fetched through the authentication bypass, so visual runtime inspection was not performed.
+
+**Important findings:** The survey view is intentionally a diagnostic representation of world truth, not another decorative game renderer. This makes topology/water analysis independent of vegetation, buildings, wildlife, weather, player camera and chunk decoration.
+
+**Remaining work:** Test on browser/device. Specifically inspect whole-world framing, mountain topology, narrow rivers, inland lakes/springs, high-altitude water, chunk/problem areas and 3840px capture. Then consider a second diagnostic pass that compares expected hydrology against actually rendered water geometry.
+
+**Next agent:** Read the three coordination documents before changing survey/world architecture. Do not merge to `main` until final build and runtime/device behavior are verified.
