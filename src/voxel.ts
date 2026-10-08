@@ -332,14 +332,39 @@ function addStratifiedVerticalFace(
   const y1 = Math.min(VOXEL_MAX_Y + 1, highHeight);
   if (y1 - y0 <= 0.05) return;
 
-  // Split long exposed faces into material bands so a side-on survey can
-  // actually see topsoil/loam/clay/rock rather than one uniform wall.
+  // Fast material classification for the survey shell. The detailed voxel
+  // query is reserved for actual editable chunks; survey geometry should not
+  // repeatedly invoke the full hydrology sampler for every vertical strip.
+  const terrainY = highHeight;
+  const mountain = mountainMaskAt(topX, topZ);
+  const snow = snowDepthAt(topX, topZ);
+  const water = waterDepthAt(topX, topZ) > 0.02;
+
   let cursor = y0;
   const maxBandHeight = 4;
   while (cursor < y1 - 0.01) {
     const next = Math.min(y1, cursor + maxBandHeight);
-    const materialY = Math.min(highHeight - 0.01, (cursor + next) * 0.5);
-    const materialId = baseMaterialAt(topX, Math.floor(materialY), topZ);
+    const materialY = Math.min(terrainY - 0.01, (cursor + next) * 0.5);
+    const depthFromSurface = terrainY - materialY;
+
+    let materialId: VoxelMaterial;
+    if (materialY <= VOXEL_MIN_Y + 0.01) {
+      materialId = VoxelMaterial.BEDROCK;
+    } else if (depthFromSurface <= 1) {
+      materialId = water ? VoxelMaterial.GRAVEL : (snow > 0.45 ? VoxelMaterial.SNOW : VoxelMaterial.GRASS);
+    } else if (depthFromSurface <= 3) {
+      materialId = water ? VoxelMaterial.SAND : VoxelMaterial.LOAM;
+    } else if (depthFromSurface <= 7) {
+      materialId = VoxelMaterial.CLAY;
+    } else if (depthFromSurface <= 15) {
+      materialId = mountain > 0.55 ? VoxelMaterial.GRANITE : VoxelMaterial.WEATHERED_ROCK;
+    } else if (mountain > 0.7) {
+      materialId = VoxelMaterial.GRANITE;
+    } else if (mountain > 0.35) {
+      materialId = VoxelMaterial.SHALE;
+    } else {
+      materialId = VoxelMaterial.STONE;
+    }
 
     if (axis === 'x') {
       const z0 = topZ;
@@ -370,7 +395,6 @@ function addStratifiedVerticalFace(
     cursor = next;
   }
 }
-
 /**
  * Build a low-resolution but genuinely volumetric geological shell.
  *
