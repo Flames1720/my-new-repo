@@ -494,15 +494,15 @@ export class PlayerCharacter {
           });
           if (entry) this.modelActions.set(alias, entry[1]);
         };
-        aliasFromClip('idle', [/^idle(?:$|[ _-])/, /idle neutral/, /standing idle/], [/walk/, /run/, /turn/]);
-        aliasFromClip('walk', [/^walk(?:$|[ _-])/, /walk forward/, /walking/], [/backward/, /strafe/, /run/]);
-        aliasFromClip('run', [/^run(?:$|[ _-])/, /jog forward/, /running/], [/backward/, /strafe/]);
+        aliasFromClip('idle', [/(?:^|[| _-])idle(?:$|[ ._-])/, /idle neutral/, /standing idle/], [/walk/, /run/, /turn/]);
+        aliasFromClip('walk', [/(?:^|[| _-])walk(?:$|[ ._-])/, /walk forward/, /walking/], [/backward/, /strafe/, /run/]);
+        aliasFromClip('run', [/(?:^|[| _-])run(?:$|[ ._-])/, /jog forward/, /running/], [/backward/, /strafe/]);
         aliasFromClip('backward', [/backward/, /walk back/, /run back/, /reverse walk/]);
         aliasFromClip('strafe-left', [/strafe left/, /sidestep left/, /left strafe/]);
         aliasFromClip('strafe-right', [/strafe right/, /sidestep right/, /right strafe/]);
-        aliasFromClip('jump', [/^jump(?:$|[ _-])/, /jumping/], [/jump attack/]);
+        aliasFromClip('jump', [/(?:^|[| _-])jump(?:$|[ ._-])/, /jumping/], [/jump attack/]);
         aliasFromClip('fall', [/falling/, /^fall(?:$|[ _-])/, /freefall/]);
-        aliasFromClip('swim', [/^swim(?:$|[ _-])/, /swimming/]);
+        aliasFromClip('swim', [/(?:^|[| _-])swim(?:$|[ ._-])/, /swimming/]);
         aliasFromClip('crouch', [/crouch/, /sneak/]);
         aliasFromClip('gather', [/gather/, /harvest/, /chop/, /mine/, /interact/, /working/]);
         aliasFromClip('climb', [/climb/]);
@@ -726,7 +726,7 @@ export class PlayerCharacter {
     }
     if (!next) return;
 
-    const isJumpClip = (name === 'jump' || name === 'fall') && /^(jump|fall)/.test(matched);
+    const isOneShotClip = name === 'jump' && /^(jump|jumping)/.test(matched);
     const freezeForIdle = name === 'idle' && !matched.startsWith('idle');
     const timeScale = name === 'run' ? 1.12
       : name === 'walk' ? (matched === 'run' ? 0.66 : matched === 'jog forward' ? 0.72 : 0.82)
@@ -741,8 +741,8 @@ export class PlayerCharacter {
       next.paused = false;
       next.setEffectiveWeight(1);
       next.setEffectiveTimeScale(timeScale);
-      next.setLoop(isJumpClip ? THREE.LoopOnce : THREE.LoopRepeat, isJumpClip ? 1 : Infinity);
-      next.clampWhenFinished = isJumpClip;
+      next.setLoop(isOneShotClip ? THREE.LoopOnce : THREE.LoopRepeat, isOneShotClip ? 1 : Infinity);
+      next.clampWhenFinished = isOneShotClip;
       next.play();
 
       if (this.activeModelAction) {
@@ -752,8 +752,8 @@ export class PlayerCharacter {
     } else {
       next.setEffectiveTimeScale(timeScale);
       next.setEffectiveWeight(1);
-      next.setLoop(isJumpClip ? THREE.LoopOnce : THREE.LoopRepeat, isJumpClip ? 1 : Infinity);
-      next.clampWhenFinished = isJumpClip;
+      next.setLoop(isOneShotClip ? THREE.LoopOnce : THREE.LoopRepeat, isOneShotClip ? 1 : Infinity);
+      next.clampWhenFinished = isOneShotClip;
     }
 
     // Use real idle clips where present. If a model only provides locomotion,
@@ -808,7 +808,7 @@ export class PlayerCharacter {
 
     if (this.currentEmote !== 'none') {
       this.emoteTime += dt;
-      if (this.emoteTime <= 4.5) {
+      if (this.emoteTime <= (this.currentEmote === 'inspect' ? 1.05 : 4.5)) {
         this.playModelAnimation('emote', 0.16);
         return;
       }
