@@ -1160,6 +1160,60 @@ body.survey-active #upgradeOverlay {
   display: none !important;
 }
 
+#surveyLoading {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: none;
+  place-items: center;
+  background: #060a0fe8;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+#surveyLoading.show {
+  display: grid;
+}
+.surveyLoadingCard {
+  width: min(360px, calc(100vw - 44px));
+  box-sizing: border-box;
+  padding: 24px 22px 20px;
+  border: 1px solid #38bdf855;
+  border-radius: 22px;
+  background: #0b1119f5;
+  box-shadow: 0 18px 60px #000b, 0 0 35px #0ea5e922;
+  text-align: center;
+}
+.surveyLoadingIcon {
+  font-size: 34px;
+  margin-bottom: 8px;
+}
+#surveyLoadingStage {
+  color: #e0f2fe;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+.surveyLoadingSub {
+  margin-top: 7px;
+  color: #94a3b8;
+  font-size: 10px;
+}
+.surveyLoadingTrack {
+  height: 6px;
+  margin-top: 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #ffffff14;
+}
+#surveyLoadingBar {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+  transition: width .12s ease;
+}
+
 #surveyOverlay {
   position: fixed;
   inset: 0;
