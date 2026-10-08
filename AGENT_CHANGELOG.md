@@ -320,3 +320,51 @@ This is the chronological handoff record for meaningful AI-agent work. It comple
 - Device: NOT VERIFIED.
 
 The previous entry said the final input patch was still building; that build subsequently completed successfully. The later documentation-only commits do not change application code.
+
+## 2026-10-08 18:53 +01:00 — GPT-5.6 Luna
+
+**Scope:** Visual-review-driven water/terrain correctness pass and World Survey correction.
+
+**Starting point:** `world-drainage-foundation`, after the AI visual review identified blocky water, water/terrain mismatch, green-over-water risk, and an incorrect WORLD survey representation.
+
+**Inspected:** `PROJECT_PLAN.md`, `AGENT_CHANGELOG.md`, `ARCHITECTURE.md`, `src/world.ts`, `src/main.ts`, `src/terrain.ts`, `src/survey.ts`, `index.html`, current Vercel deployments, and a sandbox checkout of the branch.
+
+**Changed:**
+- `src/world.ts`
+  - Added authoritative hydrology water depth/bed/presence fields.
+  - Made terrain carving consume the same water surface/depth relationship used by water queries.
+  - Prevented channel water surfaces from interpolating across steep local terrain discontinuities; channel surfaces follow the continuous local terrain field.
+  - Prevented inland water depth from exceeding the playable terrain-floor clearance.
+  - Restored the water/snow/ice helper exports after an intermediate refactor accidentally removed them.
+- `src/main.ts`
+  - Added a per-vertex authoritative water-depth mask to terrain rendering.
+  - Suppressed terrain micro-displacement inside wet beds so GPU displacement cannot lift ground back through water.
+  - Added shoreline clamping so dry bank vertices cannot be lifted above their local terrain by neighboring wet surfaces.
+  - Corrected WORLD survey visibility so the actual full gameplay world is rendered in WORLD mode.
+  - Removed an unused survey radius local and corrected the survey gesture help text.
+- `src/survey.ts`
+  - Increased stripped TERRAIN/HYDROLOGY diagnostic sampling from 128 to 256 to reduce coarse survey-edge artifacts.
+- `index.html`
+  - Updated survey gesture hint to match orbit + two-finger pan/zoom behavior.
+
+**Verification:**
+- Build: PASS. Latest Vercel deployment `dpl_532jfodevAay4wAqdV9heQaSpqcj` for commit `0c2fcfdf248c92639e18009ee3d40fda93ea0523` is READY.
+- Typecheck: PASS via `tsc` in the Vercel sandbox after syncing the current branch.
+- World-field probe: PASS for the key safety invariant that sampled wet points never had water surface below terrain by more than the tolerance; the remaining reported maximum discrepancy was attributable to the explicit terrain floor/field-depth convention rather than water floating above land.
+- Hydrology topology probe: PASS; 25,921 cells, 0 directed cycles, 4,894 ocean cells, 1,740 lake cells, 5,982 channel cells, 14 terminal cells, max accumulation ~52,349.
+- Browser/runtime: NOT VERIFIED by direct interactive device testing.
+- Device: NOT VERIFIED.
+
+**Important findings:**
+- The visual reviewer was correct that the important failure was water/terrain alignment, but its 128x128 suspicion referred to the stripped survey diagnostic mesh; runtime LOD0 water remains much finer and was not globally 128x128.
+- A concrete source of apparent floating/high water was interpolation of neighboring hydrology surface elevations across terrain discontinuities. Channel water now follows the continuous local terrain field.
+- Terrain GPU mountain displacement could also recreate apparent green/rock over water even after CPU carving; wet vertices are now protected from both mountain and river micro-displacement.
+- WORLD survey now uses the actual gameplay scene with the finite world materialized at LOD0; TERRAIN/HYDROLOGY remain stripped diagnostic views.
+
+**Remaining work:**
+- Interactive browser/device verification of WORLD, TERRAIN and HYDROLOGY views.
+- Specifically inspect the central basin, basin outlet toward ocean, high-altitude streams/waterfalls, spring pools, the previously reported narrow mountain gap, and close shoreline views.
+- Confirm whether the revised water boundary still looks cellular at gameplay close range; if so, the next pass should improve channel-width/shoreline morphology rather than replacing the causal drainage system.
+- Do not merge to `main` until runtime/device verification is complete.
+
+**Next agent:** Start from commit `0c2fcfdf248c92639e18009ee3d40fda93ea0523` on `world-drainage-foundation`; do not reintroduce hand-authored river splines or make chunks authoritative for geography.
