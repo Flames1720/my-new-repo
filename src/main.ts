@@ -233,14 +233,17 @@ function buildRock(kind: ResourceKind, lod: number): THREE.Group {
   return g;
 }
 // --- SHADERS & WATER ---
+// Water reads as a volume, not a sheet: transparency and colour are driven by
+// the real per-vertex water depth (aDepth), so shallows show the bed, deep
+// water darkens, and the shoreline fades to foam instead of ending in a hard edge.
 const waterMaterial = new THREE.MeshStandardMaterial({
   color: 0xffffff,
   vertexColors: true,
   transparent: true,
-  opacity: 0.92,
-  roughness: 0.14,
+  opacity: 1,
+  roughness: 0.08,
   metalness: 0.08,
-  depthWrite: true,
+  depthWrite: false,
   side: THREE.DoubleSide,
 });
 
@@ -272,26 +275,88 @@ let waterShader: {
   };
 } | null = null;
 
+// x/z = player world position, z component of the vector = wake strength (0 when dry).
+// Shared by reference with the water shader so update() only mutates it.
+const waterWake = new THREE.Vector3(0, 0, 0);
+
 waterMaterial.onBeforeCompile = shader => {
   shader.uniforms.uTime = { value: 0 };
   shader.uniforms.uWaveHeight = { value: 0.04 };
   shader.uniforms.uWindDir = { value: new THREE.Vector2(0.7071, -0.7071) };
+  shader.uniforms.uPlayer = { value: waterWake };
   shader.vertexShader = `
     uniform float uTime;
     uniform float uWaveHeight;
     uniform vec2 uWindDir;
+    attribute float aDepth;
+    attribute vec2 aFlow;
+    varying float vDepth;
+    varying vec2 vFlow;
+    varying vec3 vWorldPos;
   ` + shader.vertexShader;
   shader.vertexShader = shader.vertexShader.replace(
     '#include <begin_vertex>',
     `#include <begin_vertex>
     vec4 ripplePos = modelMatrix * vec4(transformed, 1.0);
-    // Shoreline damping: foam/shoreline vertices (whiter color) stay anchored to the beach and do not lift off the sand
-    float shoreDamping = clamp(color.b * 1.6 - color.r * 0.6, 0.0, 1.0);
+    vDepth = aDepth;
+    vFlow = aFlow;
+    // Swell fades out toward the shore (by real depth) so the waterline stays
+    // anchored to the bank instead of lifting off it.
+    float shoreDamping = smoothstep(0.08, 0.7, aDepth);
     float windDot = dot(ripplePos.xz, uWindDir);
-    float wave1 = sin(windDot * 0.55 + uTime * 2.2) * uWaveHeight;
-    float wave2 = cos(ripplePos.x * 0.75 + ripplePos.z * 0.35 - uTime * 1.3) * (uWaveHeight * 0.45);
+    float wave1 = sin(windDot * 0.55 + uTime * 1.3) * uWaveHeight;
+    float wave2 = cos(ripplePos.x * 0.75 + ripplePos.z * 0.35 - uTime * 0.85) * (uWaveHeight * 0.45);
     float wave = (wave1 + wave2) * shoreDamping;
-    transformed.y += wave;`
+    transformed.y += wave;
+    vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+  );
+
+  shader.fragmentShader = `
+    uniform float uTime;
+    uniform float uWaveHeight;
+    uniform vec3 uPlayer;
+    varying float vDepth;
+    varying vec2 vFlow;
+    varying vec3 vWorldPos;
+  ` + shader.fragmentShader;
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <normal_fragment_maps>',
+    `#include <normal_fragment_maps>
+    // Flow-advected ripple normals: glints and motion without moving the geometry.
+    vec2 wp = vWorldPos.xz - vFlow * uTime * 0.5;
+    float ph1 = wp.x * 1.9 + wp.y * 1.3 + uTime * 0.9;
+    float ph2 = wp.x * 3.7 - wp.y * 2.9 - uTime * 1.4;
+    vec2 rip = vec2(
+      cos(ph1) * 1.9 + cos(ph2) * 3.7,
+      cos(ph1) * 1.3 - cos(ph2) * 2.9
+    );
+    rip *= 0.010 * (0.6 + uWaveHeight * 8.0);
+
+    // Player wake: expanding rings around whoever is wading or swimming.
+    vec2 pd = vWorldPos.xz - uPlayer.xy;
+    float pr = length(pd);
+    float wake = sin(pr * 9.0 - uTime * 6.0) * exp(-pr * 0.8) * uPlayer.z;
+    rip += (pd / max(pr, 0.001)) * wake * 0.25;
+
+    rip *= smoothstep(0.02, 0.3, vDepth);
+    normal = normalize(normal + (viewMatrix * vec4(rip.x, 0.0, rip.y, 0.0)).xyz);
+
+    // Fresnel: grazing views reflect more, looking straight down shows the bed.
+    float fres = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0);
+
+    // Shore foam + white water in fast flow.
+    float edge = 1.0 - smoothstep(0.0, 0.30, vDepth);
+    float breakup = 0.5 + 0.5 * sin(wp.x * 5.3 + uTime * 1.1) * sin(wp.y * 4.7 - uTime * 0.9);
+    float rapids = clamp((length(vFlow) - 1.8) * 0.35, 0.0, 0.6);
+    float foam = clamp(edge * (0.45 + 0.55 * breakup) + rapids * breakup * 0.7, 0.0, 1.0);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.94, 0.98, 1.0), foam * 0.85);
+
+    // Depth-driven transparency: clear shallows, dense deep water, soft shoreline.
+    float body = mix(0.30, 0.93, smoothstep(0.0, 1.8, vDepth));
+    float alpha = clamp(body + fres * 0.45, 0.0, 0.97);
+    alpha *= smoothstep(0.0, 0.07, vDepth);
+    alpha = max(alpha, foam * 0.8 * smoothstep(0.0, 0.03, vDepth));
+    diffuseColor.a = alpha;`
   );
   waterShader = shader as any;
 };
@@ -311,6 +376,8 @@ terrainMaterial.onBeforeCompile = shader => {
     uniform float uTime;
     uniform float uDispScale;
     attribute float aWaterMask;
+    attribute float aWaterDepth;
+    varying float vBedDepth;
   ` + shader.vertexShader;
 
   shader.vertexShader = shader.vertexShader.replace(
@@ -334,7 +401,22 @@ terrainMaterial.onBeforeCompile = shader => {
     riverDisp *= 1.0 - smoothstep(0.0, 0.42, aWaterMask);
 
     transformed.y += (mtnDisp + riverDisp) * uDispScale;
+    vBedDepth = aWaterDepth;
     `
+  );
+
+  // Light absorption: the submerged bed turns teal and darkens with depth,
+  // which is what makes the water above it read as a body with thickness.
+  shader.fragmentShader = `
+    varying float vBedDepth;
+  ` + shader.fragmentShader;
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <color_fragment>',
+    `#include <color_fragment>
+    float bedWet = smoothstep(0.0, 0.25, vBedDepth);
+    float bedAbsorb = smoothstep(0.0, 2.2, vBedDepth);
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.38, 0.72, 0.78), bedWet * 0.55);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.17, 0.22), bedAbsorb * 0.65);`
   );
   terrainShader = shader as any;
 };
@@ -704,6 +786,7 @@ class Chunks {
     const pos = terrain.getAttribute('position');
     const colors = new Float32Array(pos.count * 3);
     const waterMasks = new Float32Array(pos.count);
+    const terrainWaterDepths = new Float32Array(pos.count);
     const chunkBiome = biomeAt(cx * SIZE + SIZE / 2, cz * SIZE + SIZE / 2);
 
     for (let i = 0; i < pos.count; i++) {
@@ -711,7 +794,9 @@ class Chunks {
       const lz = pos.getZ(i) + cz * SIZE + SIZE / 2;
       const h = terrainHeightAt(lx, lz);
       pos.setY(i, h);
-      waterMasks[i] = clamp(waterDepthAt(lx, lz) / 0.42, 0, 1);
+      const wetDepth = waterDepthAt(lx, lz);
+      waterMasks[i] = clamp(wetDepth / 0.42, 0, 1);
+      terrainWaterDepths[i] = wetDepth;
       const c = terrainColorAt(h, lx, lz, chunkBiome);
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
@@ -719,6 +804,7 @@ class Chunks {
     }
     terrain.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     terrain.setAttribute('aWaterMask', new THREE.BufferAttribute(waterMasks, 1));
+    terrain.setAttribute('aWaterDepth', new THREE.BufferAttribute(terrainWaterDepths, 1));
     terrain.computeVertexNormals();
 
     const ground = new THREE.Mesh(terrain, terrainMaterial);
@@ -776,6 +862,8 @@ class Chunks {
     const waterGrid = segs;
     const step = SIZE / waterGrid;
     const waterPositions: number[] = [], waterColors: number[] = [], waterIndices: number[] = [];
+    // Per-vertex real water depth and surface flow (m/s), consumed by the water shader.
+    const waterDepthAttr: number[] = [], waterFlowAttr: number[] = [];
 
     const deepNavy = new THREE.Color(0x0e2b47);
     const emeraldMid = new THREE.Color(0x23757a);
@@ -807,9 +895,15 @@ class Chunks {
           const surfaceY = waterSurfaceAt(wx, wz);
           waterPositions.push(ix * step, surfaceY, iz * step);
 
+          waterDepthAttr.push(depth);
+          const flow = waterFlowAt(wx, wz);
+          waterFlowAttr.push(flow.flowVector.x * flow.flowSpeed, flow.flowVector.y * flow.flowSpeed);
+
+          // Base tint by depth. White shoreline foam is added in the shader
+          // (animated, depth-driven), so shallows here stay a clear turquoise.
           const c = new THREE.Color();
           if (depth < 0.45) {
-            c.copy(shorelineFoam).lerp(turquoiseShallow, depth / 0.45);
+            c.copy(turquoiseShallow).lerp(shorelineFoam, (1 - depth / 0.45) * 0.3);
           } else if (depth < 1.1) {
             c.copy(turquoiseShallow).lerp(emeraldMid, (depth - 0.45) / 0.65);
           } else {
@@ -850,6 +944,8 @@ class Chunks {
       const geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.Float32BufferAttribute(waterPositions, 3));
       geom.setAttribute('color', new THREE.Float32BufferAttribute(waterColors, 3));
+      geom.setAttribute('aDepth', new THREE.Float32BufferAttribute(waterDepthAttr, 1));
+      geom.setAttribute('aFlow', new THREE.Float32BufferAttribute(waterFlowAttr, 2));
       geom.setIndex(waterIndices);
       geom.computeVertexNormals();
       const waterMesh = new THREE.Mesh(geom, waterMaterial);
@@ -2434,6 +2530,10 @@ function update(dt: number) {
   const wDepth = worldFields.waterDepth;
   player.swimming = wDepth > 0.65;
   const isWading = wDepth > 0.05 && !player.swimming;
+
+  // Water wake: rings spread from the player while wading or swimming, stronger when moving.
+  const wakeSpeed = Math.hypot(player.velocity.x, player.velocity.z);
+  waterWake.set(p.x, p.z, wDepth > 0.05 ? clamp(0.25 + wakeSpeed * 0.25, 0, 1.2) : 0);
 
   // Slope resistance & downhill agility
   const slope = worldFields.slope;
