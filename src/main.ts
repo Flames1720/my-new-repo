@@ -278,6 +278,7 @@ terrainMaterial.onBeforeCompile = shader => {
   shader.vertexShader = `
     uniform float uTime;
     uniform float uDispScale;
+    attribute float aWaterMask;
   ` + shader.vertexShader;
 
   shader.vertexShader = shader.vertexShader.replace(
