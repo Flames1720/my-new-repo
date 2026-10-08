@@ -1099,6 +1099,9 @@ addEventListener('keyup', e => {
 
 // Look drag with Independent X / Y Sensitivities
 let pointer: number | null = null, lastX = 0, lastY = 0;
+const surveyPointers = new Map<number, { x: number; y: number }>();
+let surveyPinchDistance = 0;
+let surveyMoved = false;
 const gameDom = renderer.domElement;
 
 function onLookMove(clientX: number, clientY: number) {
@@ -1122,18 +1125,54 @@ function onLookMove(clientX: number, clientY: number) {
 }
 
 gameDom.addEventListener('pointerdown', e => {
-  // If clicked directly on the 3D canvas (desktop)
+  if (survey.isActive) {
+    surveyPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    surveyMoved = false;
+    if (surveyPointers.size === 2) {
+      const [a, b] = [...surveyPointers.values()];
+      surveyPinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+    }
+    gameDom.setPointerCapture(e.pointerId);
+    return;
+  }
   pointer = e.pointerId;
   lastX = e.clientX;
   lastY = e.clientY;
   gameDom.setPointerCapture(e.pointerId);
 });
 gameDom.addEventListener('pointermove', e => {
+  if (survey.isActive) {
+    const existing = surveyPointers.get(e.pointerId);
+    if (!existing) return;
+    const dx = e.clientX - existing.x;
+    const dy = e.clientY - existing.y;
+    existing.x = e.clientX;
+    existing.y = e.clientY;
+    if (surveyPointers.size >= 2) {
+      const [a, b] = [...surveyPointers.values()];
+      const nextDistance = Math.hypot(a.x - b.x, a.y - b.y);
+      if (surveyPinchDistance > 0) survey.zoom(surveyPinchDistance - nextDistance);
+      surveyPinchDistance = nextDistance;
+    } else {
+      if (Math.hypot(dx, dy) > 4) surveyMoved = true;
+      survey.pan(dx, dy);
+    }
+    return;
+  }
   if (pointer !== e.pointerId) return;
   onLookMove(e.clientX, e.clientY);
 });
-gameDom.addEventListener('pointerup', () => (pointer = null));
-gameDom.addEventListener('pointercancel', () => (pointer = null));
+const endSurveyPointer = (e: PointerEvent) => {
+  if (!survey.isActive) return;
+  if (!surveyMoved && surveyPointers.size === 1) {
+    survey.focusScreen(e.clientX, e.clientY, gameDom.getBoundingClientRect());
+  }
+  surveyPointers.delete(e.pointerId);
+  if (surveyPointers.size < 2) surveyPinchDistance = 0;
+  pointer = null;
+};
+gameDom.addEventListener('pointerup', endSurveyPointer);
+gameDom.addEventListener('pointercancel', endSurveyPointer);
 
 gameDom.addEventListener('wheel', e => {
   e.preventDefault();
