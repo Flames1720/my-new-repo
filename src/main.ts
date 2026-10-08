@@ -721,8 +721,11 @@ class Chunks {
     const turquoiseShallow = new THREE.Color(0x56b8ad);
     const shorelineFoam = new THREE.Color(0xf4f9fa);
 
-    // Build grid vertices for wet cells and shoreline boundary
+    // Build grid vertices for wet cells and a one-cell shoreline skirt.
+    // Triangle inclusion below still uses the authoritative wet mask, so a
+    // dry island cannot become covered by a bridge of water triangles.
     const vertIndex = new Int32Array((waterGrid + 1) * (waterGrid + 1)).fill(-1);
+    const wetVertex = new Uint8Array((waterGrid + 1) * (waterGrid + 1));
     let nextIdx = 0;
 
     for (let iz = 0; iz <= waterGrid; iz++) {
