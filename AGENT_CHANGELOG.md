@@ -529,3 +529,44 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 - Connected sparse voxel ground edits to player grounding only for edited columns; untouched terrain keeps the existing smooth heightfield behavior.
 - Vercel preview build verified READY on commit cf867c8f689318c59515d9820c92a3ab461bcaf3 (deployment dpl_2L6FqAAyqkVQhXmbhn5anCiNYzo5).
 - Not merged to main. Physical device runtime still needs verification, and full live voxel remeshing/cave/overhang rendering remains a later milestone.
+
+## 2026-10-09 00:19 +01:00 — Claude / Claude Sonnet 5.5
+
+**Scope:** Floating water / terrain height mismatch: root-cause investigation and fix in the hydrology/terrain query layer.
+
+**Starting point:** `world-drainage-foundation` at `4d8b98480b367abdfd3dfb49525eab517c62353b`.
+
+**Inspected:** `src/world.ts`, `src/terrain.ts`, `src/main.ts` (terrain/water mesh generation, LOD segment counts, swimming/ground collision), and this file (read AFTER the fix was pushed; see process note below). NOT inspected: `src/voxel.ts`, `src/survey.ts`, `ARCHITECTURE.md`, `PROJECT_PLAN.md`.
+
+**Changed:** `src/world.ts` only, commit `f06ff1b6ac50107ccf24f618bc6161cb7c6fa47a`.
+- Added `waterColumnAt()` (pure hydrology lookup: surface, full bed depth, shore weight, ocean flag; never calls `terrainHeightAt`), `shoreWeight()`, `wetNode()` and `SHORE_EPS = 0.08`.
+- `hydrologyCarveAt()` now scales the carve by the shore weight (0 at the nearest-cell wet-footprint edge, 1 in the core), so banks slope instead of dropping a full `depth` at the cell boundary.
+- `waterDepthAt()` for lakes/channels is now `surface - terrainHeightAt - SHORE_EPS`, i.e. measured against the same carved terrain used by meshes, colouring and collision. Ocean branch unchanged.
+- `waterSurfaceAt()` now delegates to `waterColumnAt()` with the same values as before.
+- `buildHydrology()`: after the lake component loop, lakes are grown to every connected cell sharing the spill level (`filled - base > 0.02`, `|filled difference| <= 0.01`), so shallow rim cells are no longer left dry below the lake surface.
+- `src/main.ts` NOT changed.
+
+**Verification:**
+- Build: NOT VERIFIED at time of writing. Vercel deployment `dpl_Aczwm41HA9XRTCqjiGQ9cUD5zHja` for `f06ff1b...` was INITIALIZING.
+- Typecheck: NOT RUN locally. The edit was made by whole-file rewrite through the GitHub API, not a local checkout.
+- Runtime/browser: NOT VERIFIED.
+- Device: NOT VERIFIED.
+- Regression tests: NONE added yet (proposed checks are in the patch notes shared with the user).
+
+**Important findings:**
+- Root cause (from code reading, not measured): the wet mask is the nearest 4 m hydrology cell and depth did not taper. `hydrologyCarveAt()` carved the full channel/lake depth (up to 1.65 m rivers, up to 8 m lakes) inside the cell and 0 one metre outside, creating a vertical step at every wet/dry cell boundary. Channel surface sits only ~0.03-0.07 above the local datum, and the water mesh only emits quads whose four corners are wet, so the sheet ended at the base of that step and looked like a floating ledge. Player collision samples `terrainHeightAt()` directly, so it saw the full-height step that the mesh displayed as a ramp (likely the "invisible wall").
+- Second cause: the lake mask requires depression depth > 0.9 m, but priority-flood pools include shallower rim cells. Those cells were dry yet below `filledElevation`, so the lake surface floated up to ~0.9 m above them.
+- The two earlier patches (`e4d0a2d`, `4d8b984`) made valid water carve, which was needed, but did not address the edge discontinuity.
+- Correction for earlier entries: at `4d8b984`, `main.ts` emits a water quad only when the cell midpoint and all four corners are wet, has no shoreline skirt vertices, and has a comment stating the shoreline side walls were removed. The entries for `803916b` ("at least two wet corners", shoreline skirt vertices) and `cf867c8` ("gameplay water shoreline depth walls") describe behaviour that is not present in `main.ts` at that head.
+- Process note: the coordination docs were not read before editing. The change is a whole-file replacement of `world.ts` (51,653 -> 53,620 bytes); reviewing the diff for unintended changes is recommended.
+
+**Remaining work:**
+- Confirm the Vercel build for `f06ff1b...` is READY; fix any TypeScript errors if not.
+- Inspect on device: river banks, lake rims, shallow-water entry/exit, low-elevation channels, high alpine streams.
+- Add regression tests (wet implies surface > terrain; terrain and depth continuity across former cell boundaries; dry samples far from water stay dry; low-elevation channels still carve).
+- LOD/chunk-boundary cracks (8/16/32 segment grids sample edges differently) are not addressed.
+- Water mesh edge vertices can still sit slightly above the bank toe (roughly 0.1 m at LOD0 up to ~0.5 m at LOD2).
+- `waterDepthAt()` now calls `terrainHeightAt()` for wet points only; check mesh-build time and per-frame cost on a mobile device.
+- `voxel.ts` and `survey.ts` consume the same world.ts water/terrain API; check that the voxel water volume and survey views still agree with the new shoreline.
+
+**Next agent:** Start from `f06ff1b6ac50107ccf24f618bc6161cb7c6fa47a`. Do not merge to `main` until build, runtime and device checks pass. Keep the invariant that water exists only where the final carved terrain is below the water surface.
