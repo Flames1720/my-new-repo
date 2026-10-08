@@ -250,6 +250,40 @@ export class VoxelWorld {
     for (const edit of edits) this.set(edit.x, edit.y, edit.z, edit.material);
   }
 
+  /**
+   * Remove a spherical group of solid voxels. This is intentionally a data-layer
+   * operation; rendering/collision remeshing will be wired to it in the next
+   * milestone so edits never have to modify the global terrain formula.
+   */
+  digSphere(x: number, y: number, z: number, radius = 1): number {
+    const r = Math.max(0.5, radius);
+    const minX = Math.floor(x - r);
+    const maxX = Math.floor(x + r);
+    const minY = Math.max(VOXEL_MIN_Y, Math.floor(y - r));
+    const maxY = Math.min(VOXEL_MAX_Y, Math.floor(y + r));
+    const minZ = Math.floor(z - r);
+    const maxZ = Math.floor(z + r);
+    let removed = 0;
+
+    for (let wz = minZ; wz <= maxZ; wz++) {
+      for (let wy = minY; wy <= maxY; wy++) {
+        for (let wx = minX; wx <= maxX; wx++) {
+          const dx = wx + 0.5 - x;
+          const dy = wy + 0.5 - y;
+          const dz = wz + 0.5 - z;
+          if (dx * dx + dy * dy + dz * dz > r * r) continue;
+
+          const material = this.get(wx, wy, wz);
+          if (!isSolidVoxel(material)) continue;
+          this.set(wx, wy, wz, VoxelMaterial.AIR);
+          removed++;
+        }
+      }
+    }
+
+    return removed;
+  }
+
   clear(): void {
     for (const chunk of this.chunks.values()) chunk.clearEdits();
   }
