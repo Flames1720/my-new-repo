@@ -562,7 +562,7 @@ export function buildVoxelWorldVolumeMesh(_material?: THREE.Material): THREE.Mes
  */
 export function buildVoxelWorldWaterVolumeMesh(): THREE.Mesh | null {
   const bounds = voxelWorldBounds();
-  const sampleStep = 2;
+  const sampleStep = 4;
   const nx = Math.ceil((bounds.maxX - bounds.minX) / sampleStep);
   const nz = Math.ceil((bounds.maxZ - bounds.minZ) / sampleStep);
   const colsX = nx + 1;
