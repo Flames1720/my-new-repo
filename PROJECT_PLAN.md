@@ -139,6 +139,28 @@ Recommended next steps:
 - Add deliberate snow/ice hazards and recovery/death rules only after accidental void/geometry failures are ruled out.
 - Further refine river width/depth from catchment and settlement trade corridors respecting slope contours.
 
+## World Survey / Diagnostic Camera
+
+Status: IMPLEMENTED; latest build for the final pinch-input patch is IN PROGRESS; browser/device runtime is NOT VERIFIED.
+
+Implemented:
+- independent survey camera, not tied to the player
+- whole-world overview at survey start
+- free pan, zoom, tap-to-focus and mobile pinch zoom
+- stripped ROCK + WATER topology view
+- stripped HYDROLOGY / WATER TRUTH view with flow-direction arrows
+- survey world mesh samples authoritative terrain/hydrology functions rather than streamed decorative chunks
+- 1920×1080, 2560×1440 and 3840×2160 diagnostic PNG capture through a dedicated render target
+- gameplay HUD, actors, vegetation, buildings, weather, celestial effects and normal chunk rendering are hidden while surveying
+
+Important limitation:
+- the survey view shows authoritative expected world truth; it does not yet automatically classify a rendered-water mismatch as underground-vs-covered-vs-missing geometry. The normal game view and survey view can be compared at the same focused coordinates.
+
+Next:
+- browser/device exercise on the live preview
+- test whole-world framing, focus, zoom, terrain topology, hydrology continuity and high-resolution capture
+- later add an explicit renderer-vs-world mismatch overlay once the current water/terrain geometry has been runtime-tested
+
 ## Known prototype concerns
 
 These are historical items and MUST be checked against current code before fixing:
