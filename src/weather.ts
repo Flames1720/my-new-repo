@@ -1,6 +1,18 @@
 import * as THREE from 'three';
-import { WATER_LEVEL } from './terrain';
+import { WATER_LEVEL, clamp } from './terrain';
 import type { WeatherKind } from './types';
+
+export interface WeatherEffects {
+  rainOpacity: number;
+  skyDim: number;
+  lightningFlash: number;
+  windVector: THREE.Vector2;
+  windSpeed: number;
+  gustStrength: number;
+  cloudBaseAltitude: number;
+  waveHeight: number;
+  waveSpeed: number;
+}
 
 export class WeatherSystem {
   currentWeather: WeatherKind = 'clear';
@@ -15,6 +27,14 @@ export class WeatherSystem {
   private lightningTimer = 0;
   private lightningFlash = 0;
   rainIntensity = 0; // 0 to 1
+
+  // Geographical atmospheric state
+  windVector = new THREE.Vector2(0.7071, -0.7071);
+  windSpeed = 4.5; // m/s
+  gustStrength = 0;
+  cloudBaseAltitude = 105.0; // Altitude where only the very highest alpine peaks intersect clouds
+  waveEnergy = 0.4;
+  private gustTimer = 0;
 
   constructor(scene: THREE.Scene) {
     this.initRain(scene);
@@ -59,7 +79,7 @@ export class WeatherSystem {
     playerPosition: THREE.Vector3,
     weatherMode: 'dynamic' | 'clear' | 'rain',
     worldTime: number
-  ): { rainOpacity: number; skyDim: number; lightningFlash: number } {
+  ): WeatherEffects {
     if (weatherMode === 'clear') {
       this.currentWeather = 'clear';
     } else if (weatherMode === 'rain') {
@@ -81,6 +101,32 @@ export class WeatherSystem {
       this.currentWeather === 'rain' ? 0.85 : this.currentWeather === 'storm' ? 1.0 : this.currentWeather === 'overcast' ? 0.1 : 0.0;
     this.rainIntensity += (targetIntensity - this.rainIntensity) * Math.min(1, dt * 2.0);
 
+    // Wind dynamics & gust variations
+    this.gustTimer += dt;
+    const baseSpeed =
+      this.currentWeather === 'storm' ? 16.0 : this.currentWeather === 'rain' ? 9.5 : this.currentWeather === 'overcast' ? 6.0 : 3.5;
+    const gust = Math.sin(this.gustTimer * 0.8) * Math.cos(this.gustTimer * 0.35) * (this.currentWeather === 'storm' ? 6.5 : 2.5);
+    this.windSpeed = Math.max(1.0, baseSpeed + Math.max(0, gust));
+    this.gustStrength = Math.max(0, gust);
+
+    // Prevailing direction with slight atmospheric veer
+    const windAngle = -Math.PI / 4 + Math.sin(this.gustTimer * 0.05) * 0.25;
+    this.windVector.set(Math.cos(windAngle), Math.sin(windAngle)).normalize();
+
+    // Geographical Cloud Base Altitude:
+    // In clear weather: high clouds at 110m, summits rise in open sun.
+    // In overcast / rain: clouds sink to 85m - 92m, where only the highest alpine crags touch them.
+    // In storms: thunderheads dip to 72m, summits soar above into the sky.
+    const targetCloudBase =
+      this.currentWeather === 'storm' ? 72.0 : this.currentWeather === 'rain' ? 82.0 : this.currentWeather === 'overcast' ? 90.0 : 110.0;
+    this.cloudBaseAltitude += (targetCloudBase - this.cloudBaseAltitude) * Math.min(1, dt * 0.5);
+
+    // Wind waves: wave energy scales with wind speed and duration
+    const targetWaveEnergy = clamp((this.windSpeed - 2.0) / 14.0, 0.15, 1.2);
+    this.waveEnergy += (targetWaveEnergy - this.waveEnergy) * Math.min(1, dt * 1.5);
+    const waveHeight = 0.15 + this.waveEnergy * 0.45;
+    const waveSpeed = 1.0 + this.waveEnergy * 1.8;
+
     if (this.rainMaterial) {
       this.rainMaterial.opacity = this.rainIntensity * 0.65;
     }
@@ -94,8 +140,9 @@ export class WeatherSystem {
       const count = this.count;
       for (let i = 0; i < count; i++) {
         pos[i * 3 + 1] -= this.rainVelocities[i] * dt;
-        // slight wind drift
-        pos[i * 3] += 1.8 * dt;
+        // Wind drift along windVector
+        pos[i * 3] += this.windVector.x * this.windSpeed * 0.25 * dt;
+        pos[i * 3 + 2] += this.windVector.y * this.windSpeed * 0.25 * dt;
         if (pos[i * 3 + 1] < 0) {
           pos[i * 3 + 1] = 22 + Math.random() * 4;
           pos[i * 3] = (Math.random() - 0.5) * 45;
@@ -121,6 +168,13 @@ export class WeatherSystem {
       rainOpacity: this.rainIntensity,
       skyDim: this.rainIntensity * 0.45,
       lightningFlash: this.lightningFlash,
+      windVector: this.windVector,
+      windSpeed: this.windSpeed,
+      gustStrength: this.gustStrength,
+      cloudBaseAltitude: this.cloudBaseAltitude,
+      waveHeight,
+      waveSpeed,
     };
   }
 }
+

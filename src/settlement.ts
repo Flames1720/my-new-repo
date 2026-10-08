@@ -4,6 +4,7 @@ import {
   HOME_Z,
   VILLAGE_X,
   VILLAGE_Z,
+  WATER_LEVEL,
   terrainHeightAt,
   isBridgeAt,
 } from './terrain';
@@ -443,11 +444,21 @@ function buildVillageCottage(name: string, wallColor: number, roofColor: number)
 export function buildBridge(x: number, z: number, rotationY = 0): THREE.Group {
   const b = new THREE.Group();
   b.name = 'wooden-bridge';
-  b.position.set(x, terrainHeightAt(x, z) + 0.12, z);
+  // Ensure bridge deck is elevated safely above river water level
+  const bridgeY = Math.max(WATER_LEVEL + 0.38, terrainHeightAt(x, z) + 0.35);
+  b.position.set(x, bridgeY, z);
   b.rotation.y = rotationY;
 
   const deck = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.28, 9.5), timberMat);
   b.add(deck);
+
+  b.userData.collider = {
+    minX: x - 2.9,
+    maxX: x + 2.9,
+    minZ: z - 4.75,
+    maxZ: z + 4.75,
+    deckY: bridgeY + 0.14,
+  };
 
   // Railings
   for (const rx of [-2.7, 2.7]) {

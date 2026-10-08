@@ -20,6 +20,8 @@ import {
   biomeAt,
   terrainColorAt,
   mountainMaskAt,
+  queryWorldFields,
+  terrainSlopeAt,
   roadAt,
   isRiverAt,
   isBridgeAt,
@@ -207,17 +209,33 @@ const waterMaterial = new THREE.MeshStandardMaterial({
   side: THREE.DoubleSide,
 });
 
-let waterShader: { uniforms: { uTime: { value: number } } } | null = null;
+let waterShader: {
+  uniforms: {
+    uTime: { value: number };
+    uWaveHeight: { value: number };
+    uWindDir: { value: THREE.Vector2 };
+  };
+} | null = null;
+
 waterMaterial.onBeforeCompile = shader => {
   shader.uniforms.uTime = { value: 0 };
-  shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader;
+  shader.uniforms.uWaveHeight = { value: 0.04 };
+  shader.uniforms.uWindDir = { value: new THREE.Vector2(0.7071, -0.7071) };
+  shader.vertexShader = `
+    uniform float uTime;
+    uniform float uWaveHeight;
+    uniform vec2 uWindDir;
+  ` + shader.vertexShader;
   shader.vertexShader = shader.vertexShader.replace(
     '#include <begin_vertex>',
     `#include <begin_vertex>
     vec4 ripplePos = modelMatrix * vec4(transformed, 1.0);
     // Shoreline damping: foam/shoreline vertices (whiter color) stay anchored to the beach and do not lift off the sand
     float shoreDamping = clamp(color.b * 1.6 - color.r * 0.6, 0.0, 1.0);
-    float wave = (sin(ripplePos.x * 0.65 + uTime * 1.4) * 0.038 + cos(ripplePos.z * 0.55 - uTime * 1.1) * 0.032) * shoreDamping;
+    float windDot = dot(ripplePos.xz, uWindDir);
+    float wave1 = sin(windDot * 0.55 + uTime * 2.2) * uWaveHeight;
+    float wave2 = cos(ripplePos.x * 0.75 + ripplePos.z * 0.35 - uTime * 1.3) * (uWaveHeight * 0.45);
+    float wave = (wave1 + wave2) * shoreDamping;
     transformed.y += wave;`
   );
   waterShader = shader as any;
@@ -265,9 +283,9 @@ terrainMaterial.onBeforeCompile = shader => {
 const scene = new THREE.Scene();
 const skyColor = new THREE.Color(0x9fc7df);
 scene.background = skyColor;
-scene.fog = new THREE.Fog(0x9fc7df, 55, 160);
+scene.fog = new THREE.Fog(0x9fc7df, 140, 950);
 
-const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 500);
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 1200);
 const renderer = new THREE.WebGLRenderer({ antialias: !LOW_POWER_MODE, powerPreference: 'high-performance', preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, LOW_POWER_MODE ? 1.25 : 1.65));
 renderer.setSize(innerWidth, innerHeight);
@@ -287,6 +305,80 @@ sun.shadow.camera.top = 90;
 sun.shadow.camera.bottom = -90;
 scene.add(sun, sun.target);
 
+// --- CELESTIAL BODIES: VISUAL SUN, MOON & TWINKLING STARS ---
+const celestialGroup = new THREE.Group();
+celestialGroup.name = 'celestial-system';
+scene.add(celestialGroup);
+
+// Luminous Sun with golden corona
+const sunMat = new THREE.MeshBasicMaterial({ color: 0xfffae0 });
+const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(26, 16, 16), sunMat);
+const sunCoronaMat = new THREE.MeshBasicMaterial({ color: 0xffdf88, transparent: true, opacity: 0.5, side: THREE.BackSide });
+const sunCorona = new THREE.Mesh(new THREE.SphereGeometry(38, 16, 16), sunCoronaMat);
+sunDisc.add(sunCorona);
+celestialGroup.add(sunDisc);
+
+// Ethereal Moon with soft silver lunar glow
+const moonMat = new THREE.MeshBasicMaterial({ color: 0xddeaff });
+const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(20, 16, 16), moonMat);
+const moonGlowMat = new THREE.MeshBasicMaterial({ color: 0x9bc8ff, transparent: true, opacity: 0.38, side: THREE.BackSide });
+const moonGlow = new THREE.Mesh(new THREE.SphereGeometry(30, 16, 16), moonGlowMat);
+moonDisc.add(moonGlow);
+celestialGroup.add(moonDisc);
+
+// Twinkling Starfield visible at dusk and night
+const starCount = 650;
+const starGeo = new THREE.BufferGeometry();
+const starPositions = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount; i++) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(Math.random() * 0.9 + 0.05); // Upper celestial hemisphere
+  const r = 900;
+  starPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+  starPositions[i * 3 + 1] = r * Math.cos(phi);
+  starPositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2.5, transparent: true, opacity: 0 });
+const starPoints = new THREE.Points(starGeo, starMat);
+celestialGroup.add(starPoints);
+
+// --- DISTANT MOUNTAIN HORIZON SKYLINE MESH ---
+// Renders the silhouette of distant mountain ranges and peaks in line of sight with zero chunk overhead
+function createDistantHorizon(): THREE.Mesh {
+  const segs = 56;
+  const span = 920; // 920m width covering the entire world horizons
+  const geo = new THREE.PlaneGeometry(span, span, segs, segs);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.getAttribute('position');
+  const colors = new Float32Array(pos.count * 3);
+
+  for (let i = 0; i < pos.count; i++) {
+    const wx = pos.getX(i);
+    const wz = pos.getZ(i);
+    const h = terrainHeightAt(wx, wz);
+    pos.setY(i, h);
+    const b = biomeAt(wx, wz);
+    const c = terrainColorAt(h, wx, wz, b);
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.95,
+    metalness: 0.02,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.name = 'distant-horizon-skyline';
+  return mesh;
+}
+const distantHorizonMesh = createDistantHorizon();
+scene.add(distantHorizonMesh);
+
 const daySky = new THREE.Color(0x9fc7df);
 const nightSky = new THREE.Color(0x182436);
 const twilightSky = new THREE.Color(0xc78b76);
@@ -300,7 +392,7 @@ const weather = new WeatherSystem(scene);
 
 function updateSky(dt: number, rainDim: number, lightningFlash: number) {
   skyTimer += dt;
-  if (skyTimer < 0.25) return;
+  if (skyTimer < 0.15) return;
   skyTimer = 0;
 
   const angle = ((worldTime - 6) * Math.PI) / 12;
@@ -314,19 +406,67 @@ function updateSky(dt: number, rainDim: number, lightningFlash: number) {
     skyColor.lerp(new THREE.Color(0xddeeff), lightningFlash * 0.85);
   }
 
+  // Atmospheric Fog: Expanded range so distant mountains remain majestic silhouettes on the horizon
   if (scene.fog) {
     const fog = scene.fog as THREE.Fog;
     fog.color.copy(underwater ? underwaterFogColor : skyColor);
-    fog.near = underwater ? 1.5 : rainDim > 0.5 ? 25 : 55;
-    fog.far = underwater ? 18 : rainDim > 0.5 ? 95 : 160;
+    fog.near = underwater ? 1.5 : rainDim > 0.5 ? 40 : 130;
+    fog.far = underwater ? 22 : rainDim > 0.5 ? 240 : 950;
   }
 
   hemisphere.intensity = (0.45 + daylight * 1.65) * (1 - rainDim * 0.4) + lightningFlash * 1.2;
   sun.intensity = (0.12 + daylight * 2.85 + twilight * 0.35) * (1 - rainDim * 0.65);
   sun.color.set(twilight > 0.1 ? 0xffbc8b : daylight > 0.18 ? 0xfff0d0 : 0x9bb4dd);
-  sun.position.set(player.root.position.x + Math.cos(angle) * 85, player.root.position.y + Math.sin(angle) * 85, player.root.position.z + 28);
+
+  // Position Sun & Moon along celestial circular orbit
+  const orbitDist = 720;
+  const px = player.root.position.x;
+  const py = player.root.position.y;
+  const pz = player.root.position.z;
+
+  const sunX = px + Math.cos(angle) * orbitDist;
+  const sunY = py + Math.sin(angle) * orbitDist;
+  const sunZ = pz + 90;
+  sunDisc.position.set(sunX, sunY, sunZ);
+  sun.position.set(sunX, sunY, sunZ);
   sun.target.position.copy(player.root.position);
+
+  // Moon travels opposite to the sun
+  const moonX = px - Math.cos(angle) * orbitDist;
+  const moonY = py - Math.sin(angle) * orbitDist;
+  const moonZ = pz - 90;
+  moonDisc.position.set(moonX, moonY, moonZ);
+
+  // Sunrise/Sunset colors on celestial sun disc & corona
+  if (twilight > 0.15) {
+    sunMat.color.set(0xff8c55); // Rich amber dawn/dusk
+    sunCoronaMat.color.set(0xff5533);
+  } else {
+    sunMat.color.set(0xfffae0); // Golden daylight
+    sunCoronaMat.color.set(0xffdf88);
+  }
+
+  // Starfield shines bright in the night sky and fades during day
+  starMat.opacity = clamp((1 - daylight * 1.4) * 0.88 - rainDim * 0.75, 0, 0.88);
 }
+
+// --- GEOGRAPHICAL HIGH-MOUNTAIN CLOUD & MIST DECK ---
+// Clouds intersect mountain ranges, letting high summits soar above the cloud deck
+const cloudDeckGroup = new THREE.Group();
+cloudDeckGroup.name = 'mountain-cloud-deck';
+const cloudDeckMat = new THREE.MeshBasicMaterial({
+  color: 0xe8f0f5,
+  transparent: true,
+  opacity: 0.28,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+const cloudDeckGeo = new THREE.PlaneGeometry(850, 850, 16, 16);
+const cloudDeckMesh = new THREE.Mesh(cloudDeckGeo, cloudDeckMat);
+cloudDeckMesh.rotation.x = -Math.PI / 2;
+cloudDeckMesh.position.set(0, 105.0, 0);
+cloudDeckGroup.add(cloudDeckMesh);
+scene.add(cloudDeckGroup);
 
 const world = new THREE.Group(), actors = new THREE.Group();
 scene.add(world, actors);
@@ -1590,15 +1730,65 @@ let aimCache: THREE.Object3D | null = null, aimTimer = 0;
 
 function getAimTarget(force = false): THREE.Object3D | null {
   if (!force && aimTimer > 0) return aimCache;
-  aimTimer = LOW_POWER_MODE ? 0.12 : 0.06;
-  aimRay.setFromCamera(aimNdc.set(0, mode === 'tpp' ? 0.15 : 0), camera);
+  aimTimer = LOW_POWER_MODE ? 0.10 : 0.05;
+
+  const pp = player.root.position;
+
+  if (mode === 'tpp') {
+    // Call of Duty Battle Royale style character-centric action volume
+    // Focuses on nearby objects within character interaction reach (~3.2m)
+    let bestObj: THREE.Object3D | null = null;
+    let bestScore = -Infinity;
+
+    // Player forward facing vector
+    const charYaw = player.root.rotation.y;
+    const forwardX = Math.sin(charYaw);
+    const forwardZ = Math.cos(charYaw);
+
+    for (const o of chunks.aimTargets) {
+      if (!o.visible || !o.parent) continue;
+      const ox = o.matrixWorld.elements[12];
+      const oy = o.matrixWorld.elements[13];
+      const oz = o.matrixWorld.elements[14];
+
+      const dx = ox - pp.x;
+      const dy = oy - pp.y;
+      const dz = oz - pp.z;
+      const dist = Math.hypot(dx, dz);
+
+      if (dist > 3.4 || Math.abs(dy) > 2.8) continue;
+
+      // Facing alignment (-1 to 1)
+      const dot = dist > 0.05 ? (dx * forwardX + dz * forwardZ) / dist : 1.0;
+
+      // In TPP: allow anything immediately adjacent (<1.3m), or in forward cone (dot >= 0.28, ~73 deg)
+      if (dist > 1.3 && dot < 0.28) continue;
+
+      // Score prefers closer objects with high directional alignment
+      const score = (1.0 - dist / 3.4) * 2.0 + dot * 1.5;
+      if (score > bestScore) {
+        bestScore = score;
+        bestObj = o;
+      }
+    }
+
+    if (bestObj) {
+      let o = bestObj;
+      while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable && !o.userData.animal) o = o.parent;
+      return (aimCache = o);
+    }
+    return (aimCache = null);
+  }
+
+  // FPP mode: Precision raycast from camera eye
+  aimRay.setFromCamera(aimNdc.set(0, 0), camera);
   aimObjects.length = 0;
   for (const o of chunks.aimTargets) aimObjects.push(o);
   aimHits.length = 0;
   const hit = aimRay.intersectObjects(aimObjects, true, aimHits)[0];
   if (!hit || hit.distance > 3.8) return (aimCache = null);
   let o = hit.object;
-  while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable) o = o.parent;
+  while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable && !o.userData.animal) o = o.parent;
   return (aimCache = o);
 }
 
@@ -1732,9 +1922,6 @@ function input() {
 }
 
 function update(dt: number) {
-  if (waterShader) waterShader.uniforms.uTime.value += dt;
-  if (terrainShader) terrainShader.uniforms.uTime.value += dt;
-  updateSplash(dt);
   aimTimer = Math.max(0, aimTimer - dt);
 
   // Time cycle: 24h cycle
@@ -1743,9 +1930,31 @@ function update(dt: number) {
   const weatherEffects = weather.update(dt, player.root.position, settings.current.weatherMode, worldTime);
   updateSky(dt, weatherEffects.skyDim, weatherEffects.lightningFlash);
 
+  if (waterShader) {
+    waterShader.uniforms.uTime.value += dt * weatherEffects.waveSpeed;
+    waterShader.uniforms.uWaveHeight.value = weatherEffects.waveHeight;
+    waterShader.uniforms.uWindDir.value.copy(weatherEffects.windVector);
+  }
+  if (terrainShader) terrainShader.uniforms.uTime.value += dt;
+  updateSplash(dt);
+
+  // High-mountain cloud deck altitude & gentle atmospheric drift
+  cloudDeckMesh.position.y = weatherEffects.cloudBaseAltitude;
+  cloudDeckMesh.position.x = player.root.position.x;
+  cloudDeckMesh.position.z = player.root.position.z;
+  cloudDeckMat.opacity = clamp(0.22 + weatherEffects.skyDim * 0.42, 0.18, 0.65);
+  cloudDeckMesh.rotation.z += dt * 0.005;
+
   const wasSwimming = player.swimming;
   const p = player.root.position;
-  player.swimming = waterAt(p.x, p.z) && WATER_LEVEL - terrainHeightAt(p.x, p.z) > 0.65;
+  const worldFields = queryWorldFields(p.x, p.z);
+  const wDepth = worldFields.waterDepth;
+  player.swimming = wDepth > 0.65;
+  const isWading = wDepth > 0.05 && !player.swimming;
+
+  // Slope resistance & downhill agility
+  const slope = worldFields.slope;
+  let slopeSpeedMultiplier = 1.0;
 
   const iv = input();
   const forward = moveForward.set(Math.sin(camYaw), 0, Math.cos(camYaw));
@@ -1755,11 +1964,31 @@ function update(dt: number) {
   const hasInput = inputMagnitude > 0.08;
   const sprinting = (keys.has('shift') || sprintToggle) && hasInput;
 
+  const slopeInfo = terrainSlopeAt(p.x, p.z);
+  // Calculate motion alignment with downhill slope fall-line
+  const dotWithDownhill = dir.x * slopeInfo.normal.x + dir.z * slopeInfo.normal.z;
+
+  if (hasInput) {
+    if (dotWithDownhill > 0.15) {
+      // Going DOWNHILL with gravity: fast, agile, satisfying sprint descent!
+      slopeSpeedMultiplier = 1.0 + Math.min(0.35, slope * 0.45);
+    } else if (dotWithDownhill < -0.15 && slope > 0.35) {
+      // Going UPHILL against gravity: natural uphill climbing resistance
+      slopeSpeedMultiplier = Math.max(0.42, 1 - (slope - 0.35) * 1.5);
+    }
+  }
+
+  if (isWading) {
+    slopeSpeedMultiplier *= 0.72; // Shallow water wading resistance
+  }
+
   if (hasInput) {
     const desired = Math.atan2(dir.x, dir.z);
-    const speed = player.swimming ? (sprinting ? 2.2 : 1.45) : sprinting ? 7.6 : 4.4;
+    const speed = player.swimming
+      ? (sprinting ? 2.5 : 1.6)
+      : (sprinting ? 7.8 : 4.5) * slopeSpeedMultiplier;
     const targetSpeed = speed * inputMagnitude;
-    const response = 1 - Math.exp(-(player.swimming ? 5 : 14) * dt);
+    const response = 1 - Math.exp(-(player.swimming ? 6 : 14) * dt);
     player.velocity.x = lerp(player.velocity.x, Math.sin(desired) * targetSpeed, response);
     player.velocity.z = lerp(player.velocity.z, Math.cos(desired) * targetSpeed, response);
   } else {
@@ -1781,25 +2010,53 @@ function update(dt: number) {
 
   if (keys.has(' ') && !player.swimming && player.onGround) jump();
 
-  moveWithCollisions(player.velocity.x * dt, player.velocity.z * dt);
+  // Water current physics: river flow pushes player downstream
+  let currentVx = 0;
+  let currentVz = 0;
+  if (worldFields.flowSpeed > 0 && (worldFields.waterType === 'river' || worldFields.waterType === 'stream' || worldFields.waterType === 'lake')) {
+    // When movement input is pressed, player authority counteracts current
+    const currentImmersion = player.swimming ? (hasInput ? 0.45 : 0.85) : isWading ? clamp(wDepth / 0.65, 0.15, 0.45) : 0;
+    if (currentImmersion > 0) {
+      currentVx = worldFields.flowVector.x * worldFields.flowSpeed * currentImmersion;
+      currentVz = worldFields.flowVector.y * worldFields.flowSpeed * currentImmersion;
+    }
+  }
+
+  // Extreme slope sliding only on near-vertical cliff faces (> 57° / 1.02 rad)
+  if (slope > 1.02 && player.onGround && !player.swimming) {
+    const slideSpeed = Math.min(4.5, (slope - 1.0) * 8.0);
+    currentVx += slopeInfo.normal.x * slideSpeed;
+    currentVz += slopeInfo.normal.z * slideSpeed;
+  }
+
+  moveWithCollisions((player.velocity.x + currentVx) * dt, (player.velocity.z + currentVz) * dt);
   player.swimming = waterAt(p.x, p.z) && WATER_LEVEL - terrainHeightAt(p.x, p.z) > 0.65;
 
   if (player.swimming) {
     const bedY = terrainHeightAt(p.x, p.z);
     const minY = bedY + 0.15;
-    const maxY = keys.has(' ') ? WATER_LEVEL - 0.55 : WATER_LEVEL - 0.85;
-    // When swimming, chest is at the waterline: feet/torso submerged underwater
+    // Allow swimming up to and above water level so player can easily step or hop out onto riverbank
+    const jumpingOut = keys.has(' ');
+    const bankAhead = terrainHeightAt(p.x + dir.x * 0.8, p.z + dir.z * 0.8) >= WATER_LEVEL - 0.28;
     const targetY = keys.has('control')
       ? Math.max(minY, WATER_LEVEL - 2.0)
-      : keys.has(' ')
-      ? WATER_LEVEL - 0.55
-      : WATER_LEVEL - 0.88;
-    const buoyancyTarget = clamp(targetY, minY, maxY);
-    player.velocity.y = lerp(player.velocity.y, (buoyancyTarget - p.y) * 4, Math.min(1, dt * 3.5));
-    p.y = clamp(p.y + player.velocity.y * dt, minY, maxY);
-    player.onGround = false;
+      : jumpingOut || bankAhead
+      ? WATER_LEVEL + 0.35
+      : WATER_LEVEL - 0.85;
+
+    player.velocity.y = lerp(player.velocity.y, (targetY - p.y) * 5, Math.min(1, dt * 4.5));
+    if (jumpingOut && bankAhead) {
+      player.velocity.y = Math.max(player.velocity.y, 4.2);
+    }
+    p.y += player.velocity.y * dt;
+
+    // Smooth transition from swimming to ground when climbing out onto shore
+    if (p.y >= WATER_LEVEL - 0.25 && wDepth < 0.48) {
+      player.swimming = false;
+      player.onGround = true;
+    }
   } else {
-    // Maximo-style variable gravity: strong fall, short jump on early release, soft apex
+    // Variable gravity: strong fall, short jump on early release, soft apex
     const jumpHeld = keys.has(' ');
     if (player.velocity.y < 0) {
       player.velocity.y -= GRAVITY * FALL_MULTIPLIER * dt;
@@ -1808,18 +2065,36 @@ function update(dt: number) {
     } else {
       player.velocity.y -= GRAVITY * dt;
     }
-    // Soft hang-time near apex
     if (Math.abs(player.velocity.y) < 1.6) {
       player.velocity.y *= 0.88;
     }
     player.velocity.y = Math.max(player.velocity.y, MAX_FALL_SPEED);
     p.y += player.velocity.y * dt;
+
     let groundY = terrainHeightAt(p.x, p.z);
+    // Solid Home Structure Collision
     const home = chunks.loaded.get('0,0')?.getObjectByName('home') as THREE.Group | undefined;
     if (home) {
       const box = home.userData.collider;
       if (box && p.x > box.minX && p.x < box.maxX && p.z > box.minZ && p.z < box.maxZ) groundY = Math.max(groundY, home.position.y + 0.18);
     }
+
+    // Solid Wooden Bridge Collision across river
+    const pcx = chunks.coord(p.x), pcz = chunks.coord(p.z);
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oz = -1; oz <= 1; oz++) {
+        const cg = chunks.loaded.get(chunks.key(pcx + ox, pcz + oz));
+        if (!cg) continue;
+        const bridge = cg.getObjectByName('wooden-bridge') as THREE.Group | undefined;
+        if (bridge && bridge.userData.collider) {
+          const bbox = bridge.userData.collider;
+          if (p.x >= bbox.minX && p.x <= bbox.maxX && p.z >= bbox.minZ && p.z <= bbox.maxZ) {
+            groundY = Math.max(groundY, bbox.deckY);
+          }
+        }
+      }
+    }
+
     if (p.y <= groundY) {
       if (!player.onGround && player.velocity.y < -3.5) player.triggerLanding();
       p.y = groundY;
@@ -1879,10 +2154,40 @@ function update(dt: number) {
     const h = Math.cos(camPitch) * distance;
     const pos = cameraPosition.copy(focus);
     pos.x -= Math.sin(camYaw) * h;
-    pos.y -= Math.sin(camPitch) * distance * 0.75;
+    pos.y -= Math.sin(camPitch) * distance;
     pos.z -= Math.cos(camYaw) * h;
-    if (player.swimming && !keys.has('control')) pos.y = Math.max(pos.y, WATER_LEVEL + 0.8);
+
+    // Line-of-sight sweep across terrain to prevent clipping through slopes or ridges
+    const sweepSteps = 5;
+    for (let step = 1; step <= sweepSteps; step++) {
+      const t = step / sweepSteps;
+      const sx = focus.x + (pos.x - focus.x) * t;
+      const sz = focus.z + (pos.z - focus.z) * t;
+      const minTerrainY = terrainHeightAt(sx, sz) + 0.55;
+      const sy = focus.y + (pos.y - focus.y) * t;
+      if (sy < minTerrainY) {
+        pos.x = focus.x + (pos.x - focus.x) * (t * 0.85);
+        pos.y = Math.max(minTerrainY, focus.y + (pos.y - focus.y) * (t * 0.85));
+        pos.z = focus.z + (pos.z - focus.z) * (t * 0.85);
+        break;
+      }
+    }
+
+    // Absolute ground floor clamp on target camera position
+    const floorAtPos = terrainHeightAt(pos.x, pos.z) + 0.65;
+    if (pos.y < floorAtPos) pos.y = floorAtPos;
+
+    // Water surface clearance when not in deliberate underwater dive
+    if (!underwater && !keys.has('control')) {
+      pos.y = Math.max(pos.y, WATER_LEVEL + 0.45);
+    }
+
     camera.position.lerp(pos, Math.min(1, dt * 14));
+
+    // Hard safeguard: Camera position can NEVER break below terrain or expose underneath world
+    const actualFloor = terrainHeightAt(camera.position.x, camera.position.z) + 0.55;
+    if (camera.position.y < actualFloor) camera.position.y = actualFloor;
+
     const lookTarget = cameraLook.set(focus.x, focus.y + Math.sin(camPitch) * distance * 0.65, focus.z);
     camera.lookAt(lookTarget);
   } else {
@@ -1903,8 +2208,8 @@ function update(dt: number) {
     if (scene.fog) {
       const fog = scene.fog as THREE.Fog;
       fog.color.copy(underwater ? underwaterFogColor : skyColor);
-      fog.near = underwater ? 1.5 : 55;
-      fog.far = underwater ? 18 : 160;
+      fog.near = underwater ? 1.5 : 130;
+      fog.far = underwater ? 22 : 950;
     }
   }
 
@@ -1915,14 +2220,20 @@ function update(dt: number) {
   minimap.recordPosition(p.x, p.z);
 
   const aimed = getAimTarget();
-  if (aimed && !moving && !promptTimer) {
+  if (aimed) {
     const r = aimed.userData.resource as { kind: string; hits: number; maxHits: number } | undefined;
     const animal = aimed.userData.animal as { species: keyof typeof SPECIES_NAME } | undefined;
     const interactable = aimed.userData.interactable as { action: string; label: string } | undefined;
-    if (animal) say(`E · observe ${SPECIES_NAME[animal.species]}${inventory.Fruit ? ' or feed sweet fruit' : ''}`);
-    else if (r) say(`USE · ${r.kind.replace('_', ' ').toUpperCase()} (${r.maxHits - r.hits}/${r.maxHits})`);
-    else if (interactable) say(`USE · ${interactable.label}`);
-    else say(`USE · ${aimed.name.replace('front-door', 'Front door').replace('tree-', 'Tree ')}`);
+    let label = 'Interact';
+    if (animal) label = `Pet ${SPECIES_NAME[animal.species]}${inventory.Fruit ? ' (Feed Fruit)' : ''}`;
+    else if (r) label = `Harvest ${r.kind.replace('_', ' ')} (${r.maxHits - r.hits}/${r.maxHits})`;
+    else if (interactable) label = interactable.label;
+    else label = aimed.name.replace('front-door', 'Front Door').replace('tree-', 'Tree ');
+
+    prompt.innerHTML = `<span class="promptKey">E</span> <span class="promptAction">${label}</span>`;
+    prompt.classList.add('show');
+  } else if (promptTimer <= 0) {
+    prompt.classList.remove('show');
   }
 
   if (promptTimer > 0) {
@@ -1930,7 +2241,9 @@ function update(dt: number) {
     if (promptTimer <= 0) prompt.classList.remove('show');
   }
 
-  compass.style.transform = `translateX(-50%) rotate(${(-camYaw * 180) / Math.PI}deg)`;
+  const deg = ((-camYaw * 180) / Math.PI + 360) % 360;
+  const cardinal = deg >= 337.5 || deg < 22.5 ? 'N' : deg < 67.5 ? 'NE' : deg < 112.5 ? 'E' : deg < 157.5 ? 'SE' : deg < 202.5 ? 'S' : deg < 247.5 ? 'SW' : deg < 292.5 ? 'W' : 'NW';
+  compass.textContent = `${Math.round(deg)}° ${cardinal}`;
 
   // Update Mini-Map & Full Map
   mapAccumulator += dt;
@@ -1963,9 +2276,10 @@ function update(dt: number) {
   uiAccumulator += dt;
   if (uiAccumulator >= 0.1) {
     uiAccumulator = 0;
-    target.style.top = mode === 'tpp' ? '40%' : '50%';
+    // In TPP mode, hide center reticle for cinematic BR perspective; in FPP mode, show clean dot
+    target.style.display = mode === 'tpp' ? 'none' : 'grid';
     target.classList.toggle('active', !!aimed);
-    target.textContent = aimed ? (aimed.userData.resource ? '✚' : '•') : '✚';
+    target.textContent = aimed ? '✦' : '•';
     (document.querySelector('#modeBtn') as HTMLButtonElement).textContent = mode.toUpperCase();
     (document.querySelector('#runBtn') as HTMLButtonElement).textContent = sprintToggle ? 'RUN' : 'WALK';
     (document.querySelector('#jumpBtn') as HTMLButtonElement).textContent = player.swimming ? 'RISE' : 'JUMP';

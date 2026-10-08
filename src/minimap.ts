@@ -11,9 +11,26 @@ import {
   roadAt,
   mountainMaskAt,
   isRiverAt,
+  queryWorldFields,
 } from './terrain';
 import type { AnimalMarker, BreadcrumbPoint, Waypoint } from './types';
 import { speciesColor } from './fauna';
+
+function getMapTileColor(wx: number, wz: number): string {
+  if (roadAt(wx, wz)) return '#525861';
+
+  const wf = queryWorldFields(wx, wz);
+  if (wf.waterType === 'lake' || wf.waterType === 'river' || wf.waterType === 'stream' || waterAt(wx, wz)) {
+    return wf.waterType === 'lake' ? '#27688a' : '#3282a8';
+  }
+  if (wf.landform === 'peak' || wf.elevation > 48.0) return '#e6edf2'; // Alpine snowcap
+  if (wf.landform === 'mountain_ridge' || wf.elevation > 32.0) return '#6b6c70'; // High granite
+  if (wf.landform === 'foothills' || wf.landform === 'mountain_slope') return '#586b53';
+  if (wf.biome === 'forest') return '#355c32';
+  if (wf.biome === 'wetland') return '#446651';
+  if (wf.rainfall < 0.28) return '#7a7652'; // Rain shadow dry shrub
+  return '#4e733f'; // Lush meadow
+}
 
 export class MinimapSystem {
   private miniCanvas: HTMLCanvasElement;
@@ -129,6 +146,8 @@ export class MinimapSystem {
   // --- RENDER LIVE CODM-STYLE RADAR MINI-MAP ---
   renderMini(playerPos: THREE.Vector3, camYaw: number, animals: AnimalMarker[]): void {
     const c = this.miniCanvas;
+    if (!c || c.clientWidth < 12 || c.clientHeight < 12) return;
+
     const ctx = this.miniCtx;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     c.width = c.clientWidth * dpr;
@@ -137,6 +156,8 @@ export class MinimapSystem {
 
     const size = c.clientWidth;
     const radius = size / 2;
+    if (radius < 10) return;
+
     const cx = radius;
     const cy = radius;
 
@@ -145,7 +166,7 @@ export class MinimapSystem {
     // Circular radar clipping mask
     ctx.save();
     ctx.beginPath();
-    ctx.arc(cx, cy, radius - 2, 0, Math.PI * 2);
+    ctx.arc(cx, cy, Math.max(1, radius - 2), 0, Math.PI * 2);
     ctx.clip();
 
     ctx.fillStyle = '#0f171fdc';
@@ -178,17 +199,12 @@ export class MinimapSystem {
         const wz = gz * SIZE + SIZE / 2;
         if (Math.hypot(wx - playerPos.x, wz - playerPos.z) > viewRange + SIZE) continue;
 
-        const isWater = waterAt(wx, wz);
-        const isRoad = roadAt(wx, wz);
-        const isMtn = mountainMaskAt(wx, wz) > 0.4;
-        const isRiver = isRiverAt(wx, wz);
-
         const p0 = toRadar(gx * SIZE, gz * SIZE);
         const p1 = toRadar((gx + 1) * SIZE, gz * SIZE);
         const p2 = toRadar((gx + 1) * SIZE, (gz + 1) * SIZE);
         const p3 = toRadar(gx * SIZE, (gz + 1) * SIZE);
 
-        ctx.fillStyle = isWater || isRiver ? '#2d6d8f' : isRoad ? '#4a5057' : isMtn ? '#6d6c69' : '#45613d';
+        ctx.fillStyle = getMapTileColor(wx, wz);
         ctx.beginPath();
         ctx.moveTo(p0.x, p0.y);
         ctx.lineTo(p1.x, p1.y);
@@ -268,10 +284,10 @@ export class MinimapSystem {
     ctx.strokeStyle = '#ffffff20';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(cx, cy, (radius - 8) * 0.5, 0, Math.PI * 2);
+    ctx.arc(cx, cy, Math.max(1, (radius - 8) * 0.5), 0, Math.PI * 2);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(cx, cy, radius - 8, 0, Math.PI * 2);
+    ctx.arc(cx, cy, Math.max(1, radius - 8), 0, Math.PI * 2);
     ctx.stroke();
 
     // Center Player Arrowhead (Points directly FORWARD/UP on radar)
@@ -304,7 +320,7 @@ export class MinimapSystem {
     ctx.strokeStyle = '#38d2ff88';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.arc(cx, cy, radius - 2, 0, Math.PI * 2);
+    ctx.arc(cx, cy, Math.max(1, radius - 2), 0, Math.PI * 2);
     ctx.stroke();
   }
 
@@ -313,6 +329,7 @@ export class MinimapSystem {
     if (!this.isFullOpen) return;
 
     const c = this.fullCanvas;
+    if (!c || c.clientWidth < 12 || c.clientHeight < 12) return;
     const ctx = this.fullCtx;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     c.width = c.clientWidth * dpr;
@@ -339,12 +356,7 @@ export class MinimapSystem {
         const wx = cx * SIZE + SIZE / 2;
         const wz = cz * SIZE + SIZE / 2;
 
-        const isWater = waterAt(wx, wz);
-        const isRoad = roadAt(wx, wz);
-        const isMtn = mountainMaskAt(wx, wz) > 0.4;
-        const isRiver = isRiverAt(wx, wz);
-
-        ctx.fillStyle = isWater || isRiver ? '#2d6d8f' : isRoad ? '#4a5057' : isMtn ? '#6d6c69' : '#45613d';
+        ctx.fillStyle = getMapTileColor(wx, wz);
         ctx.fillRect(sx, sy, Math.ceil(cell) + 0.5, Math.ceil(cell) + 0.5);
       }
     }

@@ -134,6 +134,7 @@ export interface AnimalState {
   hp: number;
   maxHp: number;
   hunger: number;
+  thirst?: number;
   matingCooldown: number;
   age: number;
   motherId?: string;

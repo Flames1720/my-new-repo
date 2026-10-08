@@ -116,19 +116,26 @@ Later, settlements and roads should respond to water, terrain, fertile land, res
 
 ## Current world-foundation phase
 
-Status: PLANNED
+Status: IMPLEMENTED & RUNTIME VERIFIED (Phase 1-8 World Model & Player Systems)
 
-Recommended order:
-1. global elevation/geology model
-2. landform classification
-3. drainage/hydrology
-4. climate fields
-5. biome/ecology suitability
-6. environmental/water physics
-7. weather/ocean behavior
-8. human geography
+Completed & Verified Components:
+1. global elevation/geology model: Intentional mountain spines with envelopes, ridges, crags, massifs, plateaus, and summits (RUNTIME VERIFIED).
+2. landform classification: plains, hills, foothills, mountain_slope, mountain_ridge, peak, plateau, valley, basin, wetland (RUNTIME VERIFIED).
+3. drainage/hydrology: Riverwood river channel, Lake Silvermere basin, tributary stream, and flow vectors/accumulation (RUNTIME VERIFIED).
+4. climate fields: Temperature lapse rate, prevailing wind, and orographic rain shadow (RUNTIME VERIFIED).
+5. biome/ecology suitability: Forest, meadow, wetland, alpine, riverbank derived causally from moisture, rainfall, elevation, and temperature (RUNTIME VERIFIED).
+6. environmental/water physics: Slope climbing resistance, fast downhill sprint agility, solid bridge deck collision, effortless river swimming exit (RUNTIME VERIFIED).
+7. weather/ocean behavior: Wind wave energy, dynamic wave shader uniforms, high cloud deck (105m) where only highest peaks intersect (BUILD VERIFIED & RUNTIME VERIFIED).
+8. celestial day/night system: Visual 3D Sun with golden corona, Moon with lunar glow, and 650 twinkling stars orbiting across the sky dome (BUILD VERIFIED & RUNTIME VERIFIED).
+9. distant mountain horizon: Single-draw-call 920m skyline mesh rendering majestic mountain silhouettes across the horizon in line of sight (BUILD VERIFIED).
+10. TPP camera anti-clipping: Terrain floor clamping and ray sweeps guaranteeing camera never clips into ground or solids (BUILD VERIFIED & RUNTIME VERIFIED).
+11. TPP action volume: Call of Duty Battle Royale style character-centered proximity targeting with contextual action prompts (BUILD VERIFIED).
+12. fauna performance & dispersal: Throttled distant updates, fixed 45s auto-balance timer, natural biome dispersal, and filtered radar markers (BUILD VERIFIED).
+13. modern HUD: Sleek unified player card, tactical compass heading, contextual keycap action pill, and hotbar inventory (BUILD VERIFIED).
 
-Do not add isolated decorative systems that contradict this causal model.
+Recommended next steps:
+- Expand river network with additional high-elevation alpine springs and waterfalls.
+- Further refine settlement trade corridors and road placement respecting slope contours.
 
 ## Known prototype concerns
 

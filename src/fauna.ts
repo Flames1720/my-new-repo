@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Biome, Species, Mood, Gender, AnimalMarker, AnimalState, BuiltAnimal } from './types';
 import { clamp, lerp, SEED, WATER_LEVEL } from './terrain';
+import { queryWorldFields, isRiverAt, riverDistanceAt, defaultWorldModel, WorldModel } from './world';
 
 export interface WildlifeOptions {
   heightAt: (x: number, z: number) => number;
@@ -15,6 +16,7 @@ export interface WildlifeOptions {
   onTrustChange: () => void;
   notify: (message: string) => void;
   faunaContainer?: THREE.Group;
+  worldModel?: WorldModel;
 }
 
 export const SPECIES_NAME: Record<Species, string> = {
@@ -678,6 +680,8 @@ export class WildlifeSystem {
   private births = 0;
   private successfulHunts = 0;
   private failedHunts = 0;
+  private balanceTimer = 45.0;
+  private frameCounter = 0;
 
   constructor(options: WildlifeOptions) {
     this.options = options;
@@ -822,6 +826,7 @@ export class WildlifeSystem {
       hp,
       maxHp: hp,
       hunger: PREDATORS.has(species) ? 0 : 10 + Math.random() * 20, // Predators start well-fed!
+      thirst: 15 + Math.random() * 25,
       matingCooldown: isBaby ? 9999 : 20 + Math.random() * 40,
       age: isBaby ? 0 : 100,
       motherId,
@@ -883,69 +888,71 @@ export class WildlifeSystem {
       }
     }
 
-    // 2. Reintroduce extinct or critically low prey species (guarantee healthy breeding herds)
-    // Mallard Ducks
+    // 2. Reintroduce extinct or critically low prey species across diverse natural habitats
+    // Mallard Ducks along Riverwood riverbanks and Lake Silvermere
     if (census.duck.total < 10) {
       const needed = 10 - census.duck.total;
       for (let i = 0; i < needed; i++) {
         const gender: Gender = i % 2 === 0 ? 'female' : 'male';
-        const x = 32 + (i - 2) * 5;
-        const z = -36 + (i % 2) * 4;
+        // Alternate between Riverwood River (x: 25-50, z: -30 to -60) and Lake Silvermere (x: -80, z: -65)
+        const inLake = i % 2 === 0;
+        const x = inLake ? -80 + (i * 4) : 28 + (i * 6);
+        const z = inLake ? -65 + (i * 3) : -40 - (i * 5);
         this.createAnimal('duck', gender, false, x, z, `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`);
       }
     }
 
-    // Wild Boars
+    // Wild Boars across deep western forests and southern thickets
     if (census.boar.total < 8) {
       const needed = 8 - census.boar.total;
       for (let i = 0; i < needed; i++) {
         const gender: Gender = i % 2 === 0 ? 'female' : 'male';
-        const x = -42 + (i - 2) * 6;
-        const z = 28 + (i % 2) * 5;
+        const x = i % 2 === 0 ? -48 - i * 6 : 55 + i * 5;
+        const z = i % 2 === 0 ? 32 + i * 7 : 45 - i * 6;
         this.createAnimal('boar', gender, false, x, z, `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`);
       }
     }
 
-    // Pasture Cows
+    // Pasture Cows in lush open pastures
     if (census.cow.total < 8) {
       const needed = 8 - census.cow.total;
       for (let i = 0; i < needed; i++) {
         const gender: Gender = i % 2 === 0 ? 'female' : 'male';
-        const x = 18 + (i - 2) * 6;
-        const z = -14 + (i % 2) * 5;
+        const x = i % 2 === 0 ? 22 + i * 7 : -36 - i * 6;
+        const z = i % 2 === 0 ? -18 - i * 5 : 24 + i * 5;
         this.createAnimal('cow', gender, false, x, z, `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`);
       }
     }
 
-    // Forest Deer
+    // Forest Deer throughout woodland corridors
     if (census.deer.total < 10) {
       const needed = 10 - census.deer.total;
       for (let i = 0; i < needed; i++) {
         const gender: Gender = i % 2 === 0 ? 'female' : 'male';
-        const x = -28 + (i - 2) * 6;
-        const z = -45 + (i % 2) * 5;
+        const x = i % 2 === 0 ? -32 - i * 8 : 42 + i * 7;
+        const z = i % 2 === 0 ? -52 - i * 6 : -25 + i * 6;
         this.createAnimal('deer', gender, false, x, z, `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`);
       }
     }
 
-    // Meadow Rabbits
+    // Meadow Rabbits scattered in sunny grassland fields
     if (census.rabbit.total < 12) {
       const needed = 12 - census.rabbit.total;
       for (let i = 0; i < needed; i++) {
         const gender: Gender = i % 2 === 0 ? 'female' : 'male';
-        const x = 12 + (i - 3) * 4;
-        const z = 20 + (i % 2) * 4;
+        const x = (i % 3 === 0 ? 18 : i % 3 === 1 ? -24 : 38) + (i * 3);
+        const z = (i % 3 === 0 ? 24 : i % 3 === 1 ? 16 : -45) + (i * 2);
         this.createAnimal('rabbit', gender, false, x, z, `${Math.floor(x / this.size)},${Math.floor(z / this.size)}`);
       }
     }
 
     // Ensure at least 1-2 small sustainable predators exist without overtaking
     if (census.fox.total === 0) {
-      this.createAnimal('fox', 'male', false, 45, 25, '1,0');
-      this.createAnimal('fox', 'female', false, 48, 27, '1,0');
+      this.createAnimal('fox', 'male', false, 62, 38, `${Math.floor(62 / this.size)},${Math.floor(38 / this.size)}`);
+      this.createAnimal('fox', 'female', false, -45, 52, `${Math.floor(-45 / this.size)},${Math.floor(52 / this.size)}`);
     }
     if (census.wolf.total === 0) {
-      this.createAnimal('wolf', 'male', false, -55, -55, '-1,-1');
+      this.createAnimal('wolf', 'male', false, -68, -75, `${Math.floor(-68 / this.size)},${Math.floor(-75 / this.size)}`);
     }
 
     this.extinctSpecies.clear();
@@ -957,9 +964,12 @@ export class WildlifeSystem {
 
   update(dt: number, playerPos: THREE.Vector3, sprinting: boolean): void {
     this.elapsed += dt;
+    this.frameCounter++;
 
-    // Periodic safety check: Auto-balance every 30s if any prey is wiped out or predator exceeds cap
-    if (Math.floor(this.elapsed) % 30 === 0 && Math.floor(this.elapsed) > 0) {
+    // Periodic safety check: Auto-balance once every 45s (NOT 60 times a second!)
+    this.balanceTimer -= dt;
+    if (this.balanceTimer <= 0) {
+      this.balanceTimer = 45.0;
       const census = this.speciesCensus();
       if (
         census.duck.total <= 2 ||
@@ -978,8 +988,13 @@ export class WildlifeSystem {
       const p = a.root.position;
       const distToPlayer = Math.hypot(p.x - playerPos.x, p.z - playerPos.z);
 
-      const isVisible = distToPlayer < 85;
-      a.root.visible = isVisible && a.isAttachedToScene;
+      // Performance Optimization: Throttle updates for distant unattached animals
+      if (distToPlayer > 120 && (this.frameCounter + id.charCodeAt(0)) % 5 !== 0) {
+        continue;
+      }
+
+      const isVisible = distToPlayer < 75 && a.isAttachedToScene;
+      a.root.visible = isVisible;
 
       // 1. Aging & Maturation
       a.age += dt;
@@ -1003,6 +1018,15 @@ export class WildlifeSystem {
         } else {
           a.hunger = Math.min(100, a.hunger + dt * 0.015);
         }
+      }
+
+      // Ecological Thirst Simulation
+      if (a.mood === 'drinking') {
+        a.thirst = Math.max(0, (a.thirst ?? 0) - dt * 25);
+      } else {
+        const wf = queryWorldFields(p.x, p.z);
+        const tempMult = wf.temperature > 22 ? 1.4 : 1.0;
+        a.thirst = Math.min(100, (a.thirst ?? 0) + dt * 0.35 * tempMult);
       }
       a.matingCooldown = Math.max(0, a.matingCooldown - dt);
       a.think -= dt;
@@ -1284,6 +1308,16 @@ export class WildlifeSystem {
         } else {
           p.y = groundY;
         }
+
+        // Track chunk boundary transitions
+        const curChunkKey = `${Math.floor(p.x / this.size)},${Math.floor(p.z / this.size)}`;
+        if (curChunkKey !== a.chunkKey) {
+          a.chunkKey = curChunkKey;
+          if (!this.chunksLoaded.has(curChunkKey) && a.isAttachedToScene) {
+            a.root.parent?.remove(a.root);
+            a.isAttachedToScene = false;
+          }
+        }
       }
 
       a.root.rotation.y = a.direction;
@@ -1332,8 +1366,13 @@ export class WildlifeSystem {
           a.body.position.y = -0.22 * a.scale;
           a.head.rotation.x = 0.3;
         } else if (a.mood === 'foraging') {
+          a.body.position.y = 0;
           a.head.rotation.x = 0.45 + Math.sin(this.elapsed * 2.0) * 0.12;
+        } else if (a.mood === 'drinking') {
+          a.body.position.y = -0.06 * a.scale;
+          a.head.rotation.x = 0.58 + Math.sin(this.elapsed * 3.5) * 0.08;
         } else {
+          a.body.position.y = 0;
           a.head.rotation.x = Math.sin(this.elapsed * 1.8 + a.phase) * 0.06;
         }
 
@@ -1351,21 +1390,111 @@ export class WildlifeSystem {
   }
 
   private chooseNextTarget(a: AnimalState): void {
+    const p = a.root.position;
+    const isThirsty = (a.thirst ?? 0) > 45;
+
+    const wm = this.options.worldModel || defaultWorldModel;
+
+    // 1. Thirst response: Search for reachable freshwater stream, river, or lake via WorldModel
+    if (isThirsty && a.species !== 'duck') {
+      const nearWaterNow = wm.hasWater(p.x, p.z) || wm.getWaterDepth(p.x, p.z) > 0.05 || isRiverAt(p.x, p.z, 8) || riverDistanceAt(p.x, p.z) < 4.5;
+      if (nearWaterNow) {
+        a.mood = 'drinking';
+        a.think = 5.0 + Math.random() * 3.0;
+        return;
+      }
+
+      // Sample 12 directions around animal to find closest water resource using WorldModel
+      let bestWaterDist = 999;
+      let targetWaterX = 0, targetWaterZ = 0;
+      for (let ang = 0; ang < Math.PI * 2; ang += Math.PI / 6) {
+        for (let r = 5; r <= 36; r += 5) {
+          const sx = p.x + Math.sin(ang) * r;
+          const sz = p.z + Math.cos(ang) * r;
+          if (wm.hasWater(sx, sz) || wm.getWaterDepth(sx, sz) > 0.05 || isRiverAt(sx, sz, 9)) {
+            const d = Math.hypot(sx - p.x, sz - p.z);
+            if (d < bestWaterDist) {
+              bestWaterDist = d;
+              targetWaterX = sx;
+              targetWaterZ = sz;
+            }
+            break;
+          }
+        }
+      }
+
+      if (bestWaterDist < 45 && !this.options.nearHome(targetWaterX, targetWaterZ)) {
+        a.target.set(targetWaterX, targetWaterZ);
+        a.mood = 'wandering';
+        a.think = 6.0;
+        return;
+      }
+    }
+
+    // 2. Resource & Habitat Preference Tracking using WorldModel
+    // Animals evaluate candidate positions using deterministic elevation, moisture, vegetationDensity, and biome
     const turn = Math.floor(this.elapsed / 6 + a.phase * 3);
-    const r1 = seeded(Math.round(a.home.x * 19) + turn, Math.round(a.home.y * 23) - turn);
-    const r2 = seeded(Math.round(a.home.x * 29) - turn, Math.round(a.home.y * 31) + turn);
+    const wanderRadius = a.species === 'cow' ? 14.0 : a.species === 'deer' ? 18.0 : a.species === 'duck' ? 10.0 : a.species === 'wolf' ? 22.0 : 9.0;
+    
+    let bestScore = -Infinity;
+    let bestX = a.home.x;
+    let bestZ = a.home.y;
 
-    const wanderRadius = a.species === 'cow' ? 8.0 : a.species === 'deer' ? 12.0 : 7.0;
-    const angle = r1 * Math.PI * 2;
-    const dist = 1.0 + r2 * wanderRadius;
+    const candidateCount = 6;
+    for (let c = 0; c < candidateCount; c++) {
+      const angle = (c / candidateCount) * Math.PI * 2 + seeded(Math.round(a.home.x * 11) + turn + c, Math.round(a.home.y * 13) - c) * 0.8;
+      const dist = 3.0 + seeded(Math.round(a.home.x * 23) - turn - c, Math.round(a.home.y * 29) + c) * wanderRadius;
+      const cx = p.x + Math.sin(angle) * dist;
+      const cz = p.z + Math.cos(angle) * dist;
 
-    const nx = a.home.x + Math.sin(angle) * dist;
-    const nz = a.home.y + Math.cos(angle) * dist;
+      if (this.options.nearHome(cx, cz) || this.options.roadAt(cx, cz)) continue;
 
-    if (!this.options.nearHome(nx, nz) && !this.options.roadAt(nx, nz)) {
-      a.target.set(nx, nz);
-      a.mood = r1 < 0.35 ? 'resting' : r1 < 0.75 ? 'foraging' : 'wandering';
-      a.think = 4.0 + r2 * 6.0;
+      const f = wm.queryFields(cx, cz);
+      const isWet = f.waterDepth > 0.02 || wm.hasWater(cx, cz);
+
+      // Habitat suitability scoring based on species ecological niche
+      let score = 0;
+      if (a.species === 'duck') {
+        // Ducks seek water bodies, riverbanks, and wetlands
+        score = isWet ? 10.0 : f.biome === 'riverbank' || f.biome === 'wetland' ? 7.0 : 1.0;
+      } else {
+        // Non-aquatic animals avoid drowning in deep water
+        if (isWet && f.waterDepth > 0.5) continue;
+
+        if (a.species === 'cow') {
+          // Cows seek lush meadows and gentle pastures with high soil moisture
+          const slopePenalty = f.slope > 0.35 ? -5.0 : 0;
+          score = (f.biome === 'meadow' ? 5.0 : 1.0) + f.soilMoisture * 4.0 + f.vegetationDensity * 4.0 + slopePenalty;
+        } else if (a.species === 'deer') {
+          // Deer prefer forest canopy, woodlands, and lush meadows
+          score = (f.biome === 'forest' ? 5.0 : f.biome === 'meadow' ? 3.0 : 1.0) + f.vegetationDensity * 3.5;
+        } else if (a.species === 'rabbit') {
+          // Rabbits thrive in sunny meadow grasslands and open terrain
+          score = (f.biome === 'meadow' ? 4.5 : 2.0) + (1.0 - f.slope) * 2.0 + f.vegetationDensity * 2.5;
+        } else if (a.species === 'boar') {
+          // Boars root in moist soil, wetlands, and dense forest thickets
+          score = (f.biome === 'forest' ? 4.0 : f.biome === 'wetland' ? 4.5 : 2.0) + f.soilMoisture * 3.5;
+        } else if (a.species === 'wolf') {
+          // Wolves roam foothills, highland ridges, and forest corridors
+          score = (f.biome === 'alpine' ? 4.0 : f.biome === 'forest' ? 3.5 : 2.0) + (f.elevation > 15 ? 2.5 : 0);
+        } else if (a.species === 'fox') {
+          // Foxes patrol forest borders, riverbanks, and meadow fringes
+          score = (f.biome === 'forest' ? 3.5 : f.biome === 'riverbank' ? 3.5 : 2.5) + f.vegetationDensity * 2.0;
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestX = cx;
+        bestZ = cz;
+      }
+    }
+
+    if (bestScore > -Infinity) {
+      a.target.set(bestX, bestZ);
+      const rMood = seeded(Math.round(bestX * 7) + turn, Math.round(bestZ * 11) - turn);
+      a.mood = rMood < 0.25 ? 'resting' : rMood < 0.75 ? 'foraging' : 'wandering';
+      a.think = 4.0 + rMood * 5.0;
     } else {
       a.target.copy(a.home);
       a.think = 2.0;
@@ -1398,6 +1527,8 @@ export class WildlifeSystem {
   markers(): AnimalMarker[] {
     const list: AnimalMarker[] = [];
     for (const a of this.animals.values()) {
+      // Only include animals currently attached to the active scene
+      if (!a.isAttachedToScene) continue;
       list.push({
         x: a.root.position.x,
         z: a.root.position.z,

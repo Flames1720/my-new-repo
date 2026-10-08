@@ -13,10 +13,10 @@
   <body>
     <div id="game"></div>
     <div id="hud">
-      <div id="brand">WORLD <span>WILDLIFE</span></div>
-      <div id="compass">N</div>
+      <!-- Top Tactical Compass -->
+      <div id="compass">360° N</div>
 
-      <!-- Top Right Controls & Live Mini-Map (CODM Style) -->
+      <!-- Top Right Controls & Live Mini-Map -->
       <div id="topRightBar">
         <button id="photoBtn" aria-label="Photo Mode (clean screenshot)" title="Photo Mode (P)">📷</button>
         <button id="ecoBtn" aria-label="Ecosystem sanctuary & field guide" title="Wildlife Sanctuary">🐾</button>
@@ -32,14 +32,25 @@
         </div>
       </div>
 
-      <div id="status">Generating world…</div>
-      <div id="profileBadge" title="Your Character Identity">🧑 Explorer · Lv.1</div>
-      <div id="inventory"></div>
-      <div id="target" aria-hidden="true">✚</div>
-      <div id="prompt"></div>
+      <!-- Modern Player Card (Top-Left) -->
+      <div id="playerCard">
+        <div id="profileBadge" title="Your Character Identity">🧑 Explorer · Lv.1</div>
+        <div id="status">EXPLORING</div>
+      </div>
+
+      <!-- Nearby Wildlife & Waypoint Context -->
       <div id="wildlife" aria-live="polite">Wildlife loading…</div>
       <div id="waypointBadge"></div>
-      <div id="controls">WASD / arrows · drag to look · E = interact · Space = jump / rise · Ctrl = dive · Shift = sprint · F / C = camera</div>
+
+      <!-- Modern Bottom Hotbar Inventory -->
+      <div id="inventory"></div>
+
+      <!-- Reticle & Dynamic Action Prompt -->
+      <div id="target" aria-hidden="true">•</div>
+      <div id="prompt"></div>
+
+      <!-- Minimalist Controls Hint -->
+      <div id="controls">WASD: Move · Shift: Sprint · Space: Jump · E: Interact · P: Photo</div>
     </div>
 
     <!-- Emote Selector Bar -->
