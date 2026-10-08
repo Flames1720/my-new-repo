@@ -16,7 +16,9 @@ import {
   VILLAGE_Z,
   terrainHeightAt,
   waterDepthAt,
+  waterSurfaceAt,
   waterAt,
+  waterFlowAt,
   biomeAt,
   terrainColorAt,
   mountainMaskAt,
@@ -206,6 +208,26 @@ const waterMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.14,
   metalness: 0.08,
   depthWrite: true,
+  side: THREE.DoubleSide,
+});
+
+const waterfallMaterial = new THREE.MeshStandardMaterial({
+  color: 0xdaf5ff,
+  transparent: true,
+  opacity: 0.58,
+  roughness: 0.08,
+  metalness: 0,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+
+const springMaterial = new THREE.MeshStandardMaterial({
+  color: 0x9deee4,
+  transparent: true,
+  opacity: 0.68,
+  roughness: 0.08,
+  metalness: 0.02,
+  depthWrite: false,
   side: THREE.DoubleSide,
 });
 
@@ -480,7 +502,7 @@ let splashAge = 1;
 
 function waterSplash(x: number, z: number) {
   splashAge = 0;
-  splashRing.position.set(x, WATER_LEVEL + 0.16, z);
+  splashRing.position.set(x, waterSurfaceAt(x, z) + 0.08, z);
   splashRing.scale.setScalar(0.65);
   splashRing.visible = true;
 }
@@ -514,7 +536,14 @@ function disposeWorldObjects(root: THREE.Object3D) {
     }
     const list = Array.isArray(o.material) ? o.material : [o.material];
     for (const material of list) {
-      if (material !== waterMaterial && material !== terrainMaterial && !isSharedAnimalAsset(material) && !materials.has(material)) {
+      if (
+        material !== waterMaterial &&
+        material !== terrainMaterial &&
+        material !== waterfallMaterial &&
+        material !== springMaterial &&
+        !isSharedAnimalAsset(material) &&
+        !materials.has(material)
+      ) {
         materials.add(material);
         material.dispose();
       }
@@ -665,7 +694,11 @@ class Chunks {
     waterGroup.name = 'water';
     waterGroup.position.set(cx * SIZE, 0, cz * SIZE);
 
-    const waterGrid = lod === 0 ? 16 : lod === 1 ? 8 : 4;
+    const waterGrid = lod === 0
+      ? (LOW_POWER_MODE ? 16 : 32)
+      : lod === 1
+      ? 16
+      : 8;
     const step = SIZE / waterGrid;
     const waterPositions: number[] = [], waterColors: number[] = [], waterIndices: number[] = [];
 
@@ -699,7 +732,7 @@ class Chunks {
 
         if (isWetOrShore) {
           vertIndex[iz * (waterGrid + 1) + ix] = nextIdx++;
-          waterPositions.push(ix * step, WATER_LEVEL, iz * step);
+          waterPositions.push(ix * step, waterSurfaceAt(wx, wz), iz * step);
 
           const c = new THREE.Color();
           if (depth <= 0.05) {
@@ -753,6 +786,70 @@ class Chunks {
       waterGroup.add(waterMesh);
       g.add(waterGroup);
       g.userData.water = true;
+    }
+
+    // Natural waterfalls and alpine spring pools are driven by the same
+    // drainage field as terrain and water.
+    if (lod <= 1) {
+      const sampleStep = lod === 0 ? 4 : 8;
+      let waterfallCount = 0;
+      for (let fz = sampleStep * 0.5; fz < SIZE && waterfallCount < 2; fz += sampleStep) {
+        for (let fx = sampleStep * 0.5; fx < SIZE && waterfallCount < 2; fx += sampleStep) {
+          const wx = cx * SIZE + fx;
+          const wz = cz * SIZE + fz;
+          if (nearHome(wx, wz) || nearVillage(wx, wz) || !waterAt(wx, wz)) continue;
+
+          const flow = waterFlowAt(wx, wz);
+          if (flow.flowDrop < 1.25 || flow.flowSpeed < 1.05) continue;
+
+          const ux = flow.flowVector.x;
+          const uz = flow.flowVector.y;
+          const downX = wx + ux * SIZE * 0.35;
+          const downZ = wz + uz * SIZE * 0.35;
+          const topY = waterSurfaceAt(wx, wz);
+          const bottomY = waterSurfaceAt(downX, downZ);
+          const fallHeight = topY - bottomY;
+          if (fallHeight < 0.85) continue;
+
+          const visibleHeight = Math.min(8.0, fallHeight);
+          const width = clamp(0.8 + flow.flowSpeed * 0.62 + flow.flowAccumulation / 4200, 0.9, 4.5);
+          const waterfall = new THREE.Mesh(
+            new THREE.PlaneGeometry(width, visibleHeight, 1, 6),
+            waterfallMaterial
+          );
+          waterfall.name = 'waterfall';
+          waterfall.position.set(
+            wx + ux * 0.9,
+            bottomY + visibleHeight * 0.5,
+            wz + uz * 0.9
+          );
+          waterfall.rotation.y = Math.atan2(ux, uz);
+          g.add(waterfall);
+          waterfallCount++;
+        }
+      }
+
+      if (lod === 0) {
+        const springStep = 8;
+        let springCount = 0;
+        for (let fz = springStep * 0.5; fz < SIZE && springCount < 1; fz += springStep) {
+          for (let fx = springStep * 0.5; fx < SIZE && springCount < 1; fx += springStep) {
+            const wx = cx * SIZE + fx;
+            const wz = cz * SIZE + fz;
+            const flow = waterFlowAt(wx, wz);
+            if (flow.waterType !== 'spring' || !waterAt(wx, wz)) continue;
+
+            const pool = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.34, 0.58, 0.08, 18),
+              springMaterial
+            );
+            pool.name = 'spring-pool';
+            pool.position.set(wx, waterSurfaceAt(wx, wz) + 0.035, wz);
+            g.add(pool);
+            springCount++;
+          }
+        }
+      }
     }
 
     // Trees and Rocks (Rule: Tree will never spawn into a rock)
@@ -2030,19 +2127,24 @@ function update(dt: number) {
   }
 
   moveWithCollisions((player.velocity.x + currentVx) * dt, (player.velocity.z + currentVz) * dt);
-  player.swimming = waterAt(p.x, p.z) && WATER_LEVEL - terrainHeightAt(p.x, p.z) > 0.65;
+  player.swimming = waterAt(p.x, p.z) && waterDepthAt(p.x, p.z) > 0.65;
 
   if (player.swimming) {
     const bedY = terrainHeightAt(p.x, p.z);
+    const surfaceY = waterSurfaceAt(p.x, p.z);
     const minY = bedY + 0.15;
-    // Allow swimming up to and above water level so player can easily step or hop out onto riverbank
+    // Swimming follows the local river or lake surface.
     const jumpingOut = keys.has(' ');
-    const bankAhead = terrainHeightAt(p.x + dir.x * 0.8, p.z + dir.z * 0.8) >= WATER_LEVEL - 0.28;
+    const aheadX = p.x + dir.x * 0.8;
+    const aheadZ = p.z + dir.z * 0.8;
+    const aheadSurface = waterSurfaceAt(aheadX, aheadZ);
+    const bankAhead = !waterAt(aheadX, aheadZ) &&
+      terrainHeightAt(aheadX, aheadZ) >= aheadSurface - 0.28;
     const targetY = keys.has('control')
-      ? Math.max(minY, WATER_LEVEL - 2.0)
+      ? Math.max(minY, surfaceY - 2.0)
       : jumpingOut || bankAhead
-      ? WATER_LEVEL + 0.35
-      : WATER_LEVEL - 0.85;
+      ? surfaceY + 0.35
+      : surfaceY - 0.85;
 
     player.velocity.y = lerp(player.velocity.y, (targetY - p.y) * 5, Math.min(1, dt * 4.5));
     if (jumpingOut && bankAhead) {
@@ -2051,7 +2153,7 @@ function update(dt: number) {
     p.y += player.velocity.y * dt;
 
     // Smooth transition from swimming to ground when climbing out onto shore
-    if (p.y >= WATER_LEVEL - 0.25 && wDepth < 0.48) {
+    if (p.y >= surfaceY - 0.25 && wDepth < 0.48) {
       player.swimming = false;
       player.onGround = true;
     }
@@ -2177,9 +2279,9 @@ function update(dt: number) {
     const floorAtPos = terrainHeightAt(pos.x, pos.z) + 0.65;
     if (pos.y < floorAtPos) pos.y = floorAtPos;
 
-    // Water surface clearance when not in deliberate underwater dive
-    if (!underwater && !keys.has('control')) {
-      pos.y = Math.max(pos.y, WATER_LEVEL + 0.45);
+    // Water surface clearance when not in deliberate underwater dive.
+    if (!underwater && !keys.has('control') && waterAt(p.x, p.z)) {
+      pos.y = Math.max(pos.y, waterSurfaceAt(p.x, p.z) + 0.45);
     }
 
     camera.position.lerp(pos, Math.min(1, dt * 14));
@@ -2201,7 +2303,8 @@ function update(dt: number) {
     camera.lookAt(look);
   }
 
-  const cameraUnderwater = player.swimming && camera.position.y < WATER_LEVEL - 0.04;
+  const localWaterSurface = waterAt(p.x, p.z) ? waterSurfaceAt(p.x, p.z) : WATER_LEVEL;
+  const cameraUnderwater = player.swimming && camera.position.y < localWaterSurface - 0.04;
   if (cameraUnderwater !== underwater) {
     underwater = cameraUnderwater;
     hud.classList.toggle('underwater', underwater);
