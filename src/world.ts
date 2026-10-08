@@ -554,7 +554,15 @@ function buildHydrology(): HydrologyGrid {
         }
       }
 
-      if (best < 0) best = parent[i];
+      if (best < 0) {
+        const parentIndex = parent[i];
+        if (
+          parentIndex >= 0 &&
+          baseElevation[parentIndex] <= baseElevation[i] + 0.001
+        ) {
+          best = parentIndex;
+        }
+      }
       flowTo[i] = best;
 
       if (best >= 0) {
@@ -679,7 +687,10 @@ function buildHydrology(): HydrologyGrid {
 
   for (let i = 0; i < HYDRO_COUNT; i++) {
     const a = flowAccumulation[i];
-    const t = clamp((Math.log1p(a) - logStart) / (logRiver - logStart), 0, 1);
+    const hasDrainageRoute = flowTo[i] >= 0;
+    const t = hasDrainageRoute
+      ? clamp((Math.log1p(a) - logStart) / (logRiver - logStart), 0, 1)
+      : 0;
     let strength = t * t * (3 - 2 * t);
 
     const ix = i % HYDRO_N;
@@ -719,7 +730,10 @@ function buildHydrology(): HydrologyGrid {
       depth = clamp(1.35 + depressionDepth * 0.82, 1.35, 8.0);
       presence = 1;
     } else if (channelStrength[i] > 0.02) {
-      surface = Math.max(WATER_LEVEL, baseElevation[i]);
+      surface =
+        baseElevation[i] +
+        0.30 +
+        channelStrength[i] * 0.32;
       const rawTargetDepth = clamp(
         0.55 +
         channelStrength[i] * 2.25 +
@@ -1172,17 +1186,13 @@ export function waterSurfaceAt(x: number, z: number): number {
     return surface > terrainBaseHeightAt(x, z) + 0.02 ? surface : WATER_LEVEL;
   }
 
-  if (grid.channelStrength[cell.i] > 0.02) {
-    // The nearest drainage cell owns the channel classification; the surface
-    // height is smoothed only within that channel. This prevents water from
-    // being interpolated over an adjacent ridge.
-    const surface = Math.max(
-      WATER_LEVEL,
-      bilinearWeighted(grid.baseElevation, grid.waterPresence, gx, gz)
-    );
-    return surface > terrainBaseHeightAt(x, z) + 0.02
-      ? surface
-      : Math.max(WATER_LEVEL, terrainBaseHeightAt(x, z));
+  if (grid.channelStrength[cell.i] > 0.02 && grid.waterPresence[cell.i] > 0.001) {
+    // The channel surface follows the real drainage elevation, with only a
+    // small hydraulic head above the original terrain. If an unsampled ridge
+    // is higher than that surface, this point is dry: water stops at the
+    // barrier rather than being allowed to climb it.
+    const surface = bilinearWeighted(grid.waterSurface, grid.waterPresence, gx, gz);
+    return surface > terrainBaseHeightAt(x, z) + 0.03 ? surface : WATER_LEVEL;
   }
 
   return WATER_LEVEL;
@@ -1211,8 +1221,11 @@ export function waterDepthAt(x: number, z: number): number {
   }
 
   if (grid.channelStrength[cell.i] > 0.02 && grid.waterPresence[cell.i] > 0.001) {
+    const surface = waterSurfaceAt(x, z);
+    if (surface <= terrainBaseHeightAt(x, z) + 0.03) return 0;
+
     const depth = bilinearWeighted(grid.waterDepth, grid.waterPresence, gx, gz);
-    return Math.min(Math.max(0, depth), Math.max(0, waterSurfaceAt(x, z) - 0.2));
+    return Math.min(Math.max(0, depth), Math.max(0, surface - 0.2));
   }
 
   return 0;
