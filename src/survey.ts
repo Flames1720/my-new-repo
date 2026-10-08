@@ -38,7 +38,7 @@ private surveyScene = new THREE.Scene();
     this.root.name = 'world-survey';
     this.root.visible = false;
 
-    const n = 128;
+    const n = 256;
     const positions: number[] = [];
     const colors: number[] = [];
     for (let z = 0; z <= n; z++) for (let x = 0; x <= n; x++) {
@@ -67,7 +67,7 @@ private surveyScene = new THREE.Scene();
     this.root.add(this.terrain);
 
     const wp: number[] = [], wc: number[] = [], wi: number[] = [];
-    const grid = 128, cell = SPAN / grid;
+    const grid = 256, cell = SPAN / grid;
     for (let z = 0; z < grid; z++) for (let x = 0; x < grid; x++) {
       const x0 = MIN + x * cell, z0 = MIN + z * cell;
       const pts: [number, number][] = [[x0,z0],[x0+cell,z0],[x0,z0+cell],[x0+cell,z0+cell]];
@@ -136,7 +136,7 @@ private surveyScene = new THREE.Scene();
     if (view === 'world') {
       this.surveyScene.clear();
     }
-    const c=this.terrainGeo.getAttribute('color').array as Float32Array, n=128;
+    const c=this.terrainGeo.getAttribute('color').array as Float32Array, n=256;
     for(let z=0;z<=n;z++)for(let x=0;x<=n;x++){
       const i=(z*(n+1)+x)*3;
       const wx=THREE.MathUtils.lerp(MIN,MAX,x/n),wz=THREE.MathUtils.lerp(MIN,MAX,z/n);
