@@ -54,6 +54,7 @@ export interface SettingsState {
   invertY: boolean;
   cameraAcceleration: 'fixed' | 'distance' | 'speed';
   cameraAccelerationStrength: number; // 0 to 2.0
+  cameraAccelerationThreshold: number; // 0.5 to 2.0; higher requires a stronger/faster swipe
   graphics: 'low' | 'med' | 'high';
   weatherMode: 'dynamic' | 'clear' | 'rain';
   chunkRadius: number;
