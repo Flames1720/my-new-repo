@@ -43,6 +43,7 @@ The default spawn is on the homestead side of the map and falls inside its safe 
 ## Asset reuse
 
 - `src/survival-weapons.ts` adapts the procedural pistol, shotgun and rifle rigs from the owner's `Flames1720/Fire-at-will-` project.
+- `src/survival-audio.ts` adapts the source project's self-contained Web Audio synthesizer. Sound only initializes after user input, and its ambient drone is disabled when the player leaves survival mode.
 - `src/zombie-survival.ts` uses low-poly articulated procedural infected meshes comparable to the source project's zombie construction. It does not claim imported animated zombie GLBs; the source prototype's zombie meshes are also created procedurally.
 - The existing player rig and world character model selection remain intact. The gun is camera-mounted for first-person visibility; the player's third-person mesh is hidden by the existing FPP render path.
 
