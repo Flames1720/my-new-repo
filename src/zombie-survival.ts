@@ -204,6 +204,7 @@ export class ZombieSurvivalSystem {
   public isDead = false;
   public health = 100;
   public maxHealth = 100;
+  private damageMultiplier = 1;
   public kills = 0;
   public wave = 0;
   public weapon: SurvivalWeaponId = 'pistol';
@@ -364,6 +365,13 @@ export class ZombieSurvivalSystem {
 
   setAmbientEnabled(enabled: boolean): void {
     survivalSound.setAmbientEnabled(enabled);
+  }
+
+  setPermanentUpgrades(healthLevels: number, damageLevels: number): void {
+    this.maxHealth = 100 + Math.max(0, Math.min(5, Math.floor(healthLevels))) * 10;
+    this.damageMultiplier = 1 + Math.max(0, Math.min(5, Math.floor(damageLevels))) * 0.05;
+    this.health = this.maxHealth;
+    this.emitStatus();
   }
 
   beginPreparation(seconds = 12): void {
@@ -616,9 +624,9 @@ export class ZombieSurvivalSystem {
     return actor;
   }
 
-  private damageZombie(actor: ZombieActor, amount: number, headshot: boolean, playHitSound = true, quiet = false, quietDeathLabel = 'SANCTUARY PURGED AN INFECTED'): void {
+  private damageZombie(actor: ZombieActor, amount: number, headshot: boolean, playHitSound = true, quiet = false, quietDeathLabel = 'SANCTUARY PURGED AN INFECTED', scaleWithUpgrade = true): void {
     if (actor.dead) return;
-    actor.hp = Math.max(0, actor.hp - amount);
+    actor.hp = Math.max(0, actor.hp - amount * (scaleWithUpgrade ? this.damageMultiplier : 1));
     actor.flash = 0.12;
     actor.flesh.emissive.setHex(0x7c211c);
     actor.clothing.emissive.setHex(0x3a1210);
@@ -693,7 +701,7 @@ export class ZombieSurvivalSystem {
     } else {
       if (canBreach && this.elapsed - actor.lastZoneDamage >= 0.65) {
         actor.lastZoneDamage = this.elapsed;
-        this.damageZombie(actor, 10, false, false, true);
+        this.damageZombie(actor, 10, false, false, true, 'SANCTUARY PURGED AN INFECTED', false);
         if (actor.dead) return;
       }
       // From wave 7 onward, a subset of infected approach a flank point rather than the player's exact position.
