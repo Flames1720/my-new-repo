@@ -1778,6 +1778,8 @@ const HUD_PRESETS: Record<'four' | 'three' | 'thumbs', Record<string, { x: numbe
   },
 };
 const hudEditorOverlay = document.querySelector('#hudEditorOverlay') as HTMLDivElement;
+const hudEditorPanel = document.querySelector('#hudEditorPanel') as HTMLElement;
+const hudEditorMinimize = document.querySelector('#hudEditorMinimize') as HTMLButtonElement;
 const hudPresetSelect = document.querySelector('#hudPresetSelect') as HTMLSelectElement;
 const hudSelectedName = document.querySelector('#hudSelectedName') as HTMLSpanElement;
 const hudSizeSlider = document.querySelector('#hudSizeSlider') as HTMLInputElement;
@@ -1859,6 +1861,8 @@ function setHudEditMode(active: boolean) {
   hudEditMode = active;
   document.body.classList.toggle('hud-edit-mode', active);
   hudEditorOverlay.classList.toggle('show', active);
+  hudEditorPanel.classList.remove('collapsed');
+  hudEditorMinimize.textContent = '−';
   hudDrag = null;
   if (active) {
     if (!survival?.enabled) setSurvivalEnabled(true);
@@ -1949,6 +1953,11 @@ hudPresetSelect.addEventListener('change', () => {
     applyHudPreset(hudPresetSelect.value);
     if (selectedHudItem) selectHudItem(selectedHudItem);
   }
+});
+bindAction(hudEditorMinimize, () => {
+  const collapsed = hudEditorPanel.classList.toggle('collapsed');
+  hudEditorMinimize.textContent = collapsed ? '+' : '−';
+  hudEditorMinimize.setAttribute('aria-label', collapsed ? 'Expand HUD editor' : 'Collapse HUD editor');
 });
 bindAction(document.querySelector('#hudEditorClose') as HTMLButtonElement, () => setHudEditMode(false));
 bindAction(document.querySelector('#hudSaveBtn') as HTMLButtonElement, () => setHudEditMode(false));
@@ -3184,6 +3193,8 @@ survival = new ZombieSurvivalSystem({
     keys.clear();
     keyboardKeys.clear();
     pointerKeys.clear();
+    adsToggleOn = false;
+    document.body.classList.remove('aim-active');
     survivalDeathOverlay?.classList.add('show');
     if (document.pointerLockElement) document.exitPointerLock();
   },
