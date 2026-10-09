@@ -123,6 +123,7 @@ Post-fix diagnostic overlay evidence: approximately `212` draw calls, `284156` t
 - Added consistent device-aware render scaling. On touch/low-power devices, the Low / Balanced / High caps are now **0.80× / 0.95× / 1.10×**; desktop retains **1.00× / 1.30× / 1.60×**. The same preset is applied at startup, after changing graphics settings, and after resizing/rotating the screen.
 - Kept shadow-map rendering disabled on touch/low-power devices for every preset, matching the existing startup behavior instead of letting selecting High unexpectedly enable an expensive shadow pass. Desktop Medium/High shadows remain enabled. The UI now says “Shadows where supported”.
 - Reduced near-terrain tessellation from 24 to 18 segments on low-power devices. Terrain and water continue to share their tessellation setting to preserve shoreline alignment. Desktop tessellation is unchanged.
+- Replaced the 43 separate transparent cloud-puff meshes with a single `THREE.InstancedMesh`. Instance positions, scales, and cluster orientation are baked from the existing layout, reducing the visible cloud deck from about 43 draw calls to one without removing the clouds. Transparent blending can be order-sensitive, so visual comparison remains outstanding.
 - Extended the opt-in `?perf=1` overlay to display the actual canvas buffer dimensions and pixel-ratio scale.
 - Retained `preserveDrawingBuffer: true` because the existing photo/screenshot flow captures the renderer canvas. It was not removed without a validated replacement.
 
@@ -130,7 +131,7 @@ Post-fix diagnostic overlay evidence: approximately `212` draw calls, `284156` t
 
 - `npm install --silent`: passed in the validation sandbox.
 - `npm run lint` (`tsc --noEmit`): passed.
-- `npm run build` (`tsc && vite build`): passed with Vite 7.3.7. Output was 816.83 kB minified JavaScript / 225.24 kB gzip and 33.89 kB CSS / 7.33 kB gzip. The existing Vite advisory for a JavaScript chunk over 500 kB remains; this pass does not claim to solve bundle size.
+- `npm run build` (`tsc && vite build`): passed with Vite 7.3.7. Output was 817.06 kB minified JavaScript / 225.41 kB gzip and 33.89 kB CSS / 7.33 kB gzip. The existing Vite advisory for a JavaScript chunk over 500 kB remains; this pass does not claim to solve bundle size.
 - `git diff --check`: passed.
 - A headless-browser before/after run was attempted, but the isolated sandbox stopped before a valid paired result was obtained. Partial samples are not treated as performance evidence. **No measured FPS improvement is claimed for this pass yet.**
 - No Vercel deployment was created. Physical Android/Redmi testing, screenshot verification after render-scale changes, and a completed controlled before/after frame-time comparison remain outstanding.
