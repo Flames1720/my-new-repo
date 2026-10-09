@@ -1458,6 +1458,8 @@ const keys = new Set<string>();
 let survival: ZombieSurvivalSystem;
 const keyboardKeys = new Set<string>();
 const pointerKeys = new Map<string, Set<number>>();
+let hudEditMode = false;
+let adsToggleOn = false;
 
 function syncKeyState(key: string) {
   if (keyboardKeys.has(key) || (pointerKeys.get(key)?.size ?? 0) > 0) keys.add(key);
@@ -1507,6 +1509,16 @@ let surveyLastMidY = 0;
 let surveyMoved = false;
 const gameDom = renderer.domElement;
 
+let lookGestureDistance = 0;
+let lastLookMoveAt = 0;
+
+function beginLookGesture(clientX: number, clientY: number) {
+  lastX = clientX;
+  lastY = clientY;
+  lookGestureDistance = 0;
+  lastLookMoveAt = performance.now();
+}
+
 function onLookMove(clientX: number, clientY: number) {
   const dx = clientX - lastX;
   const dy = clientY - lastY;
@@ -1519,15 +1531,34 @@ function onLookMove(clientX: number, clientY: number) {
   lastX = clientX;
   lastY = clientY;
 
+  const now = performance.now();
+  const elapsed = Math.max(0.008, (now - (lastLookMoveAt || now - 16)) / 1000);
+  lastLookMoveAt = now;
+  lookGestureDistance += Math.hypot(dx, dy);
+
+  const accelerationMode = settings.current.cameraAcceleration;
+  const accelerationStrength = Math.max(0, Math.min(2, settings.current.cameraAccelerationStrength));
+  let acceleration = 1;
+  if (accelerationMode === 'distance') {
+    const distanceFactor = clamp(lookGestureDistance / Math.max(100, window.innerWidth * 0.38), 0, 1);
+    acceleration += accelerationStrength * distanceFactor;
+  } else if (accelerationMode === 'speed') {
+    const speedPxPerSecond = Math.hypot(dx, dy) / elapsed;
+    acceleration += accelerationStrength * clamp(speedPxPerSecond / 1100, 0, 1);
+  }
+
   const sensX = settings.current.sensitivityX;
   const sensY = settings.current.sensitivityY;
   const invertY = settings.current.invertY ? -1 : 1;
-
-  // Slightly calmer touch look speed makes small thumb drags more controllable.
-  const touchLookScale = IS_TOUCH_DEVICE ? 0.82 : 1;
-  // Dragging right should look right, matching familiar FPS touch controls.
-  targetYaw += dx * 0.007 * sensX * touchLookScale;
-  targetPitch = clamp(targetPitch - dy * 0.0055 * sensY * invertY * touchLookScale, -1.2, 0.95);
+  // Sensitivity is expressed in degrees for a swipe spanning the full viewport.
+  // Separate pointer IDs let the left thumb move while another finger looks,
+  // aims or shoots on the right without cancelling either gesture.
+  targetYaw += (dx / Math.max(1, window.innerWidth)) * (sensX * Math.PI / 180) * acceleration;
+  targetPitch = clamp(
+    targetPitch - (dy / Math.max(1, window.innerHeight)) * (sensY * Math.PI / 180) * invertY * acceleration,
+    -1.2,
+    0.95
+  );
 }
 
 gameDom.addEventListener('pointerdown', e => {
@@ -1544,8 +1575,7 @@ gameDom.addEventListener('pointerdown', e => {
     return;
   }
   pointer = e.pointerId;
-  lastX = e.clientX;
-  lastY = e.clientY;
+  beginLookGesture(e.clientX, e.clientY);
   gameDom.setPointerCapture(e.pointerId);
 });
 gameDom.addEventListener('pointermove', e => {
@@ -1602,7 +1632,9 @@ gameDom.addEventListener('wheel', e => {
   targetDistance = clamp(targetDistance + e.deltaY * 0.008, 2.2, 13);
 }, { passive: false });
 
-// Virtual Joystick for Mobile
+// Full left half: dynamic touch-following movement joystick.
+// Its anchor appears exactly where the thumb lands, then follows that pointer only.
+const leftMoveZone = document.querySelector('#leftMoveZone') as HTMLElement;
 const stick = document.querySelector('#stick') as HTMLElement;
 const knob = document.querySelector('#knob') as HTMLElement;
 let joy = { x: 0, y: 0 }, joyActive = false, joyPointer: number | null = null;
@@ -1614,25 +1646,29 @@ const moveJoy = (e: PointerEvent) => {
   const cy = r.top + r.height / 2;
   let x = e.clientX - cx, y = e.clientY - cy;
   const l = Math.hypot(x, y);
-  const m = 44;
-  if (l > m) {
+  const m = Math.min(48, r.width * 0.43);
+  if (l > m && l > 0) {
     x = (x / l) * m;
     y = (y / l) * m;
   }
-  joy = { x: x / m, y: y / m };
+  joy = l > 0 ? { x: x / m, y: y / m } : { x: 0, y: 0 };
   knob.style.transform = `translate(${x}px,${y}px)`;
 };
 
-stick.addEventListener('pointerdown', e => {
+leftMoveZone.addEventListener('pointerdown', e => {
+  if (hudEditMode || joyPointer !== null || (e.pointerType === 'mouse' && !IS_TOUCH_DEVICE)) return;
   e.preventDefault();
   e.stopPropagation();
-  if (joyPointer !== null) return;
   joyPointer = e.pointerId;
   joyActive = true;
-  stick.setPointerCapture(e.pointerId);
+  stick.style.left = `${e.clientX}px`;
+  stick.style.top = `${e.clientY}px`;
+  stick.style.bottom = 'auto';
+  stick.classList.add('active');
+  leftMoveZone.setPointerCapture(e.pointerId);
   moveJoy(e);
 });
-stick.addEventListener('pointermove', moveJoy);
+leftMoveZone.addEventListener('pointermove', moveJoy);
 const endJoy = (e: PointerEvent) => {
   if (joyPointer !== e.pointerId) return;
   e.preventDefault();
@@ -1641,10 +1677,11 @@ const endJoy = (e: PointerEvent) => {
   joyActive = false;
   joy = { x: 0, y: 0 };
   knob.style.transform = 'translate(0,0)';
+  stick.classList.remove('active');
 };
-stick.addEventListener('pointerup', endJoy);
-stick.addEventListener('pointercancel', endJoy);
-stick.addEventListener('lostpointercapture', endJoy);
+leftMoveZone.addEventListener('pointerup', endJoy);
+leftMoveZone.addEventListener('pointercancel', endJoy);
+leftMoveZone.addEventListener('lostpointercapture', endJoy);
 
 // Mobile Look Zone (Right screen drag)
 const lookZone = document.querySelector('#lookZone') as HTMLElement;
@@ -1654,8 +1691,7 @@ lookZone.addEventListener('pointerdown', e => {
   e.preventDefault();
   e.stopPropagation();
   lookPointer = e.pointerId;
-  lastX = e.clientX;
-  lastY = e.clientY;
+  beginLookGesture(e.clientX, e.clientY);
   lookZone.setPointerCapture(e.pointerId);
 });
 lookZone.addEventListener('pointermove', e => {
@@ -1710,6 +1746,213 @@ function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void) {
   el.addEventListener('pointercancel', up);
   el.addEventListener('lostpointercapture', up);
 }
+// --- DRAGGABLE SURVIVAL HUD LAYOUT ---
+type HudLayoutItem = { x: number; y: number; size: number; opacity: number };
+const HUD_LAYOUT_KEY = 'zombie-survival-hud-v1';
+const HUD_DEFAULTS: Record<string, HudLayoutItem> = {
+  shoot: { x: 10, y: 23, size: 66, opacity: 0.68 },
+  ads: { x: 88, y: 24, size: 48, opacity: 0.62 },
+  jump: { x: 92, y: 72, size: 46, opacity: 0.56 },
+  reload: { x: 80, y: 81, size: 44, opacity: 0.56 },
+  use: { x: 69, y: 55, size: 46, opacity: 0.62 },
+};
+const HUD_PRESETS: Record<'four' | 'three' | 'thumbs', Record<string, { x: number; y: number }>> = {
+  four: {
+    shoot: { x: 10, y: 23 }, ads: { x: 88, y: 24 }, jump: { x: 92, y: 72 },
+    reload: { x: 80, y: 81 }, use: { x: 69, y: 55 },
+  },
+  three: {
+    shoot: { x: 10, y: 25 }, ads: { x: 87, y: 43 }, jump: { x: 91, y: 69 },
+    reload: { x: 79, y: 82 }, use: { x: 69, y: 56 },
+  },
+  thumbs: {
+    shoot: { x: 87, y: 78 }, ads: { x: 85, y: 56 }, jump: { x: 94, y: 64 },
+    reload: { x: 75, y: 83 }, use: { x: 67, y: 55 },
+  },
+};
+const hudEditorOverlay = document.querySelector('#hudEditorOverlay') as HTMLDivElement;
+const hudPresetSelect = document.querySelector('#hudPresetSelect') as HTMLSelectElement;
+const hudSelectedName = document.querySelector('#hudSelectedName') as HTMLSpanElement;
+const hudSizeSlider = document.querySelector('#hudSizeSlider') as HTMLInputElement;
+const hudSizeVal = document.querySelector('#hudSizeVal') as HTMLSpanElement;
+const hudOpacitySlider = document.querySelector('#hudOpacitySlider') as HTMLInputElement;
+const hudOpacityVal = document.querySelector('#hudOpacityVal') as HTMLSpanElement;
+const hudTouchButtons = Array.from(document.querySelectorAll<HTMLElement>('#touch [data-hud-id]'));
+let hudLayout: Record<string, HudLayoutItem> = Object.fromEntries(
+  Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }])
+);
+let selectedHudItem: HTMLElement | null = null;
+let hudDrag: { pointerId: number; el: HTMLElement; offsetX: number; offsetY: number } | null = null;
+
+function clampHudItem(item: HudLayoutItem): HudLayoutItem {
+  return {
+    x: clamp(item.x, 4, 96),
+    y: clamp(item.y, 6, 94),
+    size: clamp(item.size, 34, 100),
+    opacity: clamp(item.opacity, 0.15, 1),
+  };
+}
+function applyHudItem(el: HTMLElement) {
+  const id = el.dataset.hudId;
+  if (!id || !hudLayout[id]) return;
+  const item = clampHudItem(hudLayout[id]);
+  hudLayout[id] = item;
+  el.style.setProperty('--hud-x', `${item.x}%`);
+  el.style.setProperty('--hud-y', `${item.y}%`);
+  el.style.setProperty('--hud-size', `${item.size}px`);
+  el.style.setProperty('--hud-opacity', String(item.opacity));
+}
+function saveHudLayout() {
+  try { localStorage.setItem(HUD_LAYOUT_KEY, JSON.stringify(hudLayout)); } catch {}
+}
+function loadHudLayout() {
+  try {
+    const raw = localStorage.getItem(HUD_LAYOUT_KEY);
+    if (raw) {
+      const stored = JSON.parse(raw) as Record<string, Partial<HudLayoutItem>>;
+      for (const [id, defaults] of Object.entries(HUD_DEFAULTS)) {
+        const value = stored[id];
+        if (!value) continue;
+        hudLayout[id] = clampHudItem({
+          x: Number.isFinite(value.x) ? Number(value.x) : defaults.x,
+          y: Number.isFinite(value.y) ? Number(value.y) : defaults.y,
+          size: Number.isFinite(value.size) ? Number(value.size) : defaults.size,
+          opacity: Number.isFinite(value.opacity) ? Number(value.opacity) : defaults.opacity,
+        });
+      }
+    }
+  } catch {
+    hudLayout = Object.fromEntries(Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }]));
+  }
+  hudTouchButtons.forEach(applyHudItem);
+}
+function selectHudItem(el: HTMLElement) {
+  selectedHudItem?.classList.remove('hud-selected');
+  selectedHudItem = el;
+  el.classList.add('hud-selected');
+  const id = el.dataset.hudId || 'control';
+  const name = id === 'ads' ? 'ADS / AIM' : id.toUpperCase();
+  hudSelectedName.textContent = name;
+  const item = hudLayout[id] || HUD_DEFAULTS[id];
+  hudSizeSlider.value = String(item.size);
+  hudSizeVal.textContent = `${item.size} px`;
+  hudOpacitySlider.value = String(Math.round(item.opacity * 100 / 5) * 5);
+  hudOpacityVal.textContent = `${Math.round(item.opacity * 100)}%`;
+}
+function applyHudPreset(preset: 'four' | 'three' | 'thumbs') {
+  for (const [id, position] of Object.entries(HUD_PRESETS[preset])) {
+    const current = hudLayout[id] || HUD_DEFAULTS[id];
+    hudLayout[id] = clampHudItem({ ...current, ...position });
+  }
+  hudTouchButtons.forEach(applyHudItem);
+  hudPresetSelect.value = preset;
+  saveHudLayout();
+}
+function setHudEditMode(active: boolean) {
+  hudEditMode = active;
+  document.body.classList.toggle('hud-edit-mode', active);
+  hudEditorOverlay.classList.toggle('show', active);
+  hudDrag = null;
+  if (active) {
+    openSettings(false);
+    const first = hudTouchButtons.find(el => el.dataset.hudId === 'shoot') || hudTouchButtons[0];
+    if (first) selectHudItem(first);
+    say('Drag HUD controls to move them. Use the sliders to resize and fade them.');
+  } else {
+    selectedHudItem?.classList.remove('hud-selected');
+    selectedHudItem = null;
+    saveHudLayout();
+  }
+}
+loadHudLayout();
+
+document.addEventListener('pointerdown', event => {
+  if (!hudEditMode) return;
+  const target = event.target instanceof HTMLElement
+    ? event.target.closest<HTMLElement>('#touch [data-hud-id]')
+    : null;
+  if (!target) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  selectHudItem(target);
+  const rect = target.getBoundingClientRect();
+  hudDrag = {
+    pointerId: event.pointerId,
+    el: target,
+    offsetX: event.clientX - (rect.left + rect.width / 2),
+    offsetY: event.clientY - (rect.top + rect.height / 2),
+  };
+  try { target.setPointerCapture(event.pointerId); } catch {}
+}, true);
+document.addEventListener('pointermove', event => {
+  if (!hudEditMode || !hudDrag || event.pointerId !== hudDrag.pointerId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const rect = touchControls.getBoundingClientRect();
+  const x = clamp(((event.clientX - hudDrag.offsetX - rect.left) / Math.max(1, rect.width)) * 100, 4, 96);
+  const y = clamp(((event.clientY - hudDrag.offsetY - rect.top) / Math.max(1, rect.height)) * 100, 6, 94);
+  const id = hudDrag.el.dataset.hudId!;
+  hudLayout[id] = clampHudItem({ ...hudLayout[id], x, y });
+  applyHudItem(hudDrag.el);
+  hudPresetSelect.value = 'custom';
+}, true);
+document.addEventListener('pointerup', event => {
+  if (!hudEditMode || !hudDrag || event.pointerId !== hudDrag.pointerId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  hudDrag = null;
+  saveHudLayout();
+}, true);
+document.addEventListener('pointercancel', event => {
+  if (!hudDrag || event.pointerId !== hudDrag.pointerId) return;
+  hudDrag = null;
+  saveHudLayout();
+}, true);
+document.addEventListener('click', event => {
+  if (!hudEditMode) return;
+  const target = event.target instanceof HTMLElement ? event.target.closest('#touch [data-hud-id]') : null;
+  if (target) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+  }
+}, true);
+hudSizeSlider.addEventListener('input', () => {
+  if (!selectedHudItem) return;
+  const id = selectedHudItem.dataset.hudId!;
+  hudLayout[id].size = Number(hudSizeSlider.value);
+  hudSizeVal.textContent = `${hudLayout[id].size} px`;
+  applyHudItem(selectedHudItem);
+  hudPresetSelect.value = 'custom';
+  saveHudLayout();
+});
+hudOpacitySlider.addEventListener('input', () => {
+  if (!selectedHudItem) return;
+  const id = selectedHudItem.dataset.hudId!;
+  hudLayout[id].opacity = Number(hudOpacitySlider.value) / 100;
+  hudOpacityVal.textContent = `${hudOpacitySlider.value}%`;
+  applyHudItem(selectedHudItem);
+  hudPresetSelect.value = 'custom';
+  saveHudLayout();
+});
+hudPresetSelect.addEventListener('change', () => {
+  if (hudPresetSelect.value === 'four' || hudPresetSelect.value === 'three' || hudPresetSelect.value === 'thumbs') {
+    applyHudPreset(hudPresetSelect.value);
+    if (selectedHudItem) selectHudItem(selectedHudItem);
+  }
+});
+bindAction(document.querySelector('#hudEditorClose') as HTMLButtonElement, () => setHudEditMode(false));
+bindAction(document.querySelector('#hudSaveBtn') as HTMLButtonElement, () => setHudEditMode(false));
+bindAction(document.querySelector('#hudResetBtn') as HTMLButtonElement, () => {
+  hudLayout = Object.fromEntries(Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }]));
+  hudTouchButtons.forEach(applyHudItem);
+  hudPresetSelect.value = 'four';
+  saveHudLayout();
+  const first = hudTouchButtons.find(el => el.dataset.hudId === 'shoot') || hudTouchButtons[0];
+  if (first) selectHudItem(first);
+});
+
 
 // Touch buttons. Survival mode reuses the same joystick/look zones but swaps fantasy actions for FPS actions.
 bindAction(document.querySelector('#modeBtn') as HTMLButtonElement, () => {
@@ -1724,7 +1967,14 @@ bindAction(document.querySelector('#punchBtn') as HTMLButtonElement, triggerPunc
 bindAction(document.querySelector('#kickBtn') as HTMLButtonElement, triggerKick);
 bindAction(document.querySelector('#castBtn') as HTMLButtonElement, () => survival?.enabled ? survival.fire() : triggerFireCast());
 bindHoldAction(document.querySelector('#shootBtn') as HTMLButtonElement, 'shoot', () => survival?.enabled && survival.fire());
-bindHoldAction(document.querySelector('#aimBtn') as HTMLButtonElement, 'aim');
+const adsButton = document.querySelector('#aimBtn') as HTMLButtonElement;
+bindAction(adsButton, () => {
+  adsToggleOn = !adsToggleOn;
+  document.body.classList.toggle('aim-active', adsToggleOn);
+  adsButton.setAttribute('aria-pressed', String(adsToggleOn));
+  adsButton.title = adsToggleOn ? 'ADS enabled · tap to return to hip-fire' : 'Toggle aim down sights';
+  say(adsToggleOn ? 'AIM DOWN SIGHTS' : 'HIP-FIRE');
+});
 bindAction(document.querySelector('#reloadBtn') as HTMLButtonElement, () => survival?.enabled && survival.reload());
 bindHoldAction(document.querySelector('#jumpBtn') as HTMLButtonElement, ' ', jump);
 bindHoldAction(document.querySelector('#diveBtn') as HTMLButtonElement, 'control');
@@ -2731,6 +2981,8 @@ function setSurvivalEnabled(enabled: boolean) {
     target.style.display = 'grid';
   } else {
     survival.setEnabled(false);
+    adsToggleOn = false;
+    document.body.classList.remove('aim-active');
     mode = modeBeforeSurvival;
     document.body.classList.remove('survival-mode', 'survival-damaged');
     survivalDeathOverlay?.classList.remove('show');
@@ -2957,7 +3209,9 @@ function update(dt: number) {
   const dir = moveDirection.set(0, 0, 0).addScaledVector(right, iv.x).addScaledVector(forward, -iv.y);
   const inputMagnitude = Math.min(1, dir.length());
   const hasInput = inputMagnitude > 0.08;
-  const sprinting = (keys.has('shift') || sprintToggle) && hasInput;
+  // Push the virtual stick into its outer ring to sprint without a separate run button.
+  const joystickSprint = joyActive && Math.hypot(joy.x, joy.y) >= 0.78;
+  const sprinting = (keys.has('shift') || sprintToggle || joystickSprint) && hasInput;
 
   const slopeInfo = terrainSlopeAt(p.x, p.z);
   // Calculate motion alignment with downhill slope fall-line
@@ -3235,7 +3489,7 @@ function update(dt: number) {
   if (isPhotoMode) updatePhotoBadges();
 
   // Shooter simulation runs after the existing camera is positioned, so its hitscan uses the actual FPP view.
-  survival.update(dt, keys.has('shoot'), keys.has('aim'));
+  survival.update(dt, keys.has('shoot'), keys.has('aim') || adsToggleOn);
 
   // Record breadcrumb displacement trail
   minimap.recordPosition(p.x, p.z);
