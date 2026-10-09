@@ -1368,6 +1368,8 @@ body.survival-mode #survivalHud{display:block}
 .survivalHealthBlock{display:grid;grid-template-columns:auto auto;align-items:center;gap:4px 7px;min-width:92px}
 .survivalHealthBlock strong{font-size:12px;color:#fff}
 .survivalHealthTrack{grid-column:1/-1;height:5px;width:100%;margin:0;overflow:hidden;border-radius:20px;background:rgba(255,255,255,.28)}
+.survivalStaminaTrack{height:3px;width:min(180px,28vw);margin-top:5px;overflow:hidden;border-radius:20px;background:rgba(255,255,255,.16)}
+#survivalStaminaBar{display:block;width:100%;height:100%;border-radius:inherit;background:#a3e635;transition:width .12s linear}
 #survivalHealthBar{display:block;width:100%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#4ade80,#bbf7d0);transition:width .14s linear,background .14s}
 .survivalWeaponBlock{min-width:0}
 .survivalWeaponLine{display:flex;align-items:center;gap:4px}
