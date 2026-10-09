@@ -315,6 +315,8 @@ export class ZombieSurvivalSystem {
       this.fireHeld = false;
       this.aimActive = false;
       this.setAim(false);
+      survivalSound.updateHeartbeat(1);
+      survivalSound.setAmbientEnabled(false);
       for (const trace of this.tracerLines) {
         this.scene.remove(trace.line);
         trace.line.geometry.dispose();
@@ -338,6 +340,10 @@ export class ZombieSurvivalSystem {
 
   setAmbientEnabled(enabled: boolean): void {
     survivalSound.setAmbientEnabled(enabled);
+  }
+
+  setSurvivalAudioHealth(healthRatio: number): void {
+    survivalSound.updateHeartbeat(this.enabled ? Math.max(0, Math.min(1, healthRatio)) : 1);
   }
 
   setFireHeld(held: boolean): void {
@@ -945,7 +951,7 @@ export class ZombieSurvivalSystem {
   }
 
   private emitStatus(): void {
-    survivalSound.updateHeartbeat(1);
+    this.setSurvivalAudioHealth(this.health / this.maxHealth);
     this.options.onStatus(this.status());
   }
 
