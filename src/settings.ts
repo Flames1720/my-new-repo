@@ -5,6 +5,7 @@ const SETTINGS_KEY = 'world-wildlife-settings-v1';
 export const defaultSettings: SettingsState = {
   sensitivityX: 180,
   sensitivityY: 100,
+  adsSensitivity: 0.5,
   invertY: false,
   cameraAcceleration: 'fixed',
   cameraAccelerationStrength: 0.65,
@@ -39,6 +40,8 @@ class SettingsManager {
         if (typeof parsed.sensitivityY !== 'number' || parsed.sensitivityY <= 3) {
           this.current.sensitivityY = defaultSettings.sensitivityY;
         }
+        if (!Number.isFinite(this.current.adsSensitivity)) this.current.adsSensitivity = defaultSettings.adsSensitivity;
+        this.current.adsSensitivity = Math.max(0.25, Math.min(1, this.current.adsSensitivity));
         if (!['fixed', 'distance', 'speed'].includes(this.current.cameraAcceleration)) {
           this.current.cameraAcceleration = defaultSettings.cameraAcceleration;
         }
