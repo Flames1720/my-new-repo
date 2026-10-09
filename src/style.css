@@ -1415,6 +1415,9 @@ body.survival-mode #survivalHud{opacity:.88}
 body.survival-mode #compass{opacity:.55;background:transparent;border-color:transparent;box-shadow:none;backdrop-filter:none}
 body.survival-mode #minimapContainer{opacity:.82}
 body.survival-mode #minimapContainer:active,body.survival-mode #survivalHud:active{opacity:1}
+#skillBtn{display:none}
+body.survival-mode #skillBtn{display:grid!important;align-items:center;justify-content:center;border:1px solid rgba(251,191,36,.75);background:rgba(120,53,15,.72);color:#fef3c7;font-size:9px;font-weight:950;letter-spacing:.3px;box-shadow:0 0 12px rgba(245,158,11,.16),inset 0 0 0 1px rgba(255,255,255,.08)}
+body.survival-mode #skillBtn.recharging{border-color:rgba(148,163,184,.48);background:rgba(30,41,59,.7);color:#94a3b8;box-shadow:none}
 #safeZoneDirection{display:none;position:fixed;z-index:18;top:calc(env(safe-area-inset-top,0px) + 42px);left:50%;transform:translateX(-50%);align-items:center;gap:8px;padding:6px 10px;border:1px solid rgba(251,191,36,.35);border-radius:999px;background:rgba(9,14,17,.78);color:#fef3c7;font-size:9px;font-weight:900;letter-spacing:.8px;white-space:nowrap;pointer-events:none;backdrop-filter:blur(6px)}
 #safeZoneDirection.show{display:flex}
 #safeZoneArrowIcon{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;color:#fbbf24;font-size:16px;transform-origin:center;transition:transform .08s linear}
