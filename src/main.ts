@@ -42,7 +42,7 @@ import { settings } from './settings';
 import { WorldSurvey, type SurveyView } from './survey';
 import { voxelWorld, buildVoxelWorldVolumeMesh, buildVoxelWorldWaterVolumeMesh, type VoxelEdit } from './voxel';
 import { environmentAssets } from './environment-assets';
-import { ZombieSurvivalSystem, type SurvivalStatus } from './zombie-survival';
+import { ZombieSurvivalSystem, type SurvivalStatus, type SurvivalWeaponId } from './zombie-survival';
 
 type Save = {
   version: 2;
@@ -1849,7 +1849,29 @@ function setHudEditMode(active: boolean) {
   hudEditorMinimize.textContent = '−';
   hudDrag = null;
   if (active) {
-    if (!survival?.enabled) setSurvivalEnabled(true);
+    if (!survival?.enabled) const BEST_WAVE_KEY = 'island-outbreak-best-wave';
+let bestSurvivalWave = 0;
+try { bestSurvivalWave = Number(localStorage.getItem(BEST_WAVE_KEY) || 0); } catch {}
+function recordSurvivalRun(result: 'OVERRUN' | 'VICTORY') {
+  const wave = survival.wave;
+  const kills = survival.kills;
+  const isNewBest = wave > bestSurvivalWave;
+  if (isNewBest) {
+    bestSurvivalWave = wave;
+    try { localStorage.setItem(BEST_WAVE_KEY, String(bestSurvivalWave)); } catch {}
+  }
+  if (lobbyLastRun) lobbyLastRun.textContent = `${result} · WAVE ${wave}/100 · ${kills} KILLS${isNewBest ? ' · NEW BEST' : ''} · BEST ${bestSurvivalWave}`;
+}
+if (startRunBtn) bindAction(startRunBtn, () => {
+  const selectedWeapon = (lobbyWeaponSelect?.value || 'pistol') as SurvivalWeaponId;
+  survival.reset();
+  survival.switchWeapon(selectedWeapon);
+  setSurvivalEnabled(true);
+  survival.beginPreparation(12);
+  survivalLobby?.classList.remove('show');
+});
+document.body.classList.add('survival-mode');
+survivalLobby?.classList.add('show');
     openSettings(false);
     const first = hudTouchButtons.find(el => el.dataset.hudId === 'shoot') || hudTouchButtons[0];
     if (first) selectHudItem(first);
@@ -2115,6 +2137,10 @@ const survivalWave = document.querySelector('#survivalWave') as HTMLSpanElement 
 const survivalZombies = document.querySelector('#survivalZombies') as HTMLSpanElement | null;
 const survivalDeathOverlay = document.querySelector('#survivalDeathOverlay') as HTMLDivElement | null;
 const survivalRestartBtn = document.querySelector('#survivalRestartBtn') as HTMLButtonElement | null;
+const survivalLobby = document.querySelector('#survivalLobby') as HTMLDivElement | null;
+const lobbyWeaponSelect = document.querySelector('#lobbyWeaponSelect') as HTMLSelectElement | null;
+const lobbyLastRun = document.querySelector('#lobbyLastRun') as HTMLParagraphElement | null;
+const startRunBtn = document.querySelector('#startRunBtn') as HTMLButtonElement | null;
 const survivalCycleWeapon = document.querySelector('#survivalCycleWeapon') as HTMLButtonElement | null;
 const surveyBtn = document.querySelector('#surveyBtn') as HTMLButtonElement | null;
 const surveyOverlay = document.querySelector('#surveyOverlay') as HTMLDivElement | null;
@@ -3174,8 +3200,14 @@ survival = new ZombieSurvivalSystem({
     if (survivalAmmo) survivalAmmo.textContent = String(state.ammoInMag).padStart(2, '0');
     if (survivalReserve) survivalReserve.textContent = state.reloading ? 'RELOADING' : `/ ${state.ammoReserve}`;
     if (survivalKills) survivalKills.textContent = `KILLS ${state.kills}`;
-    if (survivalWave) survivalWave.textContent = state.runComplete ? 'ISLAND SECURED' : state.wave ? `WAVE ${state.wave} / 100` : 'SAFE START';
+    if (survivalWave) survivalWave.textContent = state.preparationSeconds ? `PREP ${state.preparationSeconds}s` : state.runComplete ? 'ISLAND SECURED' : state.wave ? `WAVE ${state.wave} / 100` : 'SAFE START';
     if (survivalZombies) survivalZombies.textContent = state.livingZombies ? `${state.livingZombies} INFECTED` : '';
+    if (state.runComplete && !survivalLobby?.classList.contains('show')) {
+      recordSurvivalRun('VICTORY');
+      survivalLobby?.classList.add('show');
+      document.body.classList.add('survival-mode');
+      survival.setEnabled(false);
+    }
     if (survivalZoneStatus) {
       survivalZoneStatus.textContent = state.zonePhase === 'weakening'
         ? `WEAKENING · ${state.nearestZone} ${Math.round(state.zoneIntegrity ?? 0)}%`
@@ -3194,7 +3226,11 @@ survival = new ZombieSurvivalSystem({
     keyboardKeys.clear();
     pointerKeys.clear();
     document.body.classList.remove('aim-active');
-    survivalDeathOverlay?.classList.add('show');
+    recordSurvivalRun('OVERRUN');
+    survival.setEnabled(false);
+    document.body.classList.add('survival-mode');
+    survivalLobby?.classList.add('show');
+    survivalDeathOverlay?.classList.remove('show');
     if (document.pointerLockElement) document.exitPointerLock();
   },
 });
