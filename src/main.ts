@@ -595,22 +595,30 @@ function updateSky(dt: number, rainDim: number, lightningFlash: number) {
   starMat.opacity = clamp((1 - daylight * 1.4) * 0.88 - rainDim * 0.75, 0, 0.88);
 }
 
-// --- GEOGRAPHICAL HIGH-MOUNTAIN CLOUD & MIST DECK ---
-// Clouds intersect mountain ranges, letting high summits soar above the cloud deck
+// --- SCATTERED HIGH CLOUDS ---
+// Separated overlapping puffs replace the opaque-looking world-sized sheet.
 const cloudDeckGroup = new THREE.Group();
-cloudDeckGroup.name = 'mountain-cloud-deck';
+cloudDeckGroup.name = 'scattered-sky-clouds';
 const cloudDeckMat = new THREE.MeshBasicMaterial({
-  color: 0xe8f0f5,
-  transparent: true,
-  opacity: 0.28,
-  depthWrite: false,
-  side: THREE.DoubleSide,
+  color: 0xf4f8fc, transparent: true, opacity: 0.20, depthWrite: false, fog: false,
 });
-const cloudDeckGeo = new THREE.PlaneGeometry(850, 850, 16, 16);
-const cloudDeckMesh = new THREE.Mesh(cloudDeckGeo, cloudDeckMat);
-cloudDeckMesh.rotation.x = -Math.PI / 2;
-cloudDeckMesh.position.set(0, 105.0, 0);
-cloudDeckGroup.add(cloudDeckMesh);
+const cloudPuffGeo = new THREE.SphereGeometry(1, LOW_POWER_MODE ? 7 : 10, LOW_POWER_MODE ? 5 : 7);
+for (let i = 0; i < 11; i++) {
+  const cluster = new THREE.Group();
+  const angle = i * 2.399963;
+  const radius = 125 + ((i * 71) % 245);
+  cluster.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+  cluster.rotation.y = angle * 0.7;
+  for (let p = 0, count = 3 + (i % 3); p < count; p++) {
+    const puff = new THREE.Mesh(cloudPuffGeo, cloudDeckMat);
+    const spread = p === 0 ? 0 : 9 + ((i * 7 + p * 11) % 15);
+    const a = p * 2.4 + i * 0.53;
+    puff.position.set(Math.cos(a) * spread, (p % 2) * 1.8, Math.sin(a) * spread);
+    puff.scale.set(13 + ((i * 5 + p * 7) % 19), 4.5 + ((i + p * 3) % 5), 8 + ((i * 3 + p * 9) % 13));
+    cluster.add(puff);
+  }
+  cloudDeckGroup.add(cluster);
+}
 scene.add(cloudDeckGroup);
 
 const world = new THREE.Group(), actors = new THREE.Group();
@@ -1515,8 +1523,10 @@ function onLookMove(clientX: number, clientY: number) {
   const sensY = settings.current.sensitivityY;
   const invertY = settings.current.invertY ? -1 : 1;
 
-  targetYaw -= dx * 0.008 * sensX;
-  targetPitch = clamp(targetPitch - dy * 0.006 * sensY * invertY, -1.2, 0.95);
+  // Slightly calmer touch look speed makes small thumb drags more controllable.
+  const touchLookScale = IS_TOUCH_DEVICE ? 0.82 : 1;
+  targetYaw -= dx * 0.007 * sensX * touchLookScale;
+  targetPitch = clamp(targetPitch - dy * 0.0055 * sensY * invertY * touchLookScale, -1.2, 0.95);
 }
 
 gameDom.addEventListener('pointerdown', e => {
@@ -2830,7 +2840,7 @@ survival = new ZombieSurvivalSystem({
     if (survivalReserve) survivalReserve.textContent = state.reloading ? 'RELOADING' : `/ ${state.ammoReserve}`;
     if (survivalKills) survivalKills.textContent = `KILLS ${state.kills}`;
     if (survivalWave) survivalWave.textContent = state.wave ? `WAVE ${state.wave}` : 'SAFE START';
-    if (survivalZombies) survivalZombies.textContent = state.livingZombies ? `${state.livingZombies} NEARBY` : 'NO CONTACT';
+    if (survivalZombies) survivalZombies.textContent = state.livingZombies ? `${state.livingZombies} INFECTED` : '';
     if (survivalZoneStatus) {
       survivalZoneStatus.textContent = state.inSafeZone ? `SAFE · ${state.nearestZone}` : `DANGER · ${state.nearestZone} ${Math.round(state.zoneDistance)}m`;
       survivalZoneStatus.classList.toggle('safe', state.inSafeZone);
@@ -2920,12 +2930,10 @@ function update(dt: number) {
   updateSplash(dt);
   updateMagicEffects(dt);
 
-  // High-mountain cloud deck altitude & gentle atmospheric drift
-  cloudDeckMesh.position.y = weatherEffects.cloudBaseAltitude;
-  cloudDeckMesh.position.x = player.root.position.x;
-  cloudDeckMesh.position.z = player.root.position.z;
-  cloudDeckMat.opacity = clamp(0.22 + weatherEffects.skyDim * 0.42, 0.18, 0.65);
-  cloudDeckMesh.rotation.z += dt * 0.005;
+  // Keep scattered cloud clusters nearby without covering the sky.
+  cloudDeckGroup.position.set(player.root.position.x, weatherEffects.cloudBaseAltitude, player.root.position.z);
+  cloudDeckMat.opacity = clamp(0.19 + weatherEffects.skyDim * 0.10, 0.16, 0.30);
+  cloudDeckGroup.rotation.y += dt * 0.0015;
 
   const wasSwimming = player.swimming;
   const p = player.root.position;
@@ -3232,6 +3240,8 @@ function update(dt: number) {
   minimap.recordPosition(p.x, p.z);
 
   const aimed = getAimTarget();
+  const canInteractWithAimed = !!aimed && !!(aimed.userData.resource || aimed.userData.interactable || aimed.userData.animal);
+  document.body.classList.toggle('survival-can-interact', !!survival?.enabled && canInteractWithAimed);
   const combatTarget = getAimTarget(false, true);
   if (combatTarget?.userData.animal) {
     combatTarget.getWorldPosition(combatMarkerWorld);
