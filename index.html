@@ -109,24 +109,43 @@
         <div class="settingsBody">
           <div class="settingGroup">
             <div class="settingLabel">
-              <span>Horizontal Sensitivity (X-Axis)</span>
-              <span id="sensXVal">1.0x</span>
+              <span>Horizontal turn (° per full-width swipe)</span>
+              <span id="sensXVal">360°</span>
             </div>
-            <input type="range" id="sensXSlider" min="0.2" max="3.0" step="0.1" value="1.0" />
+            <input type="range" id="sensXSlider" min="60" max="720" step="15" value="360" />
           </div>
 
           <div class="settingGroup">
             <div class="settingLabel">
-              <span>Vertical Sensitivity (Y-Axis)</span>
-              <span id="sensYVal">1.0x</span>
+              <span>Vertical look (° per full-height swipe)</span>
+              <span id="sensYVal">150°</span>
             </div>
-            <input type="range" id="sensYSlider" min="0.2" max="3.0" step="0.1" value="1.0" />
+            <input type="range" id="sensYSlider" min="30" max="360" step="10" value="150" />
           </div>
 
           <div class="settingRow">
             <span>Invert Vertical (Y-Axis)</span>
             <input type="checkbox" id="invertYCheck" />
           </div>
+
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Camera acceleration</span>
+            </div>
+            <select id="camAccelSelect">
+              <option value="fixed">Fixed · consistent turn speed</option>
+              <option value="distance">Distance · longer swipe turns faster</option>
+              <option value="speed">Speed · faster swipe turns faster</option>
+            </select>
+          </div>
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Acceleration strength</span>
+              <span id="camAccelStrengthVal">0.65×</span>
+            </div>
+            <input type="range" id="camAccelStrengthSlider" min="0" max="2" step="0.1" value="0.65" />
+          </div>
+          <button id="hudCustomizeBtn" class="settingsActionBtn" type="button">🎮 Customize combat HUD</button>
 
           <div class="settingGroup">
             <div class="settingLabel">
@@ -219,6 +238,35 @@
       </div>
     </div>
 
+    <!-- HUD editor: the game remains visible and controls can be dragged behind this compact panel. -->
+    <div id="hudEditorOverlay" aria-label="Customize combat HUD">
+      <section id="hudEditorPanel">
+        <div class="hudEditorHeader">
+          <strong>CUSTOM COMBAT HUD</strong>
+          <button id="hudEditorClose" type="button" aria-label="Close HUD editor">✕</button>
+        </div>
+        <p>Drag a control to place it. Tap it to select, then adjust size and transparency. Saved on this device.</p>
+        <label class="hudEditorLabel">Finger layout
+          <select id="hudPresetSelect">
+            <option value="four">4-finger claw</option>
+            <option value="three">3-finger</option>
+            <option value="thumbs">Two-thumb</option>
+          </select>
+        </label>
+        <label class="hudEditorLabel">Selected: <span id="hudSelectedName">SHOOT</span></label>
+        <label class="hudEditorLabel">Button size <span id="hudSizeVal">66 px</span>
+          <input id="hudSizeSlider" type="range" min="34" max="100" step="2" value="66" />
+        </label>
+        <label class="hudEditorLabel">Opacity <span id="hudOpacityVal">65%</span>
+          <input id="hudOpacitySlider" type="range" min="15" max="100" step="5" value="65" />
+        </label>
+        <div class="hudEditorFooter">
+          <button id="hudResetBtn" type="button">Reset layout</button>
+          <button id="hudSaveBtn" type="button">Save & close</button>
+        </div>
+      </section>
+    </div>
+
     <!-- Living Ecosystem Sanctuary Census Modal -->
     <div id="ecoOverlay">
       <div class="ecoCard">
@@ -255,22 +303,23 @@
 
     <!-- Touch Mobile Controls -->
     <div id="touch">
-      <div id="stick"><div id="knob"></div></div>
-      <div id="lookZone"></div>
+      <div id="leftMoveZone" aria-hidden="true"></div>
+      <div id="stick" aria-hidden="true"><div id="knob"></div></div>
+      <div id="lookZone" aria-label="Drag the right side to look around"></div>
       <div class="actions">
         <button id="attackBtn" title="Sword attack">ATTACK</button>
         <button id="punchBtn" title="Fast punch">PUNCH</button>
         <button id="kickBtn" title="Round kick">KICK</button>
         <button id="castBtn" title="Fire bolt">FIRE</button>
-        <button id="shootBtn" title="Shoot weapon">SHOOT</button>
-        <button id="aimBtn" title="Hold to aim down sights">AIM</button>
-        <button id="reloadBtn" title="Reload weapon">RELOAD</button>
+        <button id="shootBtn" data-hud-id="shoot" title="Shoot weapon">SHOOT</button>
+        <button id="aimBtn" data-hud-id="ads" title="Toggle aim down sights">ADS</button>
+        <button id="reloadBtn" data-hud-id="reload" title="Reload weapon">RELOAD</button>
         <button id="emoteBtn" title="Emotes">EMOTE</button>
         <button id="modeBtn">FPP</button>
         <button id="runBtn">WALK</button>
-        <button id="jumpBtn">JUMP</button>
+        <button id="jumpBtn" data-hud-id="jump">JUMP</button>
         <button id="diveBtn" class="swimOnly">DIVE</button>
-        <button id="interactBtn">USE</button>
+        <button id="interactBtn" data-hud-id="use">USE</button>
       </div>
     </div>
 
