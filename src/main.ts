@@ -444,9 +444,9 @@ terrainMaterial.onBeforeCompile = shader => {
 
 // --- SCENE SETUP ---
 const scene = new THREE.Scene();
-const skyColor = new THREE.Color(0x9fc7df);
+const skyColor = new THREE.Color(0x82877f);
 scene.background = skyColor;
-scene.fog = new THREE.Fog(0x9fc7df, 140, 950);
+scene.fog = new THREE.Fog(0x82877f, 105, 700);
 const gameplayFog = scene.fog;
 
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 1200);
@@ -457,9 +457,9 @@ renderer.shadowMap.enabled = !LOW_POWER_MODE;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.querySelector('#game')!.appendChild(renderer.domElement);
 
-const hemisphere = new THREE.HemisphereLight(0xdceeff, 0x405044, 2.2);
+const hemisphere = new THREE.HemisphereLight(0xb6b8a9, 0x302f2b, 1.65);
 scene.add(hemisphere);
-const sun = new THREE.DirectionalLight(0xfff0d0, 3.0);
+const sun = new THREE.DirectionalLight(0xcac2a4, 2.4);
 sun.position.set(35, 70, 25);
 sun.castShadow = !LOW_POWER_MODE;
 sun.shadow.mapSize.set(LOW_POWER_MODE ? 512 : 1024, LOW_POWER_MODE ? 512 : 1024);
@@ -543,11 +543,11 @@ function createDistantHorizon(): THREE.Mesh {
 const distantHorizonMesh = createDistantHorizon();
 scene.add(distantHorizonMesh);
 
-const daySky = new THREE.Color(0x9fc7df);
-const nightSky = new THREE.Color(0x182436);
-const twilightSky = new THREE.Color(0xc78b76);
+const daySky = new THREE.Color(0x82877f);
+const nightSky = new THREE.Color(0x111923);
+const twilightSky = new THREE.Color(0x8e584b);
 const underwaterFogColor = new THREE.Color(0x15566b);
-const rainySky = new THREE.Color(0x566775);
+const rainySky = new THREE.Color(0x41494c);
 
 let skyTimer = 0;
 let underwater = false;
@@ -574,8 +574,8 @@ function updateSky(dt: number, rainDim: number, lightningFlash: number) {
   if (scene.fog) {
     const fog = scene.fog as THREE.Fog;
     fog.color.copy(underwater ? underwaterFogColor : skyColor);
-    fog.near = underwater ? 1.5 : rainDim > 0.5 ? 40 : 130;
-    fog.far = underwater ? 22 : rainDim > 0.5 ? 240 : 950;
+    fog.near = underwater ? 1.5 : rainDim > 0.5 ? 35 : 100;
+    fog.far = underwater ? 22 : rainDim > 0.5 ? 220 : 700;
   }
 
   hemisphere.intensity = (0.45 + daylight * 1.65) * (1 - rainDim * 0.4) + lightningFlash * 1.2;
