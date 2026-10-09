@@ -1766,20 +1766,21 @@ const HUD_DEFAULTS: Record<string, HudLayoutItem> = {
   jump: { x: 92, y: 72, size: 46, opacity: 0.56 },
   slide: { x: 72, y: 72, size: 46, opacity: 0.58 },
   reload: { x: 80, y: 81, size: 44, opacity: 0.56 },
+  weapon: { x: 52, y: 80, size: 44, opacity: 0.68 },
   use: { x: 69, y: 55, size: 46, opacity: 0.62 },
 };
 const HUD_PRESETS: Record<'four' | 'three' | 'thumbs', Record<string, { x: number; y: number }>> = {
   four: {
     shoot: { x: 10, y: 23 }, ads: { x: 88, y: 24 }, jump: { x: 92, y: 72 },
-    slide: { x: 72, y: 72 }, reload: { x: 80, y: 81 }, use: { x: 69, y: 55 },
+    slide: { x: 72, y: 72 }, reload: { x: 80, y: 81 }, weapon: { x: 52, y: 80 }, use: { x: 69, y: 55 },
   },
   three: {
     shoot: { x: 10, y: 25 }, ads: { x: 87, y: 43 }, jump: { x: 91, y: 69 },
-    slide: { x: 76, y: 70 }, reload: { x: 79, y: 82 }, use: { x: 69, y: 56 },
+    slide: { x: 76, y: 70 }, reload: { x: 79, y: 82 }, weapon: { x: 52, y: 80 }, use: { x: 69, y: 56 },
   },
   thumbs: {
     shoot: { x: 87, y: 78 }, ads: { x: 85, y: 56 }, jump: { x: 94, y: 64 },
-    slide: { x: 76, y: 65 }, reload: { x: 75, y: 83 }, use: { x: 67, y: 55 },
+    slide: { x: 76, y: 65 }, reload: { x: 75, y: 83 }, weapon: { x: 52, y: 80 }, use: { x: 67, y: 55 },
   },
 };
 const hudEditorOverlay = document.querySelector('#hudEditorOverlay') as HTMLDivElement;
@@ -1819,6 +1820,11 @@ function applyHudItem(el: HTMLElement) {
 function saveHudLayout() {
   try { localStorage.setItem(HUD_LAYOUT_KEY, JSON.stringify(hudLayout)); } catch {}
 }
+window.addEventListener('pagehide', saveHudLayout);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveHudLayout();
+});
+window.addEventListener('resize', () => hudTouchButtons.forEach(applyHudItem));
 function loadHudLayout() {
   try {
     const raw = localStorage.getItem(HUD_LAYOUT_KEY);
@@ -1882,6 +1888,67 @@ function setHudEditMode(active: boolean) {
   }
 }
 loadHudLayout();
+
+// Move the HUD editor by dragging its title bar; save the position on this device.
+const HUD_EDITOR_POSITION_KEY = 'zombie-survival-hud-editor-position-v1';
+const hudEditorHeader = hudEditorPanel.querySelector('.hudEditorHeader') as HTMLElement;
+function loadHudEditorPosition() {
+  try {
+    const raw = localStorage.getItem(HUD_EDITOR_POSITION_KEY);
+    if (!raw) return;
+    const pos = JSON.parse(raw) as { left?: number; top?: number };
+    if (Number.isFinite(pos.left) && Number.isFinite(pos.top)) {
+      hudEditorPanel.style.left = `${clamp(Number(pos.left), 2, 98)}%`;
+      hudEditorPanel.style.top = `${clamp(Number(pos.top), 2, 98)}%`;
+      hudEditorPanel.style.bottom = 'auto';
+      hudEditorPanel.style.transform = 'translate(-50%, 0)';
+    }
+  } catch {}
+}
+function saveHudEditorPosition() {
+  const rect = hudEditorPanel.getBoundingClientRect();
+  try {
+    localStorage.setItem(HUD_EDITOR_POSITION_KEY, JSON.stringify({
+      left: clamp((rect.left + rect.width / 2) / Math.max(1, window.innerWidth) * 100, 2, 98),
+      top: clamp(rect.top / Math.max(1, window.innerHeight) * 100, 2, 98),
+    }));
+  } catch {}
+}
+let panelDrag: { pointerId: number; startX: number; startY: number; left: number; top: number } | null = null;
+loadHudEditorPosition();
+hudEditorHeader.style.cursor = 'move';
+hudEditorHeader.style.touchAction = 'none';
+hudEditorHeader.addEventListener('pointerdown', event => {
+  if ((event.target as HTMLElement).closest('button')) return;
+  const rect = hudEditorPanel.getBoundingClientRect();
+  panelDrag = {
+    pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+    left: (rect.left + rect.width / 2) / Math.max(1, window.innerWidth) * 100,
+    top: rect.top / Math.max(1, window.innerHeight) * 100,
+  };
+  try { hudEditorHeader.setPointerCapture(event.pointerId); } catch {}
+  event.preventDefault();
+});
+hudEditorHeader.addEventListener('pointermove', event => {
+  if (!panelDrag || event.pointerId !== panelDrag.pointerId) return;
+  const left = clamp(panelDrag.left + (event.clientX - panelDrag.startX) / Math.max(1, window.innerWidth) * 100, 2, 98);
+  const top = clamp(panelDrag.top + (event.clientY - panelDrag.startY) / Math.max(1, window.innerHeight) * 100, 2, 98);
+  hudEditorPanel.style.left = `${left}%`;
+  hudEditorPanel.style.top = `${top}%`;
+  hudEditorPanel.style.bottom = 'auto';
+  hudEditorPanel.style.transform = 'translate(-50%, 0)';
+  event.preventDefault();
+});
+const finishPanelDrag = (event: PointerEvent) => {
+  if (!panelDrag || event.pointerId !== panelDrag.pointerId) return;
+  panelDrag = null;
+  saveHudEditorPosition();
+};
+hudEditorHeader.addEventListener('pointerup', finishPanelDrag);
+hudEditorHeader.addEventListener('pointercancel', finishPanelDrag);
+window.addEventListener('resize', () => {
+  if (hudEditorPanel.style.top) saveHudEditorPosition();
+});
 
 document.addEventListener('pointerdown', event => {
   if (!hudEditMode) return;
@@ -2086,10 +2153,14 @@ const surveyStatus = document.querySelector('#surveyStatus') as HTMLSpanElement 
 const minimapHomeDist = document.querySelector('#minimapHomeDist') as HTMLSpanElement;
 
 if (survivalBtn) bindAction(survivalBtn, () => setSurvivalEnabled(!survival.enabled));
-if (survivalCycleWeapon) bindAction(survivalCycleWeapon, () => {
+function cycleSurvivalWeapon() {
   const order: Array<'pistol' | 'shotgun' | 'rifle'> = ['pistol', 'shotgun', 'rifle'];
   const index = order.indexOf(survival.weapon);
   survival.switchWeapon(order[(index + 1) % order.length]);
+}
+if (survivalCycleWeapon) bindAction(survivalCycleWeapon, cycleSurvivalWeapon);
+bindAction(document.querySelector('#weaponSwitchBtn') as HTMLButtonElement, () => {
+  if (survival?.enabled) cycleSurvivalWeapon();
 });
 if (survivalRestartBtn) bindAction(survivalRestartBtn, () => {
   survival.restart();
