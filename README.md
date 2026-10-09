@@ -9,7 +9,7 @@ A single-player first-person zombie-survival shooter built on the existing Three
 - **Desktop controls:** `WASD` moves, mouse look turns, left mouse fires, right mouse aims, `R` reloads, `1`/`2`/`3` switch weapons, and `Z` toggles survival mode.
 - **World-aware encounters:** hostiles spawn on leaving the safe homestead or settlement. They use the current world's ground-height, water and occupancy callbacks instead of a second map.
 - **Safe zones:** the homestead and settlement have visible green boundaries. Player damage is suppressed inside them, nearby infected retreat, and spawn points avoid the sanctuary. The tactical minimap and full map show those boundaries and live hostile positions.
-- **Combat loop:** ammo magazines and reserve ammunition, weapon-specific fire cadence and spread, hitscan hit detection, headshot multipliers, recoil, muzzle flashes, reload motion, impacts, zombie damage/death, ammo drops and medkits.
+- **Combat loop:** ammo magazines and reserve ammunition, weapon-specific fire cadence and spread, hitscan hit detection, headshot multipliers, recoil, muzzle flashes, reload motion, impacts, zombie damage/death, ammo drops and medkits. Fire at Will's procedural Web Audio effects provide weapon reports, reload clicks, hit confirmations, zombie noises, pickups and low-health heartbeat without downloading sound files.
 - **Scope:** this is a local single-player prototype. Multiplayer, persistent survival inventory, imported animated zombie models and device-level gameplay verification are not claimed as finished.
 - **Integration notes:** see [`docs/ZOMBIE_SURVIVAL_INTEGRATION.md`](docs/ZOMBIE_SURVIVAL_INTEGRATION.md) for the scene boundaries and known limitations.
 
