@@ -432,7 +432,21 @@ const gameplayFog = scene.fog;
 
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 1200);
 const renderer = new THREE.WebGLRenderer({ antialias: !LOW_POWER_MODE, powerPreference: 'high-performance', preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, LOW_POWER_MODE ? 1.25 : 1.65));
+type GraphicsPreset = 'low' | 'med' | 'high';
+
+// Render at a device-appropriate internal resolution. Mobile screens still look crisp,
+// but avoid rasterizing a large high-DPI framebuffer that the GPU cannot use smoothly.
+function getGraphicsPixelRatio(preset: GraphicsPreset): number {
+  const nativeRatio = Math.max(0.5, devicePixelRatio || 1);
+  if (LOW_POWER_MODE) {
+    const cap = preset === 'low' ? 0.8 : preset === 'med' ? 0.95 : 1.1;
+    return Math.min(nativeRatio, cap);
+  }
+  const cap = preset === 'low' ? 1.0 : preset === 'med' ? 1.3 : 1.6;
+  return Math.min(nativeRatio, cap);
+}
+
+renderer.setPixelRatio(getGraphicsPixelRatio(settings.current.graphics));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = !LOW_POWER_MODE;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -465,6 +479,8 @@ function updatePerfDiagnostics(frameMs: number) {
     `spike ${perfWindowMaxFrameMs.toFixed(1)} ms`,
     `draw ${info.render.calls} · tris ${info.render.triangles}`,
     `geo ${info.memory.geometries} · tex ${info.memory.textures}`,
+    `buffer ${renderer.domElement.width}×${renderer.domElement.height} @${renderer.getPixelRatio().toFixed(2)}×`,
+
   ].join('\n');
   perfWindowTime = 0;
   perfWindowFrames = 0;
@@ -483,6 +499,17 @@ sun.shadow.camera.right = 90;
 sun.shadow.camera.top = 90;
 sun.shadow.camera.bottom = -90;
 scene.add(sun, sun.target);
+
+function applyGraphicsPreset(preset: GraphicsPreset) {
+  // The mobile renderer starts without shadows for good reason: enabling shadow-map
+  // passes on touch devices can cost more than the detail they add. Desktop keeps
+  // the existing Full Shadows behaviour for Medium/High.
+  const shadowsEnabled = !LOW_POWER_MODE && preset !== 'low';
+  renderer.shadowMap.enabled = shadowsEnabled;
+  sun.castShadow = shadowsEnabled;
+  renderer.setPixelRatio(getGraphicsPixelRatio(preset));
+}
+applyGraphicsPreset(settings.current.graphics);
 
 // --- CELESTIAL BODIES: VISUAL SUN, MOON & TWINKLING STARS ---
 const celestialGroup = new THREE.Group();
@@ -971,7 +998,7 @@ class Chunks {
     // mesh can display, creating apparent raised riverbank ledges.
     const segs =
       lod === 0
-        ? (LOW_POWER_MODE ? 24 : lodSetting === 'ultra' ? 64 : lodSetting === 'balanced' ? 40 : 24)
+        ? (LOW_POWER_MODE ? 18 : lodSetting === 'ultra' ? 64 : lodSetting === 'balanced' ? 40 : 24)
         : lod === 1
         ? 20
         : 8;
@@ -2444,11 +2471,9 @@ weatherSelect.addEventListener('change', () => {
   say(`Weather set to ${weatherSelect.value}`);
 });
 graphicsSelect.addEventListener('change', () => {
-  const g = graphicsSelect.value as 'low' | 'med' | 'high';
+  const g = graphicsSelect.value as GraphicsPreset;
   settings.update({ graphics: g });
-  renderer.shadowMap.enabled = g !== 'low';
-  sun.castShadow = g !== 'low';
-  renderer.setPixelRatio(Math.min(devicePixelRatio, g === 'low' ? 1.0 : g === 'med' ? 1.3 : 1.6));
+  applyGraphicsPreset(g);
   say(`Graphics preset: ${g.toUpperCase()}`);
 });
 
@@ -3801,7 +3826,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   survey.resize(innerWidth / innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, LOW_POWER_MODE ? 1.25 : 1.65));
+  renderer.setPixelRatio(getGraphicsPixelRatio(settings.current.graphics));
   renderer.setSize(innerWidth, innerHeight);
 });
 
