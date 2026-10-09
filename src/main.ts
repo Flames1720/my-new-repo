@@ -2732,6 +2732,9 @@ function setSurvivalEnabled(enabled: boolean) {
   saveNow();
 }
 
+let sightBlockerCacheKey = '';
+let sightBlockerCache: THREE.Object3D[] = [];
+
 survival = new ZombieSurvivalSystem({
   scene,
   camera,
@@ -2741,29 +2744,50 @@ survival = new ZombieSurvivalSystem({
   getWaterDepth: waterDepthAt,
   canOccupy: (x, z) => canOccupy(x, z),
   getSightBlockers: () => {
-    // Include the existing world colliders plus real meshes in the nearby combat envelope.
-    // The world is still authoritative: this does not create a duplicate shooter arena.
-    const blockers = new Set<THREE.Object3D>(chunks.cameraBlockers);
     const pcx = chunks.coord(player.root.position.x), pcz = chunks.coord(player.root.position.z);
+    const nearby: string[] = [];
     for (let ox = -2; ox <= 2; ox++) {
       for (let oz = -2; oz <= 2; oz++) {
-        const chunk = chunks.loaded.get(chunks.key(pcx + ox, pcz + oz));
-        if (!chunk) continue;
-        const terrain = chunk.getObjectByName('terrain');
-        if (terrain) blockers.add(terrain);
-        chunk.traverse(object => {
-          if (object === chunk || object === terrain) return;
-          const hasPhysicalMarker = Boolean(
-            object.userData.colliderRadius ||
-            object.userData.collider ||
-            object.userData.resource ||
-            object.userData.interactable
-          );
-          if (hasPhysicalMarker) blockers.add(object);
-        });
+        const key = chunks.key(pcx + ox, pcz + oz);
+        const chunk = chunks.loaded.get(key);
+        if (chunk) nearby.push(`${key}:${chunk.uuid}`);
       }
     }
-    return [...blockers];
+    // Cache the scene-graph walk. Automatic fire can call this many times per second on mobile.
+    const cacheKey = `${pcx}:${pcz}:${chunks.loaded.size}:${chunks.cameraBlockers.size}:${nearby.join('|')}`;
+    if (cacheKey !== sightBlockerCacheKey) {
+      const blockers = new Set<THREE.Object3D>(chunks.cameraBlockers);
+      for (let ox = -2; ox <= 2; ox++) {
+        for (let oz = -2; oz <= 2; oz++) {
+          const chunk = chunks.loaded.get(chunks.key(pcx + ox, pcz + oz));
+          if (!chunk) continue;
+          const terrain = chunk.getObjectByName('terrain');
+          if (terrain) blockers.add(terrain);
+          chunk.traverse(object => {
+            if (object === chunk || object === terrain) return;
+            const hasPhysicalMarker = Boolean(
+              object.userData.colliderRadius ||
+              object.userData.collider ||
+              object.userData.resource ||
+              object.userData.interactable
+            );
+            if (hasPhysicalMarker) blockers.add(object);
+          });
+        }
+      }
+      sightBlockerCache = [...blockers];
+      sightBlockerCacheKey = cacheKey;
+    }
+    // Do not let hidden or unloaded resources block bullets.
+    const isVisibleInWorld = (object: THREE.Object3D) => {
+      let node: THREE.Object3D | null = object;
+      while (node) {
+        if (!node.visible) return false;
+        node = node.parent;
+      }
+      return object.parent !== null;
+    };
+    return sightBlockerCache.filter(isVisibleInWorld);
   },
   safeZones: [
     { id: 'homestead', label: 'HOMESTEAD', x: HOME_X, z: HOME_Z, radius: 12 },
