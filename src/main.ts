@@ -2153,7 +2153,63 @@ const survivalRestartBtn = document.querySelector('#survivalRestartBtn') as HTML
 const survivalLobby = document.querySelector('#survivalLobby') as HTMLDivElement | null;
 const lobbyWeaponSelect = document.querySelector('#lobbyWeaponSelect') as HTMLSelectElement | null;
 const lobbyLastRun = document.querySelector('#lobbyLastRun') as HTMLParagraphElement | null;
+const lobbyProgressionSummary = document.querySelector('#lobbyProgressionSummary') as HTMLDivElement | null;
+const upgradeHealthBtn = document.querySelector('#upgradeHealthBtn') as HTMLButtonElement | null;
+const upgradeStaminaBtn = document.querySelector('#upgradeStaminaBtn') as HTMLButtonElement | null;
+const upgradeDamageBtn = document.querySelector('#upgradeDamageBtn') as HTMLButtonElement | null;
 const startRunBtn = document.querySelector('#startRunBtn') as HTMLButtonElement | null;
+type UpgradeKey = 'health' | 'stamina' | 'damage';
+type SurvivalMetaState = { xp: number; bestWave: number; totalRuns: number; totalKills: number; upgrades: Record<UpgradeKey, number>; waveClearCounts: Record<string, number> };
+const SURVIVAL_META_KEY = 'island-outbreak-meta-v1';
+function loadSurvivalMeta(): SurvivalMetaState {
+  const fallback: SurvivalMetaState = { xp: 0, bestWave: 0, totalRuns: 0, totalKills: 0, upgrades: { health: 0, stamina: 0, damage: 0 }, waveClearCounts: {} };
+  try {
+    const raw = localStorage.getItem(SURVIVAL_META_KEY);
+    if (!raw) {
+      fallback.bestWave = Number(localStorage.getItem('island-outbreak-best-wave') || 0);
+      return fallback;
+    }
+    const parsed = JSON.parse(raw) as Partial<SurvivalMetaState>;
+    return { ...fallback, ...parsed, upgrades: { ...fallback.upgrades, ...(parsed.upgrades || {}) }, waveClearCounts: parsed.waveClearCounts || {} };
+  } catch { return fallback; }
+}
+let survivalMeta = loadSurvivalMeta();
+let lastMetaKills = 0;
+let lastMetaWave = 0;
+function updateLobbyProgressionUi(): void {
+  const level = 1 + Math.floor(survivalMeta.xp / 150);
+  if (lobbyProgressionSummary) lobbyProgressionSummary.textContent = `LEVEL ${level} · ${survivalMeta.xp} XP · BEST WAVE ${survivalMeta.bestWave}/100`;
+  const costs: Record<UpgradeKey, number> = { health: 120, stamina: 100, damage: 180 };
+  const buttons: Record<UpgradeKey, HTMLButtonElement | null> = { health: upgradeHealthBtn, stamina: upgradeStaminaBtn, damage: upgradeDamageBtn };
+  const labels: Record<UpgradeKey, string> = { health: 'HEALTH +10', stamina: 'STAMINA +15', damage: 'DAMAGE +5%' };
+  for (const key of Object.keys(costs) as UpgradeKey[]) {
+    const button = buttons[key];
+    if (!button) continue;
+    const level = survivalMeta.upgrades[key];
+    button.textContent = level >= 5 ? `${key.toUpperCase()} MAXED` : `${labels[key]} · ${costs[key]} XP`;
+    button.disabled = level >= 5 || survivalMeta.xp < costs[key];
+  }
+}
+function saveSurvivalMeta(): void {
+  try { localStorage.setItem(SURVIVAL_META_KEY, JSON.stringify(survivalMeta)); } catch {}
+  try { localStorage.setItem('island-outbreak-best-wave', String(survivalMeta.bestWave)); } catch {}
+  updateLobbyProgressionUi();
+}
+function purchaseSurvivalUpgrade(key: UpgradeKey): void {
+  const costs: Record<UpgradeKey, number> = { health: 120, stamina: 100, damage: 180 };
+  if (survivalMeta.upgrades[key] >= 5 || survivalMeta.xp < costs[key]) return;
+  survivalMeta.xp -= costs[key];
+  survivalMeta.upgrades[key]++;
+  if (key === 'stamina') {
+    staminaCapacity = 100 + survivalMeta.upgrades.stamina * 15;
+    stamina = staminaCapacity;
+    staminaLocked = false;
+  }
+  survival.setPermanentUpgrades(survivalMeta.upgrades.health, survivalMeta.upgrades.damage);
+  saveSurvivalMeta();
+  say(`${key.toUpperCase()} UPGRADED · PERMANENT`);
+}
+updateLobbyProgressionUi();
 const survivalCycleWeapon = document.querySelector('#survivalCycleWeapon') as HTMLButtonElement | null;
 const surveyBtn = document.querySelector('#surveyBtn') as HTMLButtonElement | null;
 const surveyOverlay = document.querySelector('#surveyOverlay') as HTMLDivElement | null;
@@ -2773,7 +2829,8 @@ window.addEventListener('keydown', e => {
 });
 
 let promptTimer = 0, sprintToggle = false, mapAccumulator = 0, uiAccumulator = 0;
-let stamina = 100;
+let staminaCapacity = 100 + survivalMeta.upgrades.stamina * 15;
+let stamina = staminaCapacity;
 let staminaLocked = false;
 const SLIDE_DURATION = 0.68;
 let slideTimer = 0, slideCooldown = 0;
@@ -3205,6 +3262,28 @@ survival = new ZombieSurvivalSystem({
   },
   notify: message => { if (message) say(message); },
   onStatus: (state: SurvivalStatus) => {
+    let metaChanged = false;
+    const newKills = Math.max(0, state.kills - lastMetaKills);
+    if (newKills > 0) {
+      const repeatCount = survivalMeta.waveClearCounts[String(Math.max(1, state.wave))] || 0;
+      const rewardFactor = 1 / (1 + repeatCount * 0.22);
+      survivalMeta.xp += newKills * Math.max(1, Math.round((5 + state.wave * 0.35) * rewardFactor));
+      survivalMeta.totalKills += newKills;
+      metaChanged = true;
+    }
+    if (state.wave > lastMetaWave && lastMetaWave > 0) {
+      for (let clearedWave = lastMetaWave; clearedWave < state.wave; clearedWave++) {
+        if (clearedWave <= 0) continue;
+        const key = String(clearedWave);
+        const repeatCount = survivalMeta.waveClearCounts[key] || 0;
+        survivalMeta.xp += Math.max(1, Math.round((12 + clearedWave) / (1 + repeatCount * 0.22)));
+        survivalMeta.waveClearCounts[key] = repeatCount + 1;
+        metaChanged = true;
+      }
+    }
+    lastMetaKills = state.kills;
+    lastMetaWave = state.wave;
+    if (metaChanged) saveSurvivalMeta();
     if (survivalHealthText) survivalHealthText.textContent = `${state.health} / ${state.maxHealth}`;
     if (survivalHealthBar) {
       survivalHealthBar.style.width = `${Math.max(0, Math.min(100, (state.health / state.maxHealth) * 100))}%`;
@@ -3268,22 +3347,28 @@ survival = new ZombieSurvivalSystem({
   },
 });
 
-const BEST_WAVE_KEY = 'island-outbreak-best-wave';
-let bestSurvivalWave = 0;
-try { bestSurvivalWave = Number(localStorage.getItem(BEST_WAVE_KEY) || 0); } catch {}
 function recordSurvivalRun(result: 'OVERRUN' | 'VICTORY') {
   const wave = survival.wave;
   const kills = survival.kills;
-  const isNewBest = wave > bestSurvivalWave;
-  if (isNewBest) {
-    bestSurvivalWave = wave;
-    try { localStorage.setItem(BEST_WAVE_KEY, String(bestSurvivalWave)); } catch {}
-  }
-  if (lobbyLastRun) lobbyLastRun.textContent = result + ' · WAVE ' + wave + '/100 · ' + kills + ' KILLS' + (isNewBest ? ' · NEW BEST' : '') + ' · BEST ' + bestSurvivalWave;
+  const isNewBest = wave > survivalMeta.bestWave;
+  if (isNewBest) survivalMeta.bestWave = wave;
+  survivalMeta.totalRuns++;
+  survivalMeta.xp += result === 'VICTORY' ? 500 : Math.max(5, Math.round(wave * 0.5));
+  if (isNewBest) survivalMeta.xp += 100;
+  saveSurvivalMeta();
+  if (lobbyLastRun) lobbyLastRun.textContent = result + ' · WAVE ' + wave + '/100 · ' + kills + ' KILLS' + (isNewBest ? ' · NEW BEST' : '') + ' · BEST ' + survivalMeta.bestWave;
 }
+if (upgradeHealthBtn) bindAction(upgradeHealthBtn, () => purchaseSurvivalUpgrade('health'));
+if (upgradeStaminaBtn) bindAction(upgradeStaminaBtn, () => purchaseSurvivalUpgrade('stamina'));
+if (upgradeDamageBtn) bindAction(upgradeDamageBtn, () => purchaseSurvivalUpgrade('damage'));
 if (startRunBtn) bindAction(startRunBtn, () => {
   const selectedWeapon = (lobbyWeaponSelect?.value || 'pistol') as SurvivalWeaponId;
   survival.restart();
+  lastMetaKills = 0;
+  lastMetaWave = 0;
+  stamina = staminaCapacity;
+  staminaLocked = false;
+  survival.setPermanentUpgrades(survivalMeta.upgrades.health, survivalMeta.upgrades.damage);
   survival.switchWeapon(selectedWeapon);
   setSurvivalEnabled(true);
   survival.beginPreparation(12);
@@ -3751,8 +3836,8 @@ function update(dt: number) {
     (document.querySelector('#modeBtn') as HTMLButtonElement).textContent = mode.toUpperCase();
     (document.querySelector('#runBtn') as HTMLButtonElement).textContent = sprintToggle ? 'RUN' : 'WALK';
     if (survivalStaminaBar) {
-      survivalStaminaBar.style.width = `${Math.round(stamina)}%`;
-      survivalStaminaBar.style.background = stamina <= 20 ? '#f59e0b' : '#a3e635';
+      survivalStaminaBar.style.width = `${Math.round(stamina / staminaCapacity * 100)}%`;
+      survivalStaminaBar.style.background = stamina <= staminaCapacity * 0.2 ? '#f59e0b' : '#a3e635';
     }
     (document.querySelector('#jumpBtn') as HTMLButtonElement).textContent = player.swimming ? 'RISE' : 'JUMP';
 
