@@ -1849,29 +1849,7 @@ function setHudEditMode(active: boolean) {
   hudEditorMinimize.textContent = '−';
   hudDrag = null;
   if (active) {
-    if (!survival?.enabled) const BEST_WAVE_KEY = 'island-outbreak-best-wave';
-let bestSurvivalWave = 0;
-try { bestSurvivalWave = Number(localStorage.getItem(BEST_WAVE_KEY) || 0); } catch {}
-function recordSurvivalRun(result: 'OVERRUN' | 'VICTORY') {
-  const wave = survival.wave;
-  const kills = survival.kills;
-  const isNewBest = wave > bestSurvivalWave;
-  if (isNewBest) {
-    bestSurvivalWave = wave;
-    try { localStorage.setItem(BEST_WAVE_KEY, String(bestSurvivalWave)); } catch {}
-  }
-  if (lobbyLastRun) lobbyLastRun.textContent = `${result} · WAVE ${wave}/100 · ${kills} KILLS${isNewBest ? ' · NEW BEST' : ''} · BEST ${bestSurvivalWave}`;
-}
-if (startRunBtn) bindAction(startRunBtn, () => {
-  const selectedWeapon = (lobbyWeaponSelect?.value || 'pistol') as SurvivalWeaponId;
-  survival.reset();
-  survival.switchWeapon(selectedWeapon);
-  setSurvivalEnabled(true);
-  survival.beginPreparation(12);
-  survivalLobby?.classList.remove('show');
-});
-document.body.classList.add('survival-mode');
-survivalLobby?.classList.add('show');
+    if (!survival?.enabled) setSurvivalEnabled(true);
     openSettings(false);
     const first = hudTouchButtons.find(el => el.dataset.hudId === 'shoot') || hudTouchButtons[0];
     if (first) selectHudItem(first);
@@ -3235,7 +3213,29 @@ survival = new ZombieSurvivalSystem({
   },
 });
 
-setSurvivalEnabled(true);
+const BEST_WAVE_KEY = 'island-outbreak-best-wave';
+let bestSurvivalWave = 0;
+try { bestSurvivalWave = Number(localStorage.getItem(BEST_WAVE_KEY) || 0); } catch {}
+function recordSurvivalRun(result: 'OVERRUN' | 'VICTORY') {
+  const wave = survival.wave;
+  const kills = survival.kills;
+  const isNewBest = wave > bestSurvivalWave;
+  if (isNewBest) {
+    bestSurvivalWave = wave;
+    try { localStorage.setItem(BEST_WAVE_KEY, String(bestSurvivalWave)); } catch {}
+  }
+  if (lobbyLastRun) lobbyLastRun.textContent = result + ' · WAVE ' + wave + '/100 · ' + kills + ' KILLS' + (isNewBest ? ' · NEW BEST' : '') + ' · BEST ' + bestSurvivalWave;
+}
+if (startRunBtn) bindAction(startRunBtn, () => {
+  const selectedWeapon = (lobbyWeaponSelect?.value || 'pistol') as SurvivalWeaponId;
+  survival.restart();
+  survival.switchWeapon(selectedWeapon);
+  setSurvivalEnabled(true);
+  survival.beginPreparation(12);
+  survivalLobby?.classList.remove('show');
+});
+document.body.classList.add('survival-mode');
+survivalLobby?.classList.add('show');
 
 // Pointer/touch interaction is the browser-safe point to unlock procedural Web Audio.
 // Capture phase makes this work for the joystick and HUD buttons as well as the canvas.
