@@ -303,9 +303,11 @@ export class ZombieSurvivalSystem {
     this.zones.forEach(zone => (zone.root.visible = enabled));
     this.zombies.forEach(actor => (actor.root.visible = enabled));
     this.loot.forEach(drop => (drop.root.visible = enabled));
+    if (!enabled) this.muzzleTimer = 0;
     for (const [id, rig] of this.weaponRigs) {
       rig.root.visible = enabled && id === this.weapon;
       rig.muzzleFlash.visible = false;
+      setRigFlashOpacity(rig, 0);
       rig.muzzleLight.intensity = 0;
     }
     if (!enabled) {
