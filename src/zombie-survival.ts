@@ -798,7 +798,7 @@ export class ZombieSurvivalSystem {
   }
 
   private nearestZone(x: number, z: number): RuntimeSafeZone | null {
-    let found: (SafeZoneDefinition & { root: THREE.Group }) | null = null;
+    let found: RuntimeSafeZone | null = null;
     let distance = Infinity;
     for (const zone of this.zones) {
       if (!zone.active || zone.phase === 'collapsed') continue;
