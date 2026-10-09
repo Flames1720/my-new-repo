@@ -1527,8 +1527,9 @@ function onLookMove(clientX: number, clientY: number) {
     acceleration += accelerationStrength * clamp(speedPxPerSecond / (1100 * accelerationThreshold), 0, 1);
   }
 
-  const sensX = settings.current.sensitivityX;
-  const sensY = settings.current.sensitivityY;
+  const adsMultiplier = survival?.enabled && keys.has('aim') ? settings.current.adsSensitivity : 1;
+  const sensX = settings.current.sensitivityX * adsMultiplier;
+  const sensY = settings.current.sensitivityY * adsMultiplier;
   const invertY = settings.current.invertY ? -1 : 1;
   // Sensitivity is degrees per swipe spanning the active look zone (right half on touch, viewport on desktop).
   // Separate pointer IDs let the left thumb move while another finger looks,
@@ -2105,6 +2106,7 @@ const survivalHud = document.querySelector('#survivalHud') as HTMLDivElement | n
 const survivalZoneStatus = document.querySelector('#survivalZoneStatus') as HTMLSpanElement | null;
 const survivalHealthText = document.querySelector('#survivalHealthText') as HTMLSpanElement | null;
 const survivalHealthBar = document.querySelector('#survivalHealthBar') as HTMLSpanElement | null;
+const survivalStaminaBar = document.querySelector('#survivalStaminaBar') as HTMLSpanElement | null;
 const survivalWeapon = document.querySelector('#survivalWeapon') as HTMLSpanElement | null;
 const survivalAmmo = document.querySelector('#survivalAmmo') as HTMLSpanElement | null;
 const survivalReserve = document.querySelector('#survivalReserve') as HTMLSpanElement | null;
@@ -2157,6 +2159,8 @@ const sensXSlider = document.querySelector('#sensXSlider') as HTMLInputElement;
 const sensYSlider = document.querySelector('#sensYSlider') as HTMLInputElement;
 const sensXVal = document.querySelector('#sensXVal') as HTMLSpanElement;
 const sensYVal = document.querySelector('#sensYVal') as HTMLSpanElement;
+const adsSensSlider = document.querySelector('#adsSensSlider') as HTMLInputElement;
+const adsSensVal = document.querySelector('#adsSensVal') as HTMLSpanElement;
 const invertYCheck = document.querySelector('#invertYCheck') as HTMLInputElement;
 const camAccelSelect = document.querySelector('#camAccelSelect') as HTMLSelectElement;
 const camAccelStrengthSlider = document.querySelector('#camAccelStrengthSlider') as HTMLInputElement;
@@ -2208,6 +2212,8 @@ function openSettings(open: boolean) {
   if (open) {
     sensXSlider.value = String(settings.current.sensitivityX);
     sensYSlider.value = String(settings.current.sensitivityY);
+    adsSensSlider.value = String(Math.round(settings.current.adsSensitivity * 100));
+    adsSensVal.textContent = `${Math.round(settings.current.adsSensitivity * 100)}%`;
     sensXVal.textContent = `${Math.round(settings.current.sensitivityX)}°`;
     sensYVal.textContent = `${Math.round(settings.current.sensitivityY)}°`;
     invertYCheck.checked = settings.current.invertY;
@@ -2310,6 +2316,11 @@ sensYSlider.addEventListener('input', () => {
   const v = parseFloat(sensYSlider.value);
   settings.update({ sensitivityY: v });
   sensYVal.textContent = `${Math.round(v)}°`;
+});
+adsSensSlider.addEventListener('input', () => {
+  const v = parseFloat(adsSensSlider.value) / 100;
+  settings.update({ adsSensitivity: v });
+  adsSensVal.textContent = `${Math.round(v * 100)}%`;
 });
 invertYCheck.addEventListener('change', () => {
   settings.update({ invertY: invertYCheck.checked });
@@ -2723,6 +2734,8 @@ window.addEventListener('keydown', e => {
 });
 
 let promptTimer = 0, sprintToggle = false, mapAccumulator = 0, uiAccumulator = 0;
+let stamina = 100;
+let staminaLocked = false;
 const SLIDE_DURATION = 0.68;
 let slideTimer = 0, slideCooldown = 0;
 let slideDirection = { x: 0, z: 1 };
@@ -3286,7 +3299,15 @@ function update(dt: number) {
   const hasInput = inputMagnitude > 0.08;
   // Push the virtual stick into its outer ring to sprint without a separate run button.
   const joystickSprint = joyActive && Math.hypot(joy.x, joy.y) >= 0.78;
-  const sprinting = (keys.has('shift') || sprintToggle || joystickSprint) && hasInput;
+  const wantsSprint = (keys.has('shift') || sprintToggle || joystickSprint) && hasInput;
+  if (wantsSprint && !staminaLocked) {
+    stamina = Math.max(0, stamina - dt * 24);
+    if (stamina <= 0) staminaLocked = true;
+  } else {
+    stamina = Math.min(100, stamina + dt * 18);
+    if (stamina >= 25) staminaLocked = false;
+  }
+  const sprinting = wantsSprint && !staminaLocked && stamina > 0;
 
   const slopeInfo = terrainSlopeAt(p.x, p.z);
   // Calculate motion alignment with downhill slope fall-line
@@ -3638,6 +3659,10 @@ function update(dt: number) {
     target.textContent = aimed ? '✦' : '•';
     (document.querySelector('#modeBtn') as HTMLButtonElement).textContent = mode.toUpperCase();
     (document.querySelector('#runBtn') as HTMLButtonElement).textContent = sprintToggle ? 'RUN' : 'WALK';
+    if (survivalStaminaBar) {
+      survivalStaminaBar.style.width = `${Math.round(stamina)}%`;
+      survivalStaminaBar.style.background = stamina <= 20 ? '#f59e0b' : '#a3e635';
+    }
     (document.querySelector('#jumpBtn') as HTMLButtonElement).textContent = player.swimming ? 'RISE' : 'JUMP';
 
     const hour = Math.floor(worldTime);
