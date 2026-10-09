@@ -43,6 +43,7 @@ import { settings } from './settings';
 import { WorldSurvey, type SurveyView } from './survey';
 import { voxelWorld, buildVoxelWorldVolumeMesh, buildVoxelWorldWaterVolumeMesh, type VoxelEdit } from './voxel';
 import { environmentAssets } from './environment-assets';
+import { ZombieSurvivalSystem, type SurvivalStatus } from './zombie-survival';
 
 type Save = {
   version: 2;
@@ -1446,6 +1447,7 @@ function physicalGroundHeightAt(x: number, z: number): number {
 
 // --- INPUTS & CONTROLS ---
 const keys = new Set<string>();
+let survival: ZombieSurvivalSystem;
 const keyboardKeys = new Set<string>();
 const pointerKeys = new Map<string, Set<number>>();
 
@@ -1465,14 +1467,20 @@ addEventListener('keydown', e => {
   syncKeyState(key);
   if (key === ' ' || key.startsWith('arrow')) e.preventDefault();
   if (key === 'f') mode = 'fpp';
-  if (key === 'c') mode = 'tpp';
+  if (key === 'c' && !survival?.enabled) mode = 'tpp';
   if (!e.repeat && key === 'e') interact();
-  if (!e.repeat && key === 'q') triggerSwordAttack();
-  if (!e.repeat && key === 'z') triggerPunch();
-  if (!e.repeat && key === 'x') triggerKick();
-  if (!e.repeat && key === 'v') player.playAction('roll') && say('Dodge roll');
-  if (!e.repeat && key === 'r') triggerFireCast();
-  if (!e.repeat && key === 'b') toggleEmoteBar();
+  if (!e.repeat && key === 'q' && !survival?.enabled) triggerSwordAttack();
+  if (!e.repeat && key === 'z' && !survival?.enabled) triggerPunch();
+  if (!e.repeat && key === 'x' && !survival?.enabled) triggerKick();
+  if (!e.repeat && key === 'v' && !survival?.enabled) player.playAction('roll') && say('Dodge roll');
+  if (!e.repeat && key === 'r') {
+    if (survival?.enabled) survival.reload();
+    else triggerFireCast();
+  }
+  if (!e.repeat && key === '1' && survival?.enabled) survival.switchWeapon('pistol');
+  if (!e.repeat && key === '2' && survival?.enabled) survival.switchWeapon('shotgun');
+  if (!e.repeat && key === '3' && survival?.enabled) survival.switchWeapon('rifle');
+  if (!e.repeat && key === 'b' && !survival?.enabled) toggleEmoteBar();
   if (!e.repeat && key === 'p') togglePhotoMode();
 });
 addEventListener('keyup', e => {
@@ -1691,16 +1699,54 @@ function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void) {
   el.addEventListener('lostpointercapture', up);
 }
 
-// Touch buttons
-bindAction(document.querySelector('#modeBtn') as HTMLButtonElement, () => (mode = mode === 'tpp' ? 'fpp' : 'tpp'));
+// Touch buttons. Survival mode reuses the same joystick/look zones but swaps fantasy actions for FPS actions.
+bindAction(document.querySelector('#modeBtn') as HTMLButtonElement, () => {
+  if (survival?.enabled) {
+    say('First-person view is fixed in survival mode');
+    return;
+  }
+  mode = mode === 'tpp' ? 'fpp' : 'tpp';
+});
 bindAction(document.querySelector('#attackBtn') as HTMLButtonElement, triggerSwordAttack);
 bindAction(document.querySelector('#punchBtn') as HTMLButtonElement, triggerPunch);
 bindAction(document.querySelector('#kickBtn') as HTMLButtonElement, triggerKick);
-bindAction(document.querySelector('#castBtn') as HTMLButtonElement, triggerFireCast);
+bindAction(document.querySelector('#castBtn') as HTMLButtonElement, () => survival?.enabled ? survival.fire() : triggerFireCast());
+bindHoldAction(document.querySelector('#shootBtn') as HTMLButtonElement, 'shoot', () => survival?.enabled && survival.fire());
+bindHoldAction(document.querySelector('#aimBtn') as HTMLButtonElement, 'aim');
+bindAction(document.querySelector('#reloadBtn') as HTMLButtonElement, () => survival?.enabled && survival.reload());
 bindHoldAction(document.querySelector('#jumpBtn') as HTMLButtonElement, ' ', jump);
 bindHoldAction(document.querySelector('#diveBtn') as HTMLButtonElement, 'control');
 bindAction(document.querySelector('#runBtn') as HTMLButtonElement, () => (sprintToggle = !sprintToggle));
 bindAction(document.querySelector('#interactBtn') as HTMLButtonElement, interact);
+
+// Mouse fire and right-click aim on desktop; mobile uses the pointer-captured HUD buttons.
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'mouse' || isInteractiveTarget(e.target) || !survival?.enabled || survey.isActive) return;
+  if (e.button === 0) {
+    e.preventDefault();
+    survival.setFireHeld(true);
+    survival.fire();
+  } else if (e.button === 2) {
+    e.preventDefault();
+    let holders = pointerKeys.get('aim');
+    if (!holders) pointerKeys.set('aim', (holders = new Set()));
+    holders.add(e.pointerId);
+    syncKeyState('aim');
+  }
+});
+window.addEventListener('pointerup', e => {
+  if (e.pointerType !== 'mouse') return;
+  if (e.button === 0) survival?.setFireHeld(false);
+  if (e.button === 2) {
+    const holders = pointerKeys.get('aim');
+    holders?.delete(e.pointerId);
+    if (!holders?.size) pointerKeys.delete('aim');
+    syncKeyState('aim');
+  }
+});
+renderer.domElement.addEventListener('contextmenu', e => {
+  if (survival?.enabled) e.preventDefault();
+});
 
 const emoteBtn = document.querySelector('#emoteBtn') as HTMLButtonElement;
 const emoteBar = document.querySelector('#emoteBar') as HTMLDivElement;
@@ -1730,6 +1776,19 @@ const touchControls = document.querySelector('#touch') as HTMLDivElement;
 const inventoryEl = document.querySelector('#inventory') as HTMLDivElement;
 const compass = document.querySelector('#compass') as HTMLDivElement;
 const waypointBadge = document.querySelector('#waypointBadge') as HTMLDivElement;
+const survivalBtn = document.querySelector('#survivalBtn') as HTMLButtonElement | null;
+const survivalHud = document.querySelector('#survivalHud') as HTMLDivElement | null;
+const survivalZoneStatus = document.querySelector('#survivalZoneStatus') as HTMLSpanElement | null;
+const survivalHealthText = document.querySelector('#survivalHealthText') as HTMLSpanElement | null;
+const survivalHealthBar = document.querySelector('#survivalHealthBar') as HTMLSpanElement | null;
+const survivalWeapon = document.querySelector('#survivalWeapon') as HTMLSpanElement | null;
+const survivalAmmo = document.querySelector('#survivalAmmo') as HTMLSpanElement | null;
+const survivalReserve = document.querySelector('#survivalReserve') as HTMLSpanElement | null;
+const survivalKills = document.querySelector('#survivalKills') as HTMLSpanElement | null;
+const survivalWave = document.querySelector('#survivalWave') as HTMLSpanElement | null;
+const survivalZombies = document.querySelector('#survivalZombies') as HTMLSpanElement | null;
+const survivalDeathOverlay = document.querySelector('#survivalDeathOverlay') as HTMLDivElement | null;
+const survivalRestartBtn = document.querySelector('#survivalRestartBtn') as HTMLButtonElement | null;
 const surveyBtn = document.querySelector('#surveyBtn') as HTMLButtonElement | null;
 const surveyOverlay = document.querySelector('#surveyOverlay') as HTMLDivElement | null;
 const surveyCloseBtn = document.querySelector('#surveyCloseBtn') as HTMLButtonElement | null;
@@ -1739,6 +1798,13 @@ const surveyCaptureBtn = document.querySelector('#surveyCaptureBtn') as HTMLButt
 const surveyCaptureSize = document.querySelector('#surveyCaptureSize') as HTMLSelectElement | null;
 const surveyStatus = document.querySelector('#surveyStatus') as HTMLSpanElement | null;
 const minimapHomeDist = document.querySelector('#minimapHomeDist') as HTMLSpanElement;
+
+if (survivalBtn) bindAction(survivalBtn, () => setSurvivalEnabled(!survival.enabled));
+if (survivalRestartBtn) bindAction(survivalRestartBtn, () => {
+  survival.restart();
+  survivalDeathOverlay?.classList.remove('show');
+  setSurvivalEnabled(true);
+});
 
 // Mini-Map & Full Map
 const miniCanvas = document.querySelector('#miniCanvas') as HTMLCanvasElement;
@@ -2630,6 +2696,106 @@ function canOccupy(x: number, z: number) {
   return true;
 }
 
+let modeBeforeSurvival: Mode = mode;
+
+function setSurvivalEnabled(enabled: boolean) {
+  if (enabled) {
+    if (!survival.enabled) modeBeforeSurvival = mode;
+    survival.setEnabled(true);
+    mode = 'fpp';
+    document.body.classList.add('survival-mode');
+    if (survivalBtn) {
+      survivalBtn.textContent = '🛡️';
+      survivalBtn.title = 'Leave Zombie Survival';
+      survivalBtn.setAttribute('aria-label', 'Leave Zombie Survival Mode');
+    }
+    target.style.display = 'grid';
+  } else {
+    survival.setEnabled(false);
+    mode = modeBeforeSurvival;
+    document.body.classList.remove('survival-mode', 'survival-damaged');
+    survivalDeathOverlay?.classList.remove('show');
+    if (survivalBtn) {
+      survivalBtn.textContent = '🧟';
+      survivalBtn.title = 'Enter Zombie Survival';
+      survivalBtn.setAttribute('aria-label', 'Enter Zombie Survival Mode');
+    }
+  }
+  saveNow();
+}
+
+survival = new ZombieSurvivalSystem({
+  scene,
+  camera,
+  getPlayerPosition: () => player.root.position,
+  getTerrainHeight: terrainHeightAt,
+  isWater: waterAt,
+  getWaterDepth: waterDepthAt,
+  canOccupy: (x, z) => canOccupy(x, z),
+  getSightBlockers: () => {
+    const blockers: THREE.Object3D[] = [...chunks.cameraBlockers];
+    const pcx = chunks.coord(player.root.position.x), pcz = chunks.coord(player.root.position.z);
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oz = -1; oz <= 1; oz++) {
+        const chunk = chunks.loaded.get(chunks.key(pcx + ox, pcz + oz));
+        const terrain = chunk?.getObjectByName('terrain');
+        if (terrain) blockers.push(terrain);
+      }
+    }
+    return blockers;
+  },
+  safeZones: [
+    { id: 'homestead', label: 'HOMESTEAD', x: HOME_X, z: HOME_Z, radius: 12 },
+    { id: 'settlement', label: 'SETTLEMENT', x: VILLAGE_X, z: VILLAGE_Z, radius: 13 },
+  ],
+  lowPowerMode: LOW_POWER_MODE,
+  respawnPlayer: () => {
+    const x = HOME_X + 2.8, z = HOME_Z + 7.2;
+    player.root.position.set(x, physicalGroundHeightAt(x, z) + 0.2, z);
+    player.velocity.set(0, 0, 0);
+    player.onGround = true;
+    player.swimming = false;
+    mode = 'fpp';
+    camYaw = player.root.rotation.y;
+    targetYaw = camYaw;
+    camPitch = 0;
+    targetPitch = 0;
+    saveNow();
+  },
+  notify: message => { if (message) say(message); },
+  onStatus: (state: SurvivalStatus) => {
+    if (survivalHealthText) survivalHealthText.textContent = `${state.health} / ${state.maxHealth}`;
+    if (survivalHealthBar) {
+      survivalHealthBar.style.width = `${Math.max(0, Math.min(100, (state.health / state.maxHealth) * 100))}%`;
+      survivalHealthBar.style.background = state.health <= 25 ? '#ef4444' : state.health <= 50 ? '#f59e0b' : 'linear-gradient(90deg, #e87942, #f5c26b)';
+    }
+    if (survivalWeapon) survivalWeapon.textContent = state.weaponLabel;
+    if (survivalAmmo) survivalAmmo.textContent = String(state.ammoInMag).padStart(2, '0');
+    if (survivalReserve) survivalReserve.textContent = state.reloading ? 'RELOADING' : `/ ${state.ammoReserve}`;
+    if (survivalKills) survivalKills.textContent = `KILLS ${state.kills}`;
+    if (survivalWave) survivalWave.textContent = state.wave ? `WAVE ${state.wave}` : 'SAFE START';
+    if (survivalZombies) survivalZombies.textContent = state.livingZombies ? `${state.livingZombies} NEARBY` : 'NO CONTACT';
+    if (survivalZoneStatus) {
+      survivalZoneStatus.textContent = state.inSafeZone ? `SAFE · ${state.nearestZone}` : `DANGER · ${state.nearestZone} ${Math.round(state.zoneDistance)}m`;
+      survivalZoneStatus.classList.toggle('safe', state.inSafeZone);
+      survivalZoneStatus.classList.toggle('danger', !state.inSafeZone);
+    }
+  },
+  onDamage: () => {
+    document.body.classList.add('survival-damaged');
+    window.setTimeout(() => document.body.classList.remove('survival-damaged'), 230);
+  },
+  onDeath: () => {
+    keys.clear();
+    keyboardKeys.clear();
+    pointerKeys.clear();
+    survivalDeathOverlay?.classList.add('show');
+    if (document.pointerLockElement) document.exitPointerLock();
+  },
+});
+
+setSurvivalEnabled(true);
+
 function moveWithCollisions(dx: number, dz: number) {
   const p = player.root.position;
   const nx = p.x + dx, nz = p.z + dz;
@@ -2668,6 +2834,10 @@ function update(dt: number) {
   if (survey.isActive) {
     // Survey is a frozen world snapshot: no weather, fauna, physics, terrain
     // streaming, or other live simulation advances while the user inspects it.
+    return;
+  }
+  if (survival?.enabled && survival.isDead) {
+    survival.update(dt, false, false);
     return;
   }
   aimTimer = Math.max(0, aimTimer - dt);
@@ -2992,6 +3162,9 @@ function update(dt: number) {
       : localForwardSpeed < -0.35 ? 'backward' : 'forward';
   player.animate(walkTime += dt, moving, sprinting, player.swimming, dt, horizontalSpeed, angularVelocity, player.onGround, player.velocity.y, movementIntent);
   if (isPhotoMode) updatePhotoBadges();
+
+  // Shooter simulation runs after the existing camera is positioned, so its hitscan uses the actual FPP view.
+  survival.update(dt, keys.has('shoot'), keys.has('aim'));
 
   // Record breadcrumb displacement trail
   minimap.recordPosition(p.x, p.z);
