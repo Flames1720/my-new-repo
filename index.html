@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#10151b" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <title>World Prototype — Wildlife</title>
-    <meta name="description" content="3D open-world nature and wildlife exploration prototype with procedural terrain, biomes, resources, and animals." />
-    <meta property="og:title" content="World Prototype — Wildlife" />
-    <meta property="og:description" content="3D open-world nature and wildlife exploration prototype with procedural terrain, biomes, resources, and animals." />
+    <title>World Prototype — Zombie Survival</title>
+    <meta name="description" content="First-person open-world zombie survival prototype with procedural terrain, weapons, loot, and safe zones." />
+    <meta property="og:title" content="World Prototype — Zombie Survival" />
+    <meta property="og:description" content="First-person open-world zombie survival prototype with procedural terrain, weapons, loot, and safe zones." />
   </head>
   <body>
     <div id="game"></div>
@@ -20,6 +20,7 @@
       <div id="topRightBar">
         <button id="photoBtn" aria-label="Photo Mode (clean screenshot)" title="Photo Mode (P)">📷</button>
         <button id="surveyBtn" aria-label="Open World Survey" title="World Survey">🗺️</button>
+        <button id="survivalBtn" aria-label="Toggle Zombie Survival Mode" title="Zombie Survival · Z">🧟</button>
         <button id="ecoBtn" aria-label="Ecosystem sanctuary & field guide" title="Wildlife Sanctuary">🐾</button>
         <button id="settingsBtn" aria-label="Open settings" title="Settings">⚙️</button>
         <button id="fullscreenBtn" aria-label="Toggle fullscreen" title="Fullscreen">⛶</button>
@@ -39,6 +40,15 @@
         <div id="status">EXPLORING</div>
       </div>
 
+      <!-- FPS Survival HUD: driven by actual health, ammunition, wave and safe-zone state -->
+      <section id="survivalHud" aria-live="polite" aria-label="Zombie survival status">
+        <div class="survivalHudTop"><span class="survivalHudKicker">SURVIVAL STATUS</span><span id="survivalZoneStatus" class="survivalZoneStatus safe">SAFE ZONE</span></div>
+        <div class="survivalHealthRow"><span>HP</span><strong id="survivalHealthText">100 / 100</strong></div>
+        <div class="survivalHealthTrack"><span id="survivalHealthBar"></span></div>
+        <div class="survivalAmmoRow"><div><span class="survivalHudKicker">WEAPON</span><strong id="survivalWeapon">P9 PISTOL</strong></div><div class="survivalAmmoValue"><strong id="survivalAmmo">15</strong><span id="survivalReserve">/ 60</span></div></div>
+        <div class="survivalStatsRow"><span id="survivalWave">WAVE 0</span><span id="survivalKills">KILLS 0</span><span id="survivalZombies">NO CONTACT</span></div>
+      </section>
+
       <!-- Nearby Wildlife & Waypoint Context -->
       <div id="wildlife" aria-live="polite">Wildlife loading…</div>
       <div id="waypointBadge"></div>
@@ -52,6 +62,15 @@
 
       <!-- Minimalist Controls Hint -->
       <div id="controls">WASD: Move · Shift: Sprint · Q: Sword · Z: Punch · X: Kick · R: Fire · C/F: TPP/FPP</div>
+    </div>
+
+    <div id="survivalDeathOverlay" role="dialog" aria-modal="true" aria-labelledby="survivalDeathTitle">
+      <div class="survivalDeathCard">
+        <div class="survivalDeathEyebrow">SIGNAL LOST</div>
+        <h2 id="survivalDeathTitle">OVERRUN</h2>
+        <p>You were caught outside the safe zone.</p>
+        <button id="survivalRestartBtn">RETURN TO SAFE ZONE</button>
+      </div>
     </div>
 
     <!-- Emote Selector Bar -->
@@ -240,6 +259,9 @@
         <button id="punchBtn" title="Fast punch">PUNCH</button>
         <button id="kickBtn" title="Round kick">KICK</button>
         <button id="castBtn" title="Fire bolt">FIRE</button>
+        <button id="shootBtn" title="Shoot weapon">SHOOT</button>
+        <button id="aimBtn" title="Hold to aim down sights">AIM</button>
+        <button id="reloadBtn" title="Reload weapon">RELOAD</button>
         <button id="emoteBtn" title="Emotes">EMOTE</button>
         <button id="modeBtn">FPP</button>
         <button id="runBtn">WALK</button>
