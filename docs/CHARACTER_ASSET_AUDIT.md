@@ -71,6 +71,7 @@ Actions are one-shot, cross-fade from the current animation, temporarily take pr
 - `createMagicOrb(element)` for hand charges and projectiles.
 - `createMagicBurst(element)` for release/impact flashes and area markers.
 - `MagicProjectileEffect` for a short-lived projectile with a reusable trail-ready update loop.
+- `disposeMagicEffect()` and `MagicProjectileEffect.dispose()` to release owned geometry/material resources before removing temporary effects.
 - Supported palette kinds: `fire`, `lightning`, `wind`, `water`, `dark`, `purification`.
 
 The intended first showcase is `playAction('cast')` plus a `MagicProjectileEffect('fire', ...)`; wiring that to spell selection, damage or enemy systems is intentionally left to the next gameplay task.
@@ -94,3 +95,4 @@ Before adding any library, compare its skeleton names to the target mesh, measur
 - The two supplied/user-provenance models remain because their redistribution terms are not independently verified.
 - `HitRecieve` is the source asset's spelling; the alias also accepts the correctly spelled form for future assets.
 - No spell-specific animation is verified in the current repository. The cast action fallback must not be presented as a final magic animation.
+- Callers must invoke `dispose()` (or `disposeMagicEffect()` for bursts/orbs) before removing temporary effects from the scene; the module cannot infer scene ownership automatically.

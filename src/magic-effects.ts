@@ -51,6 +51,22 @@ export function createMagicBurst(element: MagicElement, radius = 0.35): THREE.Gr
   return group;
 }
 
+/** Dispose owned geometry/material resources before removing an effect group. */
+export function disposeMagicEffect(root: THREE.Object3D) {
+  root.traverse(object => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.geometry.dispose();
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      for (const value of Object.values(material)) {
+        if (value instanceof THREE.Texture) value.dispose();
+      }
+      material.dispose();
+    }
+  });
+}
+
 /**
  * Tiny pooled-friendly projectile visual. The caller owns the group and removes
  * it when lifetime reaches zero; no textures, shaders or external assets needed.
@@ -75,5 +91,9 @@ export class MagicProjectileEffect {
     const fade = Math.max(0, 1 - this.age / this.lifetime);
     this.object.scale.setScalar(0.65 + fade * 0.55);
     return this.age < this.lifetime;
+  }
+
+  dispose() {
+    disposeMagicEffect(this.object);
   }
 }
