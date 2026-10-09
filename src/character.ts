@@ -122,9 +122,6 @@ export class PlayerCharacter {
     part: 'tunic' | 'tunicTrim' | 'pants' | 'leather' | 'boots' | 'metal' | 'accent';
   }[] = [];
 
-  private charKeyLight: THREE.PointLight;
-  private charFillLight: THREE.PointLight;
-
   private walkPhase = 0;
   private locomotionBlend = 0;
   private landingSquash = 0;
@@ -173,12 +170,6 @@ export class PlayerCharacter {
 
   constructor(lowPowerMode: boolean, modelId: CharacterModelId = 'quaternius-adventurer', onLoaded?: () => void) {
     this.root.name = 'player-character-rig';
-    this.charKeyLight = new THREE.PointLight(0xfff7ea, 2.2, 5.5);
-    this.charKeyLight.position.set(0, 1.6, 1.2);
-    this.root.add(this.charKeyLight);
-    this.charFillLight = new THREE.PointLight(0xdceeff, 1.4, 4.5);
-    this.charFillLight.position.set(-0.6, 1.2, -0.8);
-    this.root.add(this.charFillLight);
     this.buildSkeletalHierarchy();
     this.buildAnatomicalModel(lowPowerMode);
     this.applyOutfit(this.currentOutfit);
