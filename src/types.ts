@@ -49,9 +49,11 @@ export interface PlayerProfile {
 }
 
 export interface SettingsState {
-  sensitivityX: number; // 0.2 to 3.0, default 1.0
-  sensitivityY: number; // 0.2 to 3.0, default 1.0
+  sensitivityX: number; // Degrees turned across a full-screen-width swipe; default 360
+  sensitivityY: number; // Degrees looked across a full-screen-height swipe; default 150
   invertY: boolean;
+  cameraAcceleration: 'fixed' | 'distance' | 'speed';
+  cameraAccelerationStrength: number; // 0 to 2.0
   graphics: 'low' | 'med' | 'high';
   weatherMode: 'dynamic' | 'clear' | 'rain';
   chunkRadius: number;
