@@ -1,0 +1,196 @@
+/* Modern UI foundation — presentation-only overrides.
+   Keep gameplay behavior and existing DOM hooks unchanged. */
+:root {
+  color-scheme: dark;
+  --ui-bg: rgba(12, 17, 27, .86);
+  --ui-panel: rgba(19, 27, 41, .92);
+  --ui-panel-soft: rgba(25, 35, 51, .82);
+  --ui-border: rgba(226, 232, 240, .15);
+  --ui-border-strong: rgba(196, 181, 253, .42);
+  --ui-text: #f5f3ff;
+  --ui-muted: #a7b0c2;
+  --ui-accent: #c4b5fd;
+  --ui-gold: #f3c969;
+  --ui-success: #86d6ad;
+  --ui-radius: 14px;
+  --ui-shadow: 0 10px 30px rgba(0, 0, 0, .32);
+}
+body { color: var(--ui-text); background: #090e17; }
+button, input, select { font: inherit; }
+button { -webkit-appearance: none; appearance: none; }
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--ui-accent); outline-offset: 3px;
+}
+#hud { padding: calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left)); }
+#compass {
+  min-height: 30px; padding: 6px 14px; border-radius: 999px;
+  color: #f7f4ff; background: var(--ui-bg); border: 1px solid var(--ui-border);
+  box-shadow: var(--ui-shadow); font-size: 10px; letter-spacing: 1.8px;
+}
+#topRightBar { gap: 7px; }
+#settingsBtn, #fullscreenBtn, #ecoBtn, #photoBtn, #surveyBtn {
+  width: 42px; height: 42px; border-radius: 13px; border: 1px solid var(--ui-border);
+  background: var(--ui-bg); box-shadow: 0 5px 16px rgba(0,0,0,.25);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  font-size: 18px; transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+#settingsBtn:hover, #fullscreenBtn:hover, #ecoBtn:hover, #photoBtn:hover, #surveyBtn:hover {
+  border-color: var(--ui-border-strong); background: rgba(38, 44, 66, .96);
+}
+#photoBtn:hover { border-color: rgba(243,201,105,.7); box-shadow: 0 0 16px rgba(243,201,105,.14); }
+#playerCard { gap: 6px; }
+#profileBadge {
+  padding: 7px 11px; border-radius: 11px; color: #e6ddff;
+  background: var(--ui-bg); border: 1px solid var(--ui-border-strong);
+  box-shadow: var(--ui-shadow); font-size: 11px; letter-spacing: .2px;
+}
+#status {
+  padding: 5px 9px; border-radius: 8px; color: #e5e7eb;
+  background: rgba(12,17,27,.72); border: 1px solid var(--ui-border);
+  font-size: 9px; letter-spacing: .65px;
+}
+#wildlife, #waypointBadge {
+  border-radius: 10px; border: 1px solid var(--ui-border);
+  background: var(--ui-bg); box-shadow: 0 6px 18px rgba(0,0,0,.2);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  font-size: 10px; line-height: 1.45;
+}
+#minimapContainer { top: calc(60px + env(safe-area-inset-top)); width: 88px; height: 88px; }
+#miniCanvas {
+  width: 88px; height: 88px; border: 2px solid rgba(226,232,240,.25);
+  box-shadow: 0 8px 24px rgba(0,0,0,.38); background: var(--ui-bg);
+}
+#minimapSub { bottom: -18px; gap: 3px; }
+#minimapHomeDist { padding: 3px 7px; border-radius: 999px; color: var(--ui-gold); background: var(--ui-bg); }
+#minimapTapHint { font-size: 7px; letter-spacing: 1px; color: #e5e7eb; }
+#inventory {
+  gap: 5px; padding: 6px; max-width: min(72vw, 520px); border-radius: 16px;
+  background: var(--ui-bg); border: 1px solid var(--ui-border);
+  box-shadow: 0 10px 28px rgba(0,0,0,.34);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  scrollbar-width: none;
+}
+#inventory::-webkit-scrollbar { display: none; }
+.invItem {
+  min-height: 34px; padding: 6px 9px; border-radius: 10px;
+  background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.09);
+  font-size: 10px; text-shadow: none; white-space: nowrap;
+}
+#target { text-shadow: 0 1px 8px #000, 0 0 8px rgba(196,181,253,.55); }
+#target.active { color: var(--ui-gold); }
+#prompt {
+  padding: 8px 13px; gap: 9px; border-radius: 13px;
+  background: rgba(12,17,27,.94); border: 1px solid var(--ui-border-strong);
+  box-shadow: 0 10px 28px rgba(0,0,0,.34); font-size: 11px;
+}
+.promptKey { width: 25px; height: 25px; border-radius: 8px; background: var(--ui-accent); color: #171426; }
+#controls { color: rgba(241,245,249,.64); font-size: 9px; letter-spacing: .2px; }
+#emoteBar {
+  gap: 6px; padding: 8px; border-radius: 15px; background: var(--ui-panel);
+  border: 1px solid var(--ui-border); box-shadow: var(--ui-shadow);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+}
+.emoteOption {
+  min-height: 36px; padding: 8px 11px; border-radius: 10px;
+  background: var(--ui-panel-soft); border: 1px solid var(--ui-border);
+  font-size: 11px; transition: background .15s ease, border-color .15s ease;
+}
+.emoteOption:active { background: #34304b; border-color: var(--ui-border-strong); }
+#mapOverlay {
+  background: rgba(7, 11, 19, .96); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+#mapTitle { font-size: 13px; letter-spacing: 1.4px; }
+#mapTitle span { display: block; margin: 5px 0 0; font-size: 9px; line-height: 1.5; letter-spacing: .7px; }
+#mapCanvas { border-color: var(--ui-border); border-radius: 18px; box-shadow: var(--ui-shadow); }
+#mapClose, #settingsClose, #upgradeClose, #ecoClose {
+  min-width: 40px; min-height: 40px; border-radius: 11px;
+  background: var(--ui-panel-soft); border: 1px solid var(--ui-border);
+}
+#settingsOverlay, #upgradeOverlay, #ecoOverlay {
+  background: rgba(3, 6, 12, .72); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+}
+.settingsCard, .upgradeCard, .ecoCard {
+  width: min(520px, 94vw); max-height: min(88dvh, 780px);
+  background: linear-gradient(160deg, rgba(25,33,49,.98), rgba(12,17,27,.98));
+  border: 1px solid var(--ui-border); border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,.48);
+}
+.settingsHeader, .upgradeHeader, .ecoHeader { padding: 15px 17px; border-color: rgba(255,255,255,.09); }
+.settingsHeader h3, .upgradeHeader h3, .ecoHeader h3 {
+  max-width: calc(100% - 50px); color: #ddd6fe; font-size: 11px; letter-spacing: .9px; line-height: 1.45;
+}
+.settingsBody, .upgradeBody, .ecoBody { padding: 16px 17px; gap: 17px; }
+.settingGroup { gap: 8px; }
+.settingLabel, .settingRow { color: #e5e7eb; font-size: 12px; line-height: 1.45; }
+.settingLabel > span:last-child { color: var(--ui-accent); }
+select, input[type="text"], #playerNameInput {
+  min-height: 42px; padding: 10px 12px; border-radius: 11px;
+  color: #f8fafc; background: rgba(7,12,21,.84); border: 1px solid var(--ui-border);
+  font-size: 12px;
+}
+input[type="range"] { accent-color: var(--ui-accent); height: 5px; }
+input[type="checkbox"] { width: 20px; height: 20px; accent-color: #a78bfa; }
+#upgradeCurrentLevel { color: var(--ui-gold); font-size: 13px; }
+#upgradeDesc, .ecoIntro { color: var(--ui-muted); font-size: 12px; line-height: 1.6; }
+.costBadge { padding: 6px 9px; border-radius: 9px; background: rgba(255,255,255,.045); border-color: var(--ui-border); }
+#upgradeBtn {
+  min-height: 44px; border-radius: 12px; color: #171426;
+  background: linear-gradient(135deg, #ddd6fe, #a78bfa); font-size: 11px; letter-spacing: .6px;
+}
+#upgradeBtn:disabled { color: #cbd5e1; background: #374151; }
+.ecoRow { padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.04); border-color: var(--ui-border); }
+.ecoSummary { color: var(--ui-accent); border-color: var(--ui-border); }
+#touch { z-index: 200; }
+#stick {
+  width: 104px; height: 104px; background: rgba(15,20,32,.28);
+  border: 1px solid rgba(226,232,240,.24); box-shadow: 0 8px 24px rgba(0,0,0,.16);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+#knob {
+  width: 44px; height: 44px; margin: -22px; background: rgba(221,214,254,.3);
+  border: 1px solid rgba(221,214,254,.48); box-shadow: 0 2px 10px rgba(0,0,0,.2);
+}
+.actions { gap: 7px; }
+.actions button {
+  width: 54px; height: 54px; border-radius: 18px;
+  color: #f8fafc; background: rgba(12,17,27,.78); border: 1px solid rgba(226,232,240,.22);
+  box-shadow: 0 7px 18px rgba(0,0,0,.22); font-size: 9px;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.actions button:active { background: rgba(66,53,100,.92); border-color: var(--ui-border-strong); }
+#photoOverlay { color: var(--ui-text); }
+.photoBadge { color: var(--ui-accent); border-color: var(--ui-border-strong); }
+#photoCloseBtn, #photoGridBtn, #photoSnapBtn {
+  border-radius: 12px; border-color: var(--ui-border); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+}
+@media (max-width: 900px), (pointer: coarse) {
+  #topRightBar { gap: 5px; }
+  #settingsBtn, #fullscreenBtn, #ecoBtn, #photoBtn, #surveyBtn { width: 38px; height: 38px; border-radius: 11px; font-size: 16px; }
+  #playerCard { max-width: 42vw; }
+  #profileBadge { max-width: 100%; font-size: 10px; padding: 6px 8px; }
+  #wildlife { max-width: min(190px, 48vw); font-size: 9px; }
+  #inventory { bottom: calc(9px + env(safe-area-inset-bottom)); max-width: min(68vw, 420px); gap: 4px; }
+  .invItem { padding: 5px 7px; font-size: 9px; }
+  #prompt { max-width: min(74vw, 360px); white-space: normal; text-align: center; }
+  #emoteBar { max-width: calc(100vw - 24px); overflow-x: auto; }
+  .emoteOption { flex: 0 0 auto; }
+}
+@media (orientation: landscape) and (pointer: coarse) {
+  #stick { width: 90px; height: 90px; left: calc(18px + env(safe-area-inset-left)); bottom: calc(12px + env(safe-area-inset-bottom)); }
+  #knob { width: 40px; height: 40px; margin: -20px; }
+  .actions { right: calc(14px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); gap: 6px; }
+  .actions button { width: 48px; height: 48px; border-radius: 16px; }
+  #minimapContainer { width: 76px; height: 76px; top: calc(54px + env(safe-area-inset-top)); }
+  #miniCanvas { width: 76px; height: 76px; }
+  #inventory { bottom: calc(8px + env(safe-area-inset-bottom)); }
+}
+@media (max-height: 460px) and (orientation: landscape) {
+  #wildlife { display: none; }
+  #minimapContainer { top: calc(48px + env(safe-area-inset-top)); }
+  #inventory { max-width: 52vw; }
+  #prompt { bottom: 16%; }
+  .settingsCard, .upgradeCard, .ecoCard { max-height: 92dvh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
