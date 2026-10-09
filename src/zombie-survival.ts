@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-
-export type SurvivalWeaponId = 'pistol' | 'shotgun' | 'rifle';
+import { createWeaponRig, type SurvivalWeaponId, type WeaponRig, SURVIVAL_WEAPON_REGISTRY } from './survival-weapons';
+export type { SurvivalWeaponId } from './survival-weapons';
 export type SurvivalPickupKind = 'ammo' | 'medkit';
 
 export interface SafeZoneDefinition {
@@ -47,14 +47,66 @@ export interface ZombieSurvivalOptions {
   onDeath: () => void;
 }
 
-const WEAPONS: Record<SurvivalWeaponId, {
-  label: string; magSize: number; damage: number; fireInterval: number;
-  reloadTime: number; range: number; spread: number; pellets: number;
-  automatic: boolean; reserveStart: number;
-}> = {
-  pistol: { label: 'P9 PISTOL', magSize: 15, damage: 36, fireInterval: 0.24, reloadTime: 1.25, range: 65, spread: 0.002, pellets: 1, automatic: false, reserveStart: 60 },
-  shotgun: { label: 'BREACHER', magSize: 8, damage: 17, fireInterval: 0.72, reloadTime: 1.9, range: 28, spread: 0.023, pellets: 7, automatic: false, reserveStart: 24 },
-  rifle: { label: 'RIFLE', magSize: 30, damage: 27, fireInterval: 0.105, reloadTime: 1.65, range: 90, spread: 0.004, pellets: 1, automatic: true, reserveStart: 90 },
+interface WeaponTuning {
+  label: string;
+  magSize: number;
+  damage: number;
+  fireInterval: number;
+  reloadTime: number;
+  range: number;
+  spread: number;
+  pellets: number;
+  automatic: boolean;
+  reserveStart: number;
+  recoilKick: number;
+  recoilRecovery: number;
+}
+
+// Balance and weapon names come from the Fire at Will prototype's registry.
+// Starting reserves are tuned for our survival loop rather than copied from its UI state.
+const WEAPONS: Record<SurvivalWeaponId, WeaponTuning> = {
+  pistol: {
+    label: SURVIVAL_WEAPON_REGISTRY.pistol.name.toUpperCase(),
+    magSize: SURVIVAL_WEAPON_REGISTRY.pistol.magSize,
+    damage: SURVIVAL_WEAPON_REGISTRY.pistol.damage,
+    fireInterval: 1 / SURVIVAL_WEAPON_REGISTRY.pistol.fireRate,
+    reloadTime: SURVIVAL_WEAPON_REGISTRY.pistol.reloadTime,
+    range: SURVIVAL_WEAPON_REGISTRY.pistol.range,
+    spread: SURVIVAL_WEAPON_REGISTRY.pistol.spread,
+    pellets: SURVIVAL_WEAPON_REGISTRY.pistol.pellets,
+    automatic: SURVIVAL_WEAPON_REGISTRY.pistol.automatic,
+    reserveStart: 60,
+    recoilKick: SURVIVAL_WEAPON_REGISTRY.pistol.recoilKick,
+    recoilRecovery: SURVIVAL_WEAPON_REGISTRY.pistol.recoilRecovery,
+  },
+  shotgun: {
+    label: SURVIVAL_WEAPON_REGISTRY.shotgun.name.toUpperCase(),
+    magSize: SURVIVAL_WEAPON_REGISTRY.shotgun.magSize,
+    damage: SURVIVAL_WEAPON_REGISTRY.shotgun.damage,
+    fireInterval: 1 / SURVIVAL_WEAPON_REGISTRY.shotgun.fireRate,
+    reloadTime: SURVIVAL_WEAPON_REGISTRY.shotgun.reloadTime,
+    range: SURVIVAL_WEAPON_REGISTRY.shotgun.range,
+    spread: SURVIVAL_WEAPON_REGISTRY.shotgun.spread,
+    pellets: SURVIVAL_WEAPON_REGISTRY.shotgun.pellets,
+    automatic: SURVIVAL_WEAPON_REGISTRY.shotgun.automatic,
+    reserveStart: 24,
+    recoilKick: SURVIVAL_WEAPON_REGISTRY.shotgun.recoilKick,
+    recoilRecovery: SURVIVAL_WEAPON_REGISTRY.shotgun.recoilRecovery,
+  },
+  rifle: {
+    label: SURVIVAL_WEAPON_REGISTRY.rifle.name.toUpperCase(),
+    magSize: SURVIVAL_WEAPON_REGISTRY.rifle.magSize,
+    damage: SURVIVAL_WEAPON_REGISTRY.rifle.damage,
+    fireInterval: 1 / SURVIVAL_WEAPON_REGISTRY.rifle.fireRate,
+    reloadTime: SURVIVAL_WEAPON_REGISTRY.rifle.reloadTime,
+    range: SURVIVAL_WEAPON_REGISTRY.rifle.range,
+    spread: SURVIVAL_WEAPON_REGISTRY.rifle.spread,
+    pellets: SURVIVAL_WEAPON_REGISTRY.rifle.pellets,
+    automatic: SURVIVAL_WEAPON_REGISTRY.rifle.automatic,
+    reserveStart: 90,
+    recoilKick: SURVIVAL_WEAPON_REGISTRY.rifle.recoilKick,
+    recoilRecovery: SURVIVAL_WEAPON_REGISTRY.rifle.recoilRecovery,
+  },
 };
 
 interface ZombieActor {
@@ -132,12 +184,7 @@ export class ZombieSurvivalSystem {
   private readonly intersections: THREE.Intersection[] = [];
   private readonly tracerLines: Array<{ line: THREE.Line; age: number }> = [];
   private readonly hitSparks: Array<{ mesh: THREE.Mesh; age: number }> = [];
-  private readonly weaponRoot = new THREE.Group();
-  private readonly muzzleFlash = new THREE.Mesh(
-    new THREE.SphereGeometry(0.075, 6, 4),
-    new THREE.MeshBasicMaterial({ color: 0xffd38a, transparent: true, opacity: 0.95 })
-  );
-  private readonly muzzleLight = new THREE.PointLight(0xffa33b, 0, 4, 2);
+  private readonly weaponRigs = new Map<SurvivalWeaponId, WeaponRig>();
   private ammo: Record<SurvivalWeaponId, { mag: number; reserve: number }> = {
     pistol: { mag: 15, reserve: WEAPONS.pistol.reserveStart },
     shotgun: { mag: 8, reserve: WEAPONS.shotgun.reserveStart },
@@ -172,13 +219,13 @@ export class ZombieSurvivalSystem {
       this.zones.push({ ...def, root });
     }
 
-    this.createWeapon();
-    this.camera.add(this.weaponRoot);
-    this.camera.add(this.muzzleLight);
-    this.muzzleLight.position.set(0.24, -0.19, -0.8);
-    this.weaponRoot.add(this.muzzleFlash);
-    this.muzzleFlash.position.set(0.01, 0.015, -0.68);
-    this.muzzleFlash.visible = false;
+    this.createWeaponRigs();
+    for (const [id, rig] of this.weaponRigs) {
+      this.camera.add(rig.root);
+      rig.root.visible = id === this.weapon;
+      rig.muzzleFlash.visible = false;
+      rig.muzzleLight.intensity = 0;
+    }
     this.setEnabled(true);
     this.emitStatus();
   }
@@ -220,34 +267,14 @@ export class ZombieSurvivalSystem {
     return root;
   }
 
-  private createWeapon(): void {
-    const metal = new THREE.MeshStandardMaterial({ color: 0x202b34, roughness: 0.32, metalness: 0.78 });
-    const polymer = new THREE.MeshStandardMaterial({ color: 0x11171b, roughness: 0.68, metalness: 0.12 });
-    const accent = new THREE.MeshStandardMaterial({ color: 0xc69a48, roughness: 0.3, metalness: 0.7 });
-
-    const grip = makeMesh(new THREE.BoxGeometry(0.085, 0.19, 0.105), polymer, 'weapon-grip');
-    grip.position.set(-0.015, -0.105, 0.08);
-    grip.rotation.x = -0.16;
-    this.weaponRoot.add(grip);
-
-    const body = makeMesh(new THREE.BoxGeometry(0.105, 0.09, 0.29), metal, 'weapon-body');
-    body.position.set(0, 0, -0.075);
-    this.weaponRoot.add(body);
-
-    const barrel = makeMesh(new THREE.CylinderGeometry(0.022, 0.024, 0.36, 8), metal, 'weapon-barrel');
-    barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(0, 0.01, -0.31);
-    this.weaponRoot.add(barrel);
-
-    const sight = makeMesh(new THREE.BoxGeometry(0.035, 0.018, 0.045), accent, 'weapon-sight');
-    sight.position.set(0, 0.055, -0.1);
-    this.weaponRoot.add(sight);
-
-    const foregrip = makeMesh(new THREE.BoxGeometry(0.065, 0.12, 0.085), polymer, 'weapon-foregrip');
-    foregrip.position.set(0.025, -0.055, -0.2);
-    this.weaponRoot.add(foregrip);
-    this.weaponRoot.position.set(0.28, -0.255, -0.56);
-    this.weaponRoot.rotation.set(-0.02, -0.04, 0.015);
+  private createWeaponRigs(): void {
+    const ids: SurvivalWeaponId[] = ['pistol', 'shotgun', 'rifle'];
+    for (const id of ids) {
+      // Reuse the distinct procedural pistol/shotgun/rifle models authored in Fire at Will.
+      const rig = createWeaponRig(id);
+      rig.root.name = `survival-${id}-rig`;
+      this.weaponRigs.set(id, rig);
+    }
   }
 
   setEnabled(enabled: boolean): void {
@@ -256,8 +283,11 @@ export class ZombieSurvivalSystem {
     this.zones.forEach(zone => (zone.root.visible = enabled));
     this.zombies.forEach(actor => (actor.root.visible = enabled));
     this.loot.forEach(drop => (drop.root.visible = enabled));
-    this.weaponRoot.visible = enabled;
-    this.muzzleLight.visible = enabled;
+    for (const [id, rig] of this.weaponRigs) {
+      rig.root.visible = enabled && id === this.weapon;
+      rig.muzzleFlash.visible = false;
+      rig.muzzleLight.intensity = 0;
+    }
     if (!enabled) {
       this.fireHeld = false;
       this.aimActive = false;
@@ -297,6 +327,13 @@ export class ZombieSurvivalSystem {
   switchWeapon(id: SurvivalWeaponId): void {
     if (!this.enabled || this.isDead) return;
     this.weapon = id;
+    for (const [weaponId, rig] of this.weaponRigs) {
+      rig.root.visible = this.enabled && weaponId === id;
+      rig.root.position.copy(rig.basePos);
+      rig.root.rotation.copy(rig.baseRot);
+      rig.muzzleFlash.visible = false;
+      rig.muzzleLight.intensity = 0;
+    }
     this.reloadTimer = 0;
     this.fireCooldown = 0;
     this.options.notify(`Weapon: ${WEAPONS[id].label}`);
@@ -316,8 +353,11 @@ export class ZombieSurvivalSystem {
     currentAmmo.mag--;
     this.fireCooldown = definition.fireInterval;
     this.muzzleTimer = 0.065;
-    this.muzzleFlash.visible = true;
-    this.muzzleLight.intensity = this.options.lowPowerMode ? 0.8 : 1.5;
+    const activeRig = this.weaponRigs.get(this.weapon);
+    if (activeRig) {
+      activeRig.muzzleFlash.visible = true;
+      activeRig.muzzleLight.intensity = this.options.lowPowerMode ? 0.8 : 1.5;
+    }
     this.kickWeapon();
     this.options.onStatus(this.status());
     this.intersections.length = 0;
@@ -329,7 +369,8 @@ export class ZombieSurvivalSystem {
     const rayObjects = [...blockers, ...targets];
     const totalSpread = definition.spread * (this.aimActive ? 0.42 : 1);
     const muzzle = new THREE.Vector3();
-    this.camera.getWorldPosition(muzzle);
+    activeRig?.muzzleFlash.getWorldPosition(muzzle);
+    if (!activeRig) this.camera.getWorldPosition(muzzle);
 
     let registeredHit = false;
     for (let pellet = 0; pellet < definition.pellets; pellet++) {
@@ -386,9 +427,11 @@ export class ZombieSurvivalSystem {
   }
 
   private kickWeapon(): void {
-    const back = this.aimActive ? 0.04 : 0.085;
-    this.weaponRoot.position.z = -0.56 + back;
-    this.weaponRoot.rotation.x = -0.02 + (this.aimActive ? 0.06 : 0.105);
+    const rig = this.weaponRigs.get(this.weapon);
+    if (!rig) return;
+    const recoil = WEAPONS[this.weapon].recoilKick;
+    rig.root.position.z = (this.aimActive ? rig.adsPos.z : rig.basePos.z) + recoil;
+    rig.root.rotation.x = (this.aimActive ? rig.adsRot.x : rig.baseRot.x) - recoil * 0.75;
   }
 
   private createZombie(type: ZombieActor['type'], x: number, z: number): ZombieActor {
@@ -704,13 +747,26 @@ export class ZombieSurvivalSystem {
     if ((firing || this.fireHeld) && definition.automatic && this.fireCooldown <= 0) this.fire();
 
     this.muzzleTimer = Math.max(0, this.muzzleTimer - dt);
-    this.muzzleFlash.visible = this.muzzleTimer > 0 && this.enabled;
-    this.muzzleLight.intensity = this.muzzleTimer > 0 ? (this.options.lowPowerMode ? 0.8 : 1.5) * (this.muzzleTimer / 0.065) : 0;
-    const weaponBase = this.aimActive ? new THREE.Vector3(0.02, -0.2, -0.56) : new THREE.Vector3(0.28, -0.255, -0.56);
-    weaponBase.y += Math.sin(this.elapsed * 7) * (this.aimActive ? 0.001 : 0.003);
-    weaponBase.z += Math.cos(this.elapsed * 8) * (this.aimActive ? 0.002 : 0.005);
-    this.weaponRoot.position.lerp(weaponBase, Math.min(1, dt * 12));
-    this.weaponRoot.rotation.x += (this.aimActive ? 0 : -0.02 - this.weaponRoot.rotation.x) * Math.min(1, dt * 8);
+    for (const [id, rig] of this.weaponRigs) {
+      const active = this.enabled && id === this.weapon;
+      rig.root.visible = active;
+      rig.muzzleFlash.visible = active && this.muzzleTimer > 0;
+      rig.muzzleLight.intensity = active && this.muzzleTimer > 0
+        ? (this.options.lowPowerMode ? 0.8 : 1.5) * (this.muzzleTimer / 0.065)
+        : 0;
+    }
+    const activeRig = this.weaponRigs.get(this.weapon);
+    if (activeRig) {
+      const base = this.aimActive ? activeRig.adsPos : activeRig.basePos;
+      const weaponBase = base.clone();
+      weaponBase.y += Math.sin(this.elapsed * 7) * (this.aimActive ? 0.001 : 0.003);
+      weaponBase.z += Math.cos(this.elapsed * 8) * (this.aimActive ? 0.002 : 0.005);
+      const recoil = WEAPONS[this.weapon].recoilKick;
+      weaponBase.z += Math.max(0, activeRig.root.position.z - base.z) * Math.exp(-dt * WEAPONS[this.weapon].recoilRecovery);
+      activeRig.root.position.lerp(weaponBase, Math.min(1, dt * 12));
+      activeRig.root.rotation.x += ((this.aimActive ? activeRig.adsRot.x : activeRig.baseRot.x) - activeRig.root.rotation.x) * Math.min(1, dt * 8);
+      void recoil;
+    }
     this.updateZones();
 
     const playerPos = this.options.getPlayerPosition();
@@ -846,9 +902,11 @@ export class ZombieSurvivalSystem {
       this.scene.remove(zone.root);
       disposeGroup(zone.root);
     }
-    this.camera.remove(this.weaponRoot);
-    this.camera.remove(this.muzzleLight);
-    disposeGroup(this.weaponRoot);
+    for (const rig of this.weaponRigs.values()) {
+      this.camera.remove(rig.root);
+      disposeGroup(rig.root);
+    }
+    this.weaponRigs.clear();
   }
 }
 
