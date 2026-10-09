@@ -40,13 +40,14 @@
         <div id="status">EXPLORING</div>
       </div>
 
-      <!-- FPS Survival HUD: driven by actual health, ammunition, wave and safe-zone state -->
+      <!-- Compact, borderless survival HUD -->
       <section id="survivalHud" aria-live="polite" aria-label="Zombie survival status">
-        <div class="survivalHudTop"><span class="survivalHudKicker">SURVIVAL STATUS</span><span id="survivalZoneStatus" class="survivalZoneStatus safe">SAFE ZONE</span></div>
-        <div class="survivalHealthRow"><span>HP</span><strong id="survivalHealthText">100 / 100</strong></div>
-        <div class="survivalHealthTrack"><span id="survivalHealthBar"></span></div>
-        <div class="survivalAmmoRow"><div><span class="survivalHudKicker">WEAPON</span><div class="survivalWeaponLine"><strong id="survivalWeapon">P9 PISTOL</strong><button id="survivalCycleWeapon" type="button" aria-label="Switch weapon" title="Switch weapon">↻</button></div></div><div class="survivalAmmoValue"><strong id="survivalAmmo">15</strong><span id="survivalReserve">/ 60</span></div></div>
-        <div class="survivalStatsRow"><span id="survivalWave">WAVE 0</span><span id="survivalKills">KILLS 0</span><span id="survivalZombies">NO CONTACT</span></div>
+        <div class="survivalHudTop"><span id="survivalZoneStatus" class="survivalZoneStatus safe">SAFE · HOMESTEAD</span><span id="survivalWave">WAVE 0</span></div>
+        <div class="survivalBottomRow">
+          <div class="survivalHealthBlock"><span class="survivalHudKicker">HP</span><div class="survivalHealthTrack"><span id="survivalHealthBar"></span></div><strong id="survivalHealthText">100</strong></div>
+          <div class="survivalWeaponBlock"><div class="survivalWeaponLine"><strong id="survivalWeapon">P9 PISTOL</strong><button id="survivalCycleWeapon" type="button" aria-label="Switch weapon" title="Switch weapon">↻</button></div><div class="survivalAmmoValue"><strong id="survivalAmmo">15</strong><span id="survivalReserve">/ 60</span></div></div>
+          <div class="survivalKillsBlock"><span id="survivalKills">0 KILLS</span><span id="survivalZombies"></span></div>
+        </div>
       </section>
 
       <!-- Nearby Wildlife & Waypoint Context -->
