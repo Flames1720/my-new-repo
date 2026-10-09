@@ -40,6 +40,8 @@ export interface SurvivalStatus {
   preparationSeconds?: number;
   zonePhase?: SafeZonePhase;
   zoneIntegrity?: number;
+  safeZoneX?: number;
+  safeZoneZ?: number;
 }
 
 export interface ZombieSurvivalOptions {
@@ -843,7 +845,9 @@ export class ZombieSurvivalSystem {
     const player = this.options.getPlayerPosition();
     for (let attempt = 0; attempt < 14; attempt++) {
       const angle = Math.random() * Math.PI * 2;
-      const radius = 15 + Math.random() * 10;
+      const nearbyZone = this.nearestZone(player.x, player.z);
+      const pressure = (nearbyZone?.phase === 'weakening' ? 5 : 0) + Math.min(4, this.wave * 0.04);
+      const radius = Math.max(9, 15 + Math.random() * 10 - pressure);
       const x = player.x + Math.cos(angle) * radius;
       const z = player.z + Math.sin(angle) * radius;
       if (this.inSafeZone(x, z) || this.options.isWater(x, z) && this.options.getWaterDepth(x, z) > 0.55) continue;
@@ -1085,6 +1089,7 @@ export class ZombieSurvivalSystem {
   private status(): SurvivalStatus {
     const p = this.options.getPlayerPosition();
     const nearest = this.nearestZone(p.x, p.z);
+    const guideZone = nearest ?? (this.zoneTransitionTimer > 0 && this.zones.length ? this.zones[this.nextZoneIndex % this.zones.length] : null);
     const ammo = this.ammo[this.weapon];
     const living = this.zombies.filter(z => !z.dead).length;
     return {
@@ -1093,10 +1098,11 @@ export class ZombieSurvivalSystem {
       ammoInMag: ammo.mag, ammoReserve: ammo.reserve, kills: this.kills, wave: this.wave,
       livingZombies: living, inSafeZone: this.isPlayerProtected(p.x, p.z), runComplete: this.runComplete,
       preparationSeconds: Math.ceil(this.preparationTimer),
-      nearestZone: nearest?.label ?? 'SAFE ZONE',
-      zoneDistance: nearest ? Math.max(0, distToZone(p.x, p.z, nearest) - nearest.radius) : 0,
+      nearestZone: guideZone?.label ?? 'SAFE ZONE',
+      zoneDistance: guideZone ? Math.max(0, distToZone(p.x, p.z, guideZone) - guideZone.radius) : 0,
       reloading: this.reloadTimer > 0, dead: this.isDead,
       zonePhase: nearest?.phase, zoneIntegrity: nearest?.integrity,
+      safeZoneX: guideZone?.x, safeZoneZ: guideZone?.z,
     };
   }
 
