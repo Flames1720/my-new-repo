@@ -1562,11 +1562,13 @@ function onLookMove(clientX: number, clientY: number) {
   // Sensitivity is degrees per swipe spanning the active look zone (right half on touch, viewport on desktop).
   // Separate pointer IDs let the left thumb move while another finger looks,
   // aims, shoots or taps ADS without cancelling either gesture.
-  targetYaw += (dx / lookWidth) * (sensX * Math.PI / 180) * acceleration;
+  // Drag direction follows the thumb: swipe left turns the view left, swipe right turns right.
+  // Vertical look is deliberately gentler to make fine aiming and looking around controllable on mobile.
+  targetYaw -= (dx / lookWidth) * (sensX * Math.PI / 180) * acceleration;
   targetPitch = clamp(
-    targetPitch - (dy / lookHeight) * (sensY * Math.PI / 180) * invertY * acceleration,
-    -1.2,
-    0.95
+    targetPitch - (dy / lookHeight) * (sensY * 0.7 * Math.PI / 180) * invertY * acceleration,
+    -1.15,
+    1.15
   );
 }
 
