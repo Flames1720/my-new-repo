@@ -671,3 +671,13 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Verification:** Refreshed the running sandbox browser. The player remains visible and the green patch/halo around the feet is gone. The existing Q/R gameplay controls and controls hint remain present. Final typecheck/build passed locally.
 
 **Important correction:** The prior commit `5c34ab6` accidentally truncated `AGENT_CHANGELOG.md`; this follow-up restores the content on the same integration branch. No force-push or main-branch change is required.
+
+## 2026-10-09 07:02 +0000 UTC — Manus
+
+**Scope:** Investigate the reported visual mismatch where the grass/terrain appeared to hover above lower ground.
+
+**Finding:** The foreground terrain mesh used only 32 subdivisions in Ultra mode (16 in lower settings), while collision and camera calculations sample the continuous `terrainHeightAt` field. On slopes and noise transitions, the interpolated visual mesh could differ visibly from the physical height sample.
+
+**Changed:** Increased foreground terrain tessellation to 64 segments in Ultra, 40 in Balanced and 24 in Fast/low-power mode; LOD1 now uses 20 segments. Water continues to use the same `segs` value as its terrain chunk, preserving shared visual sampling.
+
+**Remaining verification:** Recheck the player-area slope and chunk edges in the browser, then run lint/build and push if the alignment is improved. Monitor mobile frame time because the Ultra foreground mesh has more vertices.

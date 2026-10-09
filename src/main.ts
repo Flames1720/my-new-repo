@@ -854,9 +854,9 @@ class Chunks {
     // mesh can display, creating apparent raised riverbank ledges.
     const segs =
       lod === 0
-        ? (LOW_POWER_MODE ? 16 : lodSetting === 'ultra' ? 32 : 16)
+        ? (LOW_POWER_MODE ? 24 : lodSetting === 'ultra' ? 64 : lodSetting === 'balanced' ? 40 : 24)
         : lod === 1
-        ? 16
+        ? 20
         : 8;
     const terrain = new THREE.PlaneGeometry(SIZE, SIZE, segs, segs);
     terrain.rotateX(-Math.PI / 2);
