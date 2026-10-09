@@ -711,3 +711,30 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Remaining work:** Enemy attack AI against the player, authored hitbox timing per combo frame, weapon progression, sound/haptics, stamina/cooldowns, and deeper device testing remain future work.
 
 **Next agent:** Deploy this integration branch for browser review, then tune target selection and combat feel using real device feedback before adding more combat content.
+
+## 2026-10-09 15:57 +0000 UTC — GPT-5.6
+
+**Scope:** Mobile performance audit and evidence-based combat allocation cleanup.
+
+**Starting point:** `perf/mobile-performance-audit` at `ad720e9`, also tracking `origin/feature/world-integrated-zombie-survival`. Protected branches were not changed.
+
+**Inspected:** `package.json`, `src/main.ts`, `src/zombie-survival.ts`, `src/settings.ts`, public asset inventory, renderer setup, render loop, camera collision, survival spawning/shooting/AI/effects, touch controls, and browser WebGL capabilities.
+
+**Changed:**
+- Added `docs/MOBILE_PERFORMANCE_BASELINE.md` with actual baseline measurements, ranked bottlenecks, before/after results, validation, and limitations.
+- Added a disabled-by-default `?perf=1` diagnostic overlay in `src/main.ts` showing FPS, mean frame time, largest observed frame spike, draw calls, triangles, geometries, and textures.
+- Reused scratch arrays/vectors in `src/zombie-survival.ts` for firing raycasts, line-of-sight checks, hit positions, weapon animation, and living-zombie counts. Gameplay behavior, raycast ordering, damage, effects, controls, and zombie rules were preserved.
+
+**Verification:**
+- Build: PASS (`npm run build`); existing Vite chunk warning remains.
+- Typecheck: PASS (`npm run lint`).
+- Diff check: PASS (`git diff --check`).
+- Runtime/browser: PARTIAL/VERIFIED locally; movement, survival, firing/reload, and diagnostics were exercised in the sandbox browser.
+- Device: NOT VERIFIED on physical Android; browser used SwiftShader at `1280x1100`, not a Redmi-class device.
+- Sustained 10–15-minute run: NOT COMPLETED because the available browser action timed out at 30 seconds; no memory-growth claim is made.
+
+**Important findings:** The sandbox uses SwiftShader software WebGL. Baseline measured 5.5 FPS quiet, 4.7 FPS moving, 4.3 FPS sprint/slide, 3.1 FPS combat, and 3.1 FPS heavier wave. The post-fix repeated-fire sample measured 3.5 FPS / 286.59 ms versus 3.1 FPS / 318.19 ms baseline, while the heavier-wave sample remained effectively unchanged. The overlay exposed approximately 212 draw calls and 284,156 triangles, indicating rendering remains the dominant constraint in this environment.
+
+**Remaining work:** Repeat controlled before/after tests on hardware-accelerated desktop and a physical Android phone; complete a real 10–15-minute sustained run; capture a CPU/GPU profile; and only then consider measured graphics-quality or simulation-frequency changes.
+
+**Next agent:** Use the overlay and a physical/mobile test harness before making further performance cuts. Do not deploy, merge, or modify `main` or `feature/world-integrated-zombie-survival`.

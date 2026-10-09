@@ -438,6 +438,40 @@ renderer.shadowMap.enabled = !LOW_POWER_MODE;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.querySelector('#game')!.appendChild(renderer.domElement);
 
+const perfDiagnosticsEnabled = new URLSearchParams(location.search).get('perf') === '1';
+const perfDiagnostics = perfDiagnosticsEnabled ? document.createElement('pre') : null;
+let perfWindowTime = 0;
+let perfWindowFrames = 0;
+let perfWindowFrameMs = 0;
+let perfWindowMaxFrameMs = 0;
+if (perfDiagnostics) {
+  perfDiagnostics.id = 'performanceDiagnostics';
+  perfDiagnostics.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:9999;margin:0;padding:7px 9px;color:#dbeafe;background:rgba(2,6,23,.78);border:1px solid rgba(148,163,184,.35);border-radius:6px;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;pointer-events:none;white-space:pre;';
+  perfDiagnostics.textContent = 'Performance diagnostics starting…';
+  document.body.appendChild(perfDiagnostics);
+}
+
+function updatePerfDiagnostics(frameMs: number) {
+  if (!perfDiagnostics) return;
+  perfWindowTime += frameMs;
+  perfWindowFrames++;
+  perfWindowFrameMs += frameMs;
+  perfWindowMaxFrameMs = Math.max(perfWindowMaxFrameMs, frameMs);
+  if (perfWindowTime < 500) return;
+  const avgMs = perfWindowFrameMs / Math.max(1, perfWindowFrames);
+  const info = renderer.info;
+  perfDiagnostics.textContent = [
+    `FPS ${Math.round(1000 / Math.max(0.1, avgMs))} · frame ${avgMs.toFixed(1)} ms`,
+    `spike ${perfWindowMaxFrameMs.toFixed(1)} ms`,
+    `draw ${info.render.calls} · tris ${info.render.triangles}`,
+    `geo ${info.memory.geometries} · tex ${info.memory.textures}`,
+  ].join('\n');
+  perfWindowTime = 0;
+  perfWindowFrames = 0;
+  perfWindowFrameMs = 0;
+  perfWindowMaxFrameMs = 0;
+}
+
 const hemisphere = new THREE.HemisphereLight(0xdceeff, 0x405044, 2.2);
 scene.add(hemisphere);
 const sun = new THREE.DirectionalLight(0xfff0d0, 3.0);
@@ -3773,16 +3807,22 @@ addEventListener('resize', () => {
 
 addEventListener('beforeunload', saveNow);
 
+let lastLoopTime = performance.now();
 function loop() {
   requestAnimationFrame(loop);
+  const loopTime = performance.now();
+  const wallFrameMs = loopTime - lastLoopTime;
+  lastLoopTime = loopTime;
   const dt = Math.min(clock.getDelta(), 0.05);
   if (survey.isActive) {
     // Only redraw the frozen survey scene when its camera actually changes.
     // This keeps the full-world survey detailed without continuously burning GPU.
     if (survey.update(dt)) renderer.render(scene, survey.camera);
+    updatePerfDiagnostics(wallFrameMs);
     return;
   }
   update(dt);
   renderer.render(scene, camera);
+  updatePerfDiagnostics(wallFrameMs);
 }
 loop();

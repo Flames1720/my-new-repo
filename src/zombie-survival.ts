@@ -200,6 +200,13 @@ export class ZombieSurvivalSystem {
   private readonly raycaster = new THREE.Raycaster();
   private readonly centerNdc = new THREE.Vector2(0, 0);
   private readonly intersections: THREE.Intersection[] = [];
+  private readonly rayObjects: THREE.Object3D[] = [];
+  private readonly muzzlePosition = new THREE.Vector3();
+  private readonly tracerEnd = new THREE.Vector3();
+  private readonly lineOfSightOrigin = new THREE.Vector3();
+  private readonly lineOfSightDirection = new THREE.Vector3();
+  private readonly hitWorldPosition = new THREE.Vector3();
+  private readonly weaponBase = new THREE.Vector3();
   private readonly tracerLines: Array<{ line: THREE.Line; age: number }> = [];
   private readonly hitSparks: Array<{ mesh: THREE.Mesh; age: number }> = [];
   private readonly weaponRigs = new Map<SurvivalWeaponId, WeaponRig>();
@@ -409,12 +416,15 @@ export class ZombieSurvivalSystem {
     this.camera.updateMatrixWorld(true);
     this.scene.updateMatrixWorld(true);
     const blockers = this.options.getSightBlockers();
-    const targets = this.zombies.filter(z => !z.dead).map(z => z.root);
-    const rayObjects = [...blockers, ...targets];
+    this.rayObjects.length = 0;
+    for (const blocker of blockers) this.rayObjects.push(blocker);
+    for (const zombie of this.zombies) {
+      if (!zombie.dead) this.rayObjects.push(zombie.root);
+    }
     const totalSpread = definition.spread * (this.aimActive ? 0.42 : 1);
-    const muzzle = new THREE.Vector3();
-    activeRig?.muzzleFlash.getWorldPosition(muzzle);
-    if (!activeRig) this.camera.getWorldPosition(muzzle);
+    this.muzzlePosition.set(0, 0, 0);
+    activeRig?.muzzleFlash.getWorldPosition(this.muzzlePosition);
+    if (!activeRig) this.camera.getWorldPosition(this.muzzlePosition);
 
     let registeredHit = false;
     for (let pellet = 0; pellet < definition.pellets; pellet++) {
@@ -425,11 +435,11 @@ export class ZombieSurvivalSystem {
       this.raycaster.setFromCamera(ndc, this.camera);
       this.raycaster.far = definition.range;
       this.intersections.length = 0;
-      this.raycaster.intersectObjects(rayObjects, true, this.intersections);
+      this.raycaster.intersectObjects(this.rayObjects, true, this.intersections);
       const hit = this.intersections[0];
-      let end = this.raycaster.ray.origin.clone().addScaledVector(this.raycaster.ray.direction, definition.range);
+      this.tracerEnd.copy(this.raycaster.ray.origin).addScaledVector(this.raycaster.ray.direction, definition.range);
       if (hit) {
-        end.copy(hit.point);
+        this.tracerEnd.copy(hit.point);
         const actor = hit.object.userData.survivalZombie as ZombieActor | undefined;
         if (actor && !actor.dead) {
           const headshot = hit.object.userData.survivalHead === true;
@@ -440,7 +450,7 @@ export class ZombieSurvivalSystem {
           this.spawnImpact(hit.point, false);
         }
       }
-      this.spawnTracer(muzzle, end);
+      this.spawnTracer(this.muzzlePosition, this.tracerEnd);
     }
     if (!registeredHit) this.options.notify(currentAmmo.mag === 0 ? 'Magazine empty · reload' : '');
     this.emitStatus();
@@ -558,7 +568,7 @@ export class ZombieSurvivalSystem {
     actor.flash = 0.12;
     actor.flesh.emissive.setHex(0x7c211c);
     actor.clothing.emissive.setHex(0x3a1210);
-    this.spawnImpact(actor.head.getWorldPosition(new THREE.Vector3()), true);
+    this.spawnImpact(actor.head.getWorldPosition(this.hitWorldPosition), true);
     if (playHitSound) survivalSound.playHitmarker(headshot);
     this.options.notify(headshot ? 'HEADSHOT!' : 'HIT');
     if (actor.hp <= 0) {
@@ -655,17 +665,18 @@ export class ZombieSurvivalSystem {
   }
 
   private hasLineOfSight(from: THREE.Vector3, to: THREE.Vector3): boolean {
-    const origin = from.clone();
-    origin.y += 1.05;
-    const target = to.clone();
-    target.y += 1.05;
-    const direction = target.sub(origin);
-    const distance = direction.length();
+    this.lineOfSightOrigin.copy(from);
+    this.lineOfSightOrigin.y += 1.05;
+    this.lineOfSightDirection.copy(to);
+    this.lineOfSightDirection.y += 1.05;
+    this.lineOfSightDirection.sub(this.lineOfSightOrigin);
+    const distance = this.lineOfSightDirection.length();
     if (distance < 0.1) return true;
-    this.raycaster.set(origin, direction.normalize());
+    this.raycaster.set(this.lineOfSightOrigin, this.lineOfSightDirection.normalize());
     this.raycaster.far = Math.max(0, distance - 0.3);
-    const hits = this.raycaster.intersectObjects(this.options.getSightBlockers(), true);
-    return hits.length === 0;
+    this.intersections.length = 0;
+    this.raycaster.intersectObjects(this.options.getSightBlockers(), true, this.intersections);
+    return this.intersections.length === 0;
   }
 
   private damagePlayer(amount: number): void {
@@ -779,7 +790,7 @@ export class ZombieSurvivalSystem {
   }
 
   private spawnZombie(): void {
-    if (this.zombies.filter(z => !z.dead).length >= this.maxZombies) return;
+    if (this.livingZombieCount() >= this.maxZombies) return;
     const player = this.options.getPlayerPosition();
     for (let attempt = 0; attempt < 14; attempt++) {
       const angle = Math.random() * Math.PI * 2;
@@ -829,11 +840,11 @@ export class ZombieSurvivalSystem {
     const activeRig = this.weaponRigs.get(this.weapon);
     if (activeRig) {
       const base = this.aimActive ? activeRig.adsPos : activeRig.basePos;
-      const weaponBase = base.clone();
-      weaponBase.y += Math.sin(this.elapsed * 7) * (this.aimActive ? 0.001 : 0.003);
-      weaponBase.z += Math.cos(this.elapsed * 8) * (this.aimActive ? 0.002 : 0.005);
-      weaponBase.z += Math.max(0, activeRig.root.position.z - base.z) * Math.exp(-dt * WEAPONS[this.weapon].recoilRecovery);
-      activeRig.root.position.lerp(weaponBase, Math.min(1, dt * 12));
+      this.weaponBase.copy(base);
+      this.weaponBase.y += Math.sin(this.elapsed * 7) * (this.aimActive ? 0.001 : 0.003);
+      this.weaponBase.z += Math.cos(this.elapsed * 8) * (this.aimActive ? 0.002 : 0.005);
+      this.weaponBase.z += Math.max(0, activeRig.root.position.z - base.z) * Math.exp(-dt * WEAPONS[this.weapon].recoilRecovery);
+      activeRig.root.position.lerp(this.weaponBase, Math.min(1, dt * 12));
       activeRig.root.rotation.x += ((this.aimActive ? activeRig.adsRot.x : activeRig.baseRot.x) - activeRig.root.rotation.x) * Math.min(1, dt * 8);
       if (activeRig.slideOrPump) {
         const baseZ = this.slideBaseZ.get(this.weapon) ?? activeRig.slideOrPump.position.z;
@@ -859,7 +870,7 @@ export class ZombieSurvivalSystem {
     if (!this.isDead && this.hasEnteredHostileArea && !nearSafe) {
       if (this.waveQueue > 0) {
         this.spawnTimer += dt;
-        if (this.spawnTimer >= 2.7 && this.zombies.filter(z => !z.dead).length < this.maxZombies) {
+        if (this.spawnTimer >= 2.7 && this.livingZombieCount() < this.maxZombies) {
           this.spawnTimer = 0;
           this.spawnZombie();
           this.waveQueue--;
@@ -954,7 +965,7 @@ export class ZombieSurvivalSystem {
     const p = this.options.getPlayerPosition();
     const nearest = this.nearestZone(p.x, p.z);
     const ammo = this.ammo[this.weapon];
-    const living = this.zombies.filter(z => !z.dead).length;
+    const living = this.livingZombieCount();
     return {
       enabled: this.enabled, health: this.health, maxHealth: this.maxHealth,
       weapon: this.weapon, weaponLabel: WEAPONS[this.weapon].label,
@@ -964,6 +975,14 @@ export class ZombieSurvivalSystem {
       zoneDistance: nearest ? Math.max(0, distToZone(p.x, p.z, nearest) - nearest.radius) : 0,
       reloading: this.reloadTimer > 0, dead: this.isDead,
     };
+  }
+
+  private livingZombieCount(): number {
+    let count = 0;
+    for (const zombie of this.zombies) {
+      if (!zombie.dead) count++;
+    }
+    return count;
   }
 
   private emitStatus(): void {
