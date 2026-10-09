@@ -37,6 +37,8 @@ export interface SurvivalStatus {
   reloading: boolean;
   dead: boolean;
   runComplete?: boolean;
+  zonePhase?: SafeZonePhase;
+  zoneIntegrity?: number;
 }
 
 export interface ZombieSurvivalOptions {
@@ -247,8 +249,10 @@ export class ZombieSurvivalSystem {
 
     for (const def of options.safeZones) {
       const root = this.createSafeZone(def);
+      const active = this.zones.length === 0;
+      root.visible = active;
       this.scene.add(root);
-      this.zones.push({ ...def, root, active: this.zones.length === 0, age: 0, integrity: 100, phase: 'stable' });
+      this.zones.push({ ...def, root, active, age: 0, integrity: 100, phase: 'stable' });
     }
 
     this.createWeaponRigs();
@@ -518,7 +522,7 @@ export class ZombieSurvivalSystem {
     torso.position.set(0, 1.13, 0);
     root.add(torso);
     // High-contrast chest strip gives each silhouette a readable focal point.
-    const warningMat = new THREE.MeshBasicMaterial({ color: type === 'brute' ? 0xf1c453 : type === 'runner' ? 0xff6a35 : 0xd9e8b1 });
+    const warningMat = new THREE.MeshBasicMaterial({ color: bossTier === 2 ? 0xff315b : bossTier === 1 ? 0xff8a35 : type === 'brute' ? 0xf1c453 : type === 'runner' ? 0xff6a35 : 0xd9e8b1 });
     const chestMark = makeMesh(new THREE.BoxGeometry(0.34, 0.095, 0.018), warningMat, 'zombie-chest-mark');
     chestMark.position.set(0, 1.22, 0.158);
     root.add(chestMark);
@@ -882,7 +886,7 @@ export class ZombieSurvivalSystem {
   }
 
   update(dt: number, firing = false, aiming = false): void {
-    if (!this.enabled) return;
+    if (!this.enabled || this.runComplete) return;
     this.elapsed += dt;
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     this.statusTimer += dt;
@@ -1054,6 +1058,7 @@ export class ZombieSurvivalSystem {
       nearestZone: nearest?.label ?? 'SAFE ZONE',
       zoneDistance: nearest ? Math.max(0, distToZone(p.x, p.z, nearest) - nearest.radius) : 0,
       reloading: this.reloadTimer > 0, dead: this.isDead,
+      zonePhase: nearest?.phase, zoneIntegrity: nearest?.integrity,
     };
   }
 
