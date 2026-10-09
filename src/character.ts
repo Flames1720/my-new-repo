@@ -140,7 +140,7 @@ export class PlayerCharacter {
   private modelRequestVersion = 0;
   private currentModelId: CharacterModelId = 'quaternius-adventurer';
   private modelAnimation = '';
-  private locomotionState: 'idle' | 'walk' | 'run' | 'backward' | 'airborne' | 'swim' | 'jump' | 'emote' = 'idle';
+  private locomotionState: 'idle' | 'walk' | 'run' | 'backward' | 'strafe-left' | 'strafe-right' | 'airborne' | 'swim' | 'jump' | 'fall' | 'crouch' | 'gather' | 'climb' | 'turn' | 'emote' = 'idle';
   private wasAirborne = false;
   private landingTime = 0;
   private wasSwimming = false;
@@ -483,6 +483,31 @@ export class PlayerCharacter {
           this.modelActions.set('__walk_reduced', walkAction);
         }
 
+        // Register semantic aliases only when the loaded asset really contains
+        // a matching clip. This lets the same gameplay states work across rigs
+        // whose exporters use different clip names (e.g. "Jog Forward" or "Run").
+        const aliasFromClip = (alias: string, patterns: RegExp[], reject: RegExp[] = []) => {
+          if (this.modelActions.has(alias)) return;
+          const entry = [...this.modelActions.entries()].find(([name]) => {
+            const n = name.toLowerCase();
+            return patterns.some(pattern => pattern.test(n)) && !reject.some(pattern => pattern.test(n));
+          });
+          if (entry) this.modelActions.set(alias, entry[1]);
+        };
+        aliasFromClip('idle', [/(?:^|[| _-])idle(?:$|[ ._-])/, /idle neutral/, /standing idle/], [/walk/, /run/, /turn/]);
+        aliasFromClip('walk', [/(?:^|[| _-])walk(?:$|[ ._-])/, /walk forward/, /walking/], [/backward/, /strafe/, /run/]);
+        aliasFromClip('run', [/(?:^|[| _-])run(?:$|[ ._-])/, /jog forward/, /running/], [/backward/, /strafe/]);
+        aliasFromClip('backward', [/backward/, /walk back/, /run back/, /reverse walk/]);
+        aliasFromClip('strafe-left', [/strafe left/, /sidestep left/, /left strafe/]);
+        aliasFromClip('strafe-right', [/strafe right/, /sidestep right/, /right strafe/]);
+        aliasFromClip('jump', [/(?:^|[| _-])jump(?:$|[ ._-])/, /jumping/], [/jump attack/]);
+        aliasFromClip('fall', [/falling/, /^fall(?:$|[ _-])/, /freefall/]);
+        aliasFromClip('swim', [/(?:^|[| _-])swim(?:$|[ ._-])/, /swimming/]);
+        aliasFromClip('crouch', [/crouch/, /sneak/]);
+        aliasFromClip('gather', [/gather/, /harvest/, /chop/, /mine/, /interact/, /working/]);
+        aliasFromClip('climb', [/climb/]);
+        aliasFromClip('turn', [/turn left/, /turn right/, /turn in place/]);
+
         // The user-supplied Mixamo file contains one clip named "mixamo.com";
         // the source filename identifies it as a walking cycle.
         if (modelId === 'mixamo-walker' && gltf.animations.length === 1) {
@@ -664,7 +689,7 @@ export class PlayerCharacter {
     return null;
   }
 
-  private playModelAnimation(name: 'idle' | 'walk' | 'run' | 'backward' | 'jump' | 'swim' | 'emote', fade = 0.14) {
+  private playModelAnimation(name: 'idle' | 'walk' | 'run' | 'backward' | 'strafe-left' | 'strafe-right' | 'jump' | 'fall' | 'swim' | 'crouch' | 'gather' | 'climb' | 'turn' | 'emote', fade = 0.14) {
     if (!this.modelReady || !this.modelMixer) return;
 
     const emoteCandidates: Record<EmoteKind, string[]> = {
@@ -678,9 +703,16 @@ export class PlayerCharacter {
     const candidates = name === 'idle' ? ['idle_neutral', 'idle', '__walk_reduced', 'jog forward', 'walk', 'run']
       : name === 'walk' ? ['walk', '__walk_reduced', 'jog forward', 'run']
       : name === 'run' ? ['run', 'jog forward', 'walk']
-      : name === 'backward' ? ['jog backward', 'run_back', 'run backward', 'walk backward', 'walk', 'run']
-      : name === 'jump' ? ['jump', 'jumping', 'fall', 'idle_neutral', 'idle', 'walk', 'run']
+      : name === 'backward' ? ['backward', 'jog backward', 'run_back', 'run backward', 'walk backward', 'walk', 'run']
+      : name === 'strafe-left' ? ['strafe-left', 'strafe left', 'sidestep left', 'left strafe', 'walk']
+      : name === 'strafe-right' ? ['strafe-right', 'strafe right', 'sidestep right', 'right strafe', 'walk']
+      : name === 'jump' ? ['jump', 'jumping', 'idle_neutral', 'idle', 'walk', 'run']
+      : name === 'fall' ? ['fall', 'falling', 'freefall', 'idle', 'walk']
       : name === 'swim' ? ['swim', 'swimming', 'idle_neutral', 'idle', 'walk']
+      : name === 'crouch' ? ['crouch', 'sneak', 'idle']
+      : name === 'gather' ? ['gather', 'harvest', 'chop', 'mine', 'interact', 'working', 'inspect', 'idle']
+      : name === 'climb' ? ['climb', 'climbing', 'walk']
+      : name === 'turn' ? ['turn', 'turn left', 'turn right', 'idle']
       : emoteCandidates[this.currentEmote] ?? ['idle'];
 
     let next: THREE.AnimationAction | null = null;
@@ -694,11 +726,11 @@ export class PlayerCharacter {
     }
     if (!next) return;
 
-    const isJumpClip = name === 'jump' && matched.startsWith('jump');
+    const isOneShotClip = name === 'jump' && /^(jump|jumping)/.test(matched);
     const freezeForIdle = name === 'idle' && !matched.startsWith('idle');
     const timeScale = name === 'run' ? 1.12
       : name === 'walk' ? (matched === 'run' ? 0.66 : matched === 'jog forward' ? 0.72 : 0.82)
-      : name === 'backward' ? 0.82
+      : name === 'backward' || name === 'strafe-left' || name === 'strafe-right' ? 0.82
       : name === 'swim' ? 0.9
       : name === 'emote' ? 0.9
       : 1.0;
@@ -709,8 +741,8 @@ export class PlayerCharacter {
       next.paused = false;
       next.setEffectiveWeight(1);
       next.setEffectiveTimeScale(timeScale);
-      next.setLoop(isJumpClip ? THREE.LoopOnce : THREE.LoopRepeat, isJumpClip ? 1 : Infinity);
-      next.clampWhenFinished = isJumpClip;
+      next.setLoop(isOneShotClip ? THREE.LoopOnce : THREE.LoopRepeat, isOneShotClip ? 1 : Infinity);
+      next.clampWhenFinished = isOneShotClip;
       next.play();
 
       if (this.activeModelAction) {
@@ -720,8 +752,8 @@ export class PlayerCharacter {
     } else {
       next.setEffectiveTimeScale(timeScale);
       next.setEffectiveWeight(1);
-      next.setLoop(isJumpClip ? THREE.LoopOnce : THREE.LoopRepeat, isJumpClip ? 1 : Infinity);
-      next.clampWhenFinished = isJumpClip;
+      next.setLoop(isOneShotClip ? THREE.LoopOnce : THREE.LoopRepeat, isOneShotClip ? 1 : Infinity);
+      next.clampWhenFinished = isOneShotClip;
     }
 
     // Use real idle clips where present. If a model only provides locomotion,
@@ -729,7 +761,7 @@ export class PlayerCharacter {
     if (freezeForIdle) {
       next.paused = true;
       next.time = 0;
-    } else if (!isJumpClip) {
+    } else if (!isOneShotClip) {
       next.paused = false;
     }
 
@@ -745,7 +777,8 @@ export class PlayerCharacter {
     dt = 0.016,
     onGround = true,
     speed = 0,
-    velocityY = 0
+    velocityY = 0,
+    movementIntent: 'forward' | 'backward' | 'strafe-left' | 'strafe-right' = 'forward'
   ) {
     if (!this.modelReady || !this.modelRoot) return;
 
@@ -760,7 +793,7 @@ export class PlayerCharacter {
     this.modelRoot.position.y = lerp(this.modelRoot.position.y, 0, Math.min(1, dt * 10));
 
     if (!onGround) {
-      this.playModelAnimation('jump', 0.08);
+      this.playModelAnimation(velocityY < -1.4 ? 'fall' : 'jump', 0.08);
       this.activeModelAction?.setEffectiveWeight(1);
       this.modelRoot.rotation.x = lerp(this.modelRoot.rotation.x, 0, Math.min(1, dt * 10));
       this.modelRoot.rotation.z = lerp(this.modelRoot.rotation.z, 0, Math.min(1, dt * 10));
@@ -775,7 +808,7 @@ export class PlayerCharacter {
 
     if (this.currentEmote !== 'none') {
       this.emoteTime += dt;
-      if (this.emoteTime <= 4.5) {
+      if (this.emoteTime <= (this.currentEmote === 'inspect' ? 1.05 : 4.5)) {
         this.playModelAnimation('emote', 0.16);
         return;
       }
@@ -783,7 +816,12 @@ export class PlayerCharacter {
     }
 
     if (moving) {
-      this.playModelAnimation(sprinting || speed > 5.5 ? 'run' : 'walk');
+      const hasDirectionalClip = movementIntent !== 'forward' && Boolean(this.findModelAction(movementIntent));
+      if (hasDirectionalClip) {
+        this.playModelAnimation(movementIntent);
+      } else {
+        this.playModelAnimation(sprinting || speed > 5.5 ? 'run' : 'walk');
+      }
     } else {
       this.playModelAnimation('idle');
     }
@@ -857,7 +895,8 @@ export class PlayerCharacter {
     speed: number,
     turnRate: number,
     onGround = true,
-    velocityY = 0
+    velocityY = 0,
+    movementIntent: 'forward' | 'backward' | 'strafe-left' | 'strafe-right' = 'forward'
   ) {
     if (!this.modelReady) {
       this.update(dt, t, moving, sprinting, swimming, speed, turnRate);
@@ -866,7 +905,7 @@ export class PlayerCharacter {
 
     if (!onGround && !swimming) this.wasAirborne = true;
 
-    this.updateProductionAnimation(moving, sprinting, swimming, turnRate, dt, onGround, speed, velocityY);
+    this.updateProductionAnimation(moving, sprinting, swimming, turnRate, dt, onGround, speed, velocityY, movementIntent);
     this.modelMixer?.update(Math.min(dt, 0.05));
 
     if (swimming && !this.findModelAction('swim') && !this.findModelAction('swimming')) {
@@ -879,7 +918,7 @@ export class PlayerCharacter {
     // Bone overrides happen AFTER the mixer so the jump pose is not erased by
     // the animation system on the same frame.
     if (!onGround && !swimming) {
-      if (this.findModelAction('jump')) {
+      if (this.findModelAction(velocityY < -1.4 ? 'fall' : 'jump')) {
         this.jumpPoseActive = false;
       } else {
         this.applyAirbornePose(velocityY, dt);

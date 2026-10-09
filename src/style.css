@@ -80,7 +80,7 @@ canvas {
   z-index: 300;
 }
 
-#settingsBtn, #fullscreenBtn, #ecoBtn, #photoBtn {
+#settingsBtn, #fullscreenBtn, #ecoBtn, #photoBtn, #surveyBtn {
   width: 48px;
   height: 48px;
   border: 1.5px solid #ffffff3a;
@@ -100,7 +100,7 @@ canvas {
   user-select: none;
   -webkit-user-select: none;
 }
-#settingsBtn:hover, #fullscreenBtn:hover, #ecoBtn:hover, #photoBtn:hover {
+#settingsBtn:hover, #fullscreenBtn:hover, #ecoBtn:hover, #photoBtn:hover, #surveyBtn:hover {
   border-color: #38bdf8;
   background: #1a2938;
 }
@@ -108,7 +108,7 @@ canvas {
   border-color: #f59e0b;
   box-shadow: 0 0 16px #f59e0b55;
 }
-#settingsBtn:active, #fullscreenBtn:active, #ecoBtn:active, #photoBtn:active {
+#settingsBtn:active, #fullscreenBtn:active, #ecoBtn:active, #photoBtn:active, #surveyBtn:active {
   transform: scale(0.90);
   background: #23384c;
 }
@@ -1143,4 +1143,200 @@ body.photo-mode-active #photoOverlay {
   .viewfinderCorner.bl, .viewfinderCorner.br {
     bottom: 74px;
   }
+}
+
+
+/* ==========================================================================
+   WORLD SURVEY — stripped diagnostic camera
+   ========================================================================== */
+body.survey-active #hud,
+body.survey-active #touch,
+body.survey-active #emoteBar,
+body.survey-active #photoOverlay,
+body.survey-active #mapOverlay,
+body.survey-active #settingsOverlay,
+body.survey-active #ecoOverlay,
+body.survey-active #upgradeOverlay {
+  display: none !important;
+}
+
+#surveyLoading {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: none;
+  place-items: center;
+  background: #060a0fe8;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+#surveyLoading.show {
+  display: grid;
+}
+.surveyLoadingCard {
+  width: min(360px, calc(100vw - 44px));
+  box-sizing: border-box;
+  padding: 24px 22px 20px;
+  border: 1px solid #38bdf855;
+  border-radius: 22px;
+  background: #0b1119f5;
+  box-shadow: 0 18px 60px #000b, 0 0 35px #0ea5e922;
+  text-align: center;
+}
+.surveyLoadingIcon {
+  font-size: 34px;
+  margin-bottom: 8px;
+}
+#surveyLoadingStage {
+  color: #e0f2fe;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+.surveyLoadingSub {
+  margin-top: 7px;
+  color: #94a3b8;
+  font-size: 10px;
+}
+.surveyLoadingTrack {
+  height: 6px;
+  margin-top: 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #ffffff14;
+}
+#surveyLoadingBar {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+  transition: width .12s ease;
+}
+
+#surveyOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  display: none;
+  pointer-events: none;
+  padding: calc(14px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+  color: #f8fafc;
+  font-size: 11px;
+  letter-spacing: .4px;
+}
+#surveyOverlay.show {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.surveyTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: auto;
+}
+.surveyTop > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.surveyBadge {
+  background: #0b1119e8;
+  border: 1px solid #38bdf866;
+  color: #7dd3fc;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.3px;
+  box-shadow: 0 5px 18px #0009;
+}
+#surveyStatus {
+  background: #0b1119d9;
+  border: 1px solid #ffffff22;
+  border-radius: 999px;
+  padding: 7px 11px;
+  font-weight: 800;
+  box-shadow: 0 5px 18px #0009;
+}
+#surveyCloseBtn,
+#surveyCaptureBtn,
+.surveyModeBtn {
+  border: 1px solid #ffffff2e;
+  background: #0b1119e8;
+  color: #fff;
+  border-radius: 999px;
+  min-height: 42px;
+  padding: 8px 14px;
+  font-weight: 800;
+  font-size: 10px;
+  letter-spacing: .7px;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+#surveyCloseBtn:active,
+#surveyCaptureBtn:active,
+.surveyModeBtn:active {
+  transform: scale(.95);
+}
+.surveyCenter {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: #ffffff55;
+  font-size: 20px;
+  pointer-events: none;
+}
+.surveyBottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+.surveyViewButtons,
+.surveyCapture {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.surveyModeBtn.active {
+  border-color: #38bdf8aa;
+  background: #075985e8;
+  color: #e0f2fe;
+}
+#surveyCaptureSize {
+  min-height: 42px;
+  border-radius: 999px;
+  background: #0b1119e8;
+  border: 1px solid #ffffff2e;
+  color: #fff;
+  padding: 8px 12px;
+  font-size: 10px;
+  pointer-events: auto;
+}
+#surveyCaptureBtn {
+  background: #075985ee;
+  border-color: #38bdf8aa;
+}
+.surveyHint {
+  background: #0b1119b8;
+  border: 1px solid #ffffff18;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 9px;
+  opacity: .75;
+}
+@media (max-width: 640px) {
+  #surveyOverlay { padding: calc(10px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom)); }
+  .surveyTop { align-items: flex-start; }
+  .surveyTop > div { max-width: 72vw; gap: 5px; }
+  .surveyBadge, #surveyStatus { font-size: 8px; padding: 6px 8px; }
+  #surveyCloseBtn, #surveyCaptureBtn, .surveyModeBtn, #surveyCaptureSize { min-height: 38px; font-size: 9px; padding: 7px 10px; }
+  .surveyHint { font-size: 8px; }
 }

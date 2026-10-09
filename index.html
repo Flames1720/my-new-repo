@@ -19,6 +19,7 @@
       <!-- Top Right Controls & Live Mini-Map -->
       <div id="topRightBar">
         <button id="photoBtn" aria-label="Photo Mode (clean screenshot)" title="Photo Mode (P)">📷</button>
+        <button id="surveyBtn" aria-label="Open World Survey" title="World Survey">🗺️</button>
         <button id="ecoBtn" aria-label="Ecosystem sanctuary & field guide" title="Wildlife Sanctuary">🐾</button>
         <button id="settingsBtn" aria-label="Open settings" title="Settings">⚙️</button>
         <button id="fullscreenBtn" aria-label="Toggle fullscreen" title="Fullscreen">⛶</button>
@@ -279,6 +280,42 @@
           <span class="shutterText">CAPTURE & SAVE</span>
         </button>
         <button id="photoCleanBtn" class="photoToolBtn" title="Hide UI to preview framing (tap anywhere to return)">👁️ Clean Frame</button>
+      </div>
+    </div>
+
+    <!-- World Survey: authoritative diagnostic view -->
+    <div id="surveyOverlay">
+      <div id="surveyLoading" aria-live="polite" aria-busy="true">
+        <div class="surveyLoadingCard">
+          <div class="surveyLoadingIcon">🗺️</div>
+          <div id="surveyLoadingStage">CALCULATING…</div>
+          <div class="surveyLoadingSub">Preparing the frozen world survey</div>
+          <div class="surveyLoadingTrack"><div id="surveyLoadingBar"></div></div>
+        </div>
+      </div>
+      <div class="surveyTop">
+        <div>
+          <span class="surveyBadge">WORLD SURVEY</span>
+          <span id="surveyStatus">ROCK + WATER · TOPOLOGY</span>
+        </div>
+        <button id="surveyCloseBtn">✕ EXIT</button>
+      </div>
+      <div class="surveyCenter">+</div>
+      <div class="surveyBottom">
+        <div class="surveyViewButtons">
+          <button id="surveyWorldBtn" class="surveyModeBtn active">🌍 WORLD</button>
+          <button id="surveyTerrainBtn" class="surveyModeBtn">🪨 TERRAIN</button>
+          <button id="surveyHydrologyBtn" class="surveyModeBtn">💧 HYDROLOGY</button>
+        </div>
+        <div class="surveyCapture">
+          <select id="surveyCaptureSize" aria-label="Survey capture size">
+            <option value="1920x1080">1920 × 1080</option>
+            <option value="2560x1440">2560 × 1440</option>
+            <option value="3840x2160">3840 × 2160</option>
+          </select>
+          <button id="surveyCaptureBtn">📸 CAPTURE WORLD</button>
+        </div>
+        <div class="surveyHint">Drag = rotate/lift · two fingers = pan/zoom · wheel/+/- = zoom · tap = focus</div>
       </div>
     </div>
 

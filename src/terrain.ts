@@ -51,9 +51,21 @@ export const riverbankSand = new THREE.Color(0xb5a77b);
 export function terrainColorAt(h: number, x: number, z: number, biome: Biome): THREE.Color {
   let c: THREE.Color;
 
+  // Water is a world-field property, not an absolute-height test. Rivers can
+  // exist at high elevations, so never paint submerged channel terrain green.
+  const wetDepth = waterDepthAt(x, z);
+  if (wetDepth > 0.02) {
+    const pebbleNoise = Math.sin(x * 0.8 + z * 0.9) * 0.5 + 0.5;
+    const depthShade = clamp(wetDepth / 4.0, 0, 1);
+    c = submergedPebbles.clone()
+      .lerp(richLoamSoil, pebbleNoise * 0.20)
+      .lerp(mountainGranite, depthShade * 0.12);
+    return c;
+  }
+
   const waterDist = h - WATER_LEVEL;
 
-  // 1. Shoreline & Riverbed sand / pebbles / submerged silt
+  // Low-elevation shoreline sediment for the land just above sea level.
   if (waterDist < -0.15) {
     const pebbleNoise = Math.sin(x * 0.8 + z * 0.9) * 0.5 + 0.5;
     c = submergedPebbles.clone().lerp(richLoamSoil, pebbleNoise * 0.25);
@@ -91,6 +103,17 @@ export function terrainColorAt(h: number, x: number, z: number, biome: Biome): T
     c = alpineSnow.clone();
     c.r = clamp(c.r + peakGleam, 0.9, 1);
     c.g = clamp(c.g + peakGleam, 0.9, 1);
+  }
+
+  // Snow follows cold alpine conditions instead of being a decorative
+  // height-only band. Render-time approximation keeps chunk generation light.
+  const renderTemperature = 23.0 - h * 0.42;
+  const freeze = clamp((2.0 - renderTemperature) / 7.5, 0, 1);
+  const snowline = clamp((h - 34.0) / 24.0, 0, 1);
+  const snowCoverage = clamp(freeze * 0.82 + snowline * 0.35, 0, 1);
+  if (snowCoverage > 0.01) {
+    const snowNoise = 0.82 + 0.18 * (Math.sin(x * 0.09 + z * 0.07) * 0.5 + 0.5);
+    c.lerp(alpineSnow, clamp(snowCoverage * snowNoise, 0, 0.94));
   }
 
   // Biome regional tint for mid-elevation flora

@@ -16,7 +16,9 @@ import {
   VILLAGE_Z,
   terrainHeightAt,
   waterDepthAt,
+  waterSurfaceAt,
   waterAt,
+  waterFlowAt,
   biomeAt,
   terrainColorAt,
   mountainMaskAt,
@@ -37,6 +39,9 @@ import { buildHome, buildVillage, buildBridge, HOME_UPGRADE_COSTS } from './sett
 import { WildlifeSystem, isSharedAnimalAsset, speciesColor, SPECIES_NAME, SPECIES_ICON } from './fauna';
 import { MinimapSystem } from './minimap';
 import { settings } from './settings';
+import { WorldSurvey, type SurveyView } from './survey';
+import { voxelWorld, buildVoxelWorldVolumeMesh, buildVoxelWorldWaterVolumeMesh, type VoxelEdit } from './voxel';
+import { environmentAssets } from './environment-assets';
 
 type Save = {
   version: 2;
@@ -47,6 +52,7 @@ type Save = {
   wildlifeTrust?: Record<string, number>;
   worldTime?: number;
   homeLevel?: HomeLevel;
+  voxelEdits?: VoxelEdit[];
 };
 
 const IS_TOUCH_DEVICE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
@@ -90,6 +96,30 @@ function pickTreeKind(cx: number, cz: number, i: number, tx: number, tz: number)
 }
 
 function buildTree(kind: ResourceKind, lod: number): THREE.Group {
+  const assetTree = environmentAssets.createTree(kind, lod);
+  if (assetTree) {
+    const def = RESOURCE_DEFS[kind];
+    if (kind === 'fruit') {
+      const fruitMat = new THREE.MeshStandardMaterial({ color: def.fruitColor ?? 0xcc4433, roughness: 0.6 });
+      for (let f = 0; f < 5; f++) {
+        const fruit = new THREE.Mesh(new THREE.SphereGeometry(0.09, 5, 4), fruitMat);
+        const a = f * ((Math.PI * 2) / 5);
+        fruit.position.set(Math.cos(a) * 1.05, 2.2 + Math.sin(f * 1.7) * 0.28, Math.sin(a) * 1.05);
+        assetTree.add(fruit);
+      }
+    }
+    if (lod === 0) {
+      assetTree.traverse(o => {
+        if (o instanceof THREE.Mesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+        }
+      });
+    }
+    return assetTree;
+  }
+
+  // Lightweight deterministic fallback while the CC0 asset pack is loading.
   const g = new THREE.Group();
   const def = RESOURCE_DEFS[kind];
   const trunkMat = new THREE.MeshStandardMaterial({ color: def.trunkColor, roughness: 0.95 });
@@ -117,11 +147,9 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
       g.add(tier);
     }
   } else if (kind === 'ancient_oak') {
-    // Grand ancient oak tree (2.5x larger, majestic presence)
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.55, 3.2, lod === 0 ? 10 : 6), trunkMat);
     trunk.position.y = 1.6;
     g.add(trunk);
-    // Root buttresses
     for (let r = 0; r < 4; r++) {
       const root = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.22, 1.2, 5), trunkMat);
       const ra = r * (Math.PI / 2);
@@ -130,7 +158,6 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
       root.rotation.y = ra;
       g.add(root);
     }
-    // Main multi-layered canopy
     const c1 = new THREE.Mesh(new THREE.SphereGeometry(2.3, lod === 0 ? 10 : 6, lod === 0 ? 8 : 5), crownMat);
     c1.position.set(0, 3.8, 0);
     g.add(c1);
@@ -141,7 +168,6 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
     c3.position.set(-1.0, 4.0, 0.8);
     g.add(c3);
   } else {
-    // Standard Oak / Fruit tree
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.7, lod === 0 ? 8 : 5), trunkMat);
     trunk.position.y = 0.85;
     g.add(trunk);
@@ -158,7 +184,6 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
       }
     }
   }
-
   if (lod === 0) {
     g.traverse(o => {
       if (o instanceof THREE.Mesh) {
@@ -169,8 +194,20 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
   }
   return g;
 }
-
 function buildRock(kind: ResourceKind, lod: number): THREE.Group {
+  const assetRock = environmentAssets.createRock(kind, lod);
+  if (assetRock) {
+    if (lod === 0) {
+      assetRock.traverse(o => {
+        if (o instanceof THREE.Mesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+        }
+      });
+    }
+    return assetRock;
+  }
+
   const g = new THREE.Group();
   const def = RESOURCE_DEFS[kind];
   const mat = new THREE.MeshStandardMaterial({ color: def.rockColor, roughness: 1, flatShading: true });
@@ -184,7 +221,6 @@ function buildRock(kind: ResourceKind, lod: number): THREE.Group {
   geo.computeVertexNormals();
   const rock = new THREE.Mesh(geo, mat);
   rock.position.y = base * 0.55;
-  rock.rotation.y = hash(kind === 'boulder' ? 1 : 0, Math.round(base * 1000)) * Math.PI * 2;
   g.add(rock);
   if (lod === 0) {
     g.traverse(o => {
@@ -196,16 +232,38 @@ function buildRock(kind: ResourceKind, lod: number): THREE.Group {
   }
   return g;
 }
-
 // --- SHADERS & WATER ---
+// Water reads as a volume, not a sheet: transparency and colour are driven by
+// the real per-vertex water depth (aDepth), so shallows show the bed, deep
+// water darkens, and the shoreline fades to foam instead of ending in a hard edge.
 const waterMaterial = new THREE.MeshStandardMaterial({
   color: 0xffffff,
   vertexColors: true,
   transparent: true,
-  opacity: 0.92,
-  roughness: 0.14,
+  opacity: 1,
+  roughness: 0.08,
   metalness: 0.08,
-  depthWrite: true,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+
+const waterfallMaterial = new THREE.MeshStandardMaterial({
+  color: 0xdaf5ff,
+  transparent: true,
+  opacity: 0.58,
+  roughness: 0.08,
+  metalness: 0,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+
+const springMaterial = new THREE.MeshStandardMaterial({
+  color: 0x9deee4,
+  transparent: true,
+  opacity: 0.68,
+  roughness: 0.08,
+  metalness: 0.02,
+  depthWrite: false,
   side: THREE.DoubleSide,
 });
 
@@ -217,26 +275,88 @@ let waterShader: {
   };
 } | null = null;
 
+// x/z = player world position, z component of the vector = wake strength (0 when dry).
+// Shared by reference with the water shader so update() only mutates it.
+const waterWake = new THREE.Vector3(0, 0, 0);
+
 waterMaterial.onBeforeCompile = shader => {
   shader.uniforms.uTime = { value: 0 };
   shader.uniforms.uWaveHeight = { value: 0.04 };
   shader.uniforms.uWindDir = { value: new THREE.Vector2(0.7071, -0.7071) };
+  shader.uniforms.uPlayer = { value: waterWake };
   shader.vertexShader = `
     uniform float uTime;
     uniform float uWaveHeight;
     uniform vec2 uWindDir;
+    attribute float aDepth;
+    attribute vec2 aFlow;
+    varying float vDepth;
+    varying vec2 vFlow;
+    varying vec3 vWorldPos;
   ` + shader.vertexShader;
   shader.vertexShader = shader.vertexShader.replace(
     '#include <begin_vertex>',
     `#include <begin_vertex>
     vec4 ripplePos = modelMatrix * vec4(transformed, 1.0);
-    // Shoreline damping: foam/shoreline vertices (whiter color) stay anchored to the beach and do not lift off the sand
-    float shoreDamping = clamp(color.b * 1.6 - color.r * 0.6, 0.0, 1.0);
+    vDepth = aDepth;
+    vFlow = aFlow;
+    // Swell fades out toward the shore (by real depth) so the waterline stays
+    // anchored to the bank instead of lifting off it.
+    float shoreDamping = smoothstep(0.08, 0.7, aDepth);
     float windDot = dot(ripplePos.xz, uWindDir);
-    float wave1 = sin(windDot * 0.55 + uTime * 2.2) * uWaveHeight;
-    float wave2 = cos(ripplePos.x * 0.75 + ripplePos.z * 0.35 - uTime * 1.3) * (uWaveHeight * 0.45);
+    float wave1 = sin(windDot * 0.55 + uTime * 1.3) * uWaveHeight;
+    float wave2 = cos(ripplePos.x * 0.75 + ripplePos.z * 0.35 - uTime * 0.85) * (uWaveHeight * 0.45);
     float wave = (wave1 + wave2) * shoreDamping;
-    transformed.y += wave;`
+    transformed.y += wave;
+    vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+  );
+
+  shader.fragmentShader = `
+    uniform float uTime;
+    uniform float uWaveHeight;
+    uniform vec3 uPlayer;
+    varying float vDepth;
+    varying vec2 vFlow;
+    varying vec3 vWorldPos;
+  ` + shader.fragmentShader;
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <normal_fragment_maps>',
+    `#include <normal_fragment_maps>
+    // Flow-advected ripple normals: glints and motion without moving the geometry.
+    vec2 wp = vWorldPos.xz - vFlow * uTime * 0.5;
+    float ph1 = wp.x * 1.9 + wp.y * 1.3 + uTime * 0.9;
+    float ph2 = wp.x * 3.7 - wp.y * 2.9 - uTime * 1.4;
+    vec2 rip = vec2(
+      cos(ph1) * 1.9 + cos(ph2) * 3.7,
+      cos(ph1) * 1.3 - cos(ph2) * 2.9
+    );
+    rip *= 0.010 * (0.6 + uWaveHeight * 8.0);
+
+    // Player wake: expanding rings around whoever is wading or swimming.
+    vec2 pd = vWorldPos.xz - uPlayer.xy;
+    float pr = length(pd);
+    float wake = sin(pr * 9.0 - uTime * 6.0) * exp(-pr * 0.8) * uPlayer.z;
+    rip += (pd / max(pr, 0.001)) * wake * 0.25;
+
+    rip *= smoothstep(0.02, 0.3, vDepth);
+    normal = normalize(normal + (viewMatrix * vec4(rip.x, 0.0, rip.y, 0.0)).xyz);
+
+    // Fresnel: grazing views reflect more, looking straight down shows the bed.
+    float fres = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0);
+
+    // Shore foam + white water in fast flow.
+    float edge = 1.0 - smoothstep(0.0, 0.30, vDepth);
+    float breakup = 0.5 + 0.5 * sin(wp.x * 5.3 + uTime * 1.1) * sin(wp.y * 4.7 - uTime * 0.9);
+    float rapids = clamp((length(vFlow) - 1.8) * 0.35, 0.0, 0.6);
+    float foam = clamp(edge * (0.45 + 0.55 * breakup) + rapids * breakup * 0.7, 0.0, 1.0);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.94, 0.98, 1.0), foam * 0.85);
+
+    // Depth-driven transparency: clear shallows, dense deep water, soft shoreline.
+    float body = mix(0.30, 0.93, smoothstep(0.0, 1.8, vDepth));
+    float alpha = clamp(body + fres * 0.45, 0.0, 0.97);
+    alpha *= smoothstep(0.0, 0.07, vDepth);
+    alpha = max(alpha, foam * 0.8 * smoothstep(0.0, 0.03, vDepth));
+    diffuseColor.a = alpha;`
   );
   waterShader = shader as any;
 };
@@ -255,6 +375,9 @@ terrainMaterial.onBeforeCompile = shader => {
   shader.vertexShader = `
     uniform float uTime;
     uniform float uDispScale;
+    attribute float aWaterMask;
+    attribute float aWaterDepth;
+    varying float vBedDepth;
   ` + shader.vertexShader;
 
   shader.vertexShader = shader.vertexShader.replace(
@@ -268,13 +391,32 @@ terrainMaterial.onBeforeCompile = shader => {
     // GPU-accelerated micro-displacement for soaring alpine crags and ridges
     float isMtn = clamp((wy - 14.0) / 12.0, 0.0, 1.0);
     float mtnDisp = (sin(wx * 0.28 + wz * 0.22) * 0.52 + cos(wx * 0.42 - wz * 0.35) * 0.42) * isMtn;
+    // Keep high-altitude water beds tied to the authoritative carved surface.
+    mtnDisp *= 1.0 - smoothstep(0.0, 0.42, aWaterMask);
 
     // Riverbed & shoreline alluvial sediment displacement
     float isRiverbed = clamp((1.8 - wy) / 1.5, 0.0, 1.0);
     float riverDisp = (sin(wx * 0.65 + wz * 0.55) * 0.07) * isRiverbed;
+    // Do not perturb an authoritative wet bed back through its water surface.
+    riverDisp *= 1.0 - smoothstep(0.0, 0.42, aWaterMask);
 
     transformed.y += (mtnDisp + riverDisp) * uDispScale;
+    vBedDepth = aWaterDepth;
     `
+  );
+
+  // Light absorption: the submerged bed turns teal and darkens with depth,
+  // which is what makes the water above it read as a body with thickness.
+  shader.fragmentShader = `
+    varying float vBedDepth;
+  ` + shader.fragmentShader;
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <color_fragment>',
+    `#include <color_fragment>
+    float bedWet = smoothstep(0.0, 0.25, vBedDepth);
+    float bedAbsorb = smoothstep(0.0, 2.2, vBedDepth);
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.38, 0.72, 0.78), bedWet * 0.55);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.17, 0.22), bedAbsorb * 0.65);`
   );
   terrainShader = shader as any;
 };
@@ -284,6 +426,7 @@ const scene = new THREE.Scene();
 const skyColor = new THREE.Color(0x9fc7df);
 scene.background = skyColor;
 scene.fog = new THREE.Fog(0x9fc7df, 140, 950);
+const gameplayFog = scene.fog;
 
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 1200);
 const renderer = new THREE.WebGLRenderer({ antialias: !LOW_POWER_MODE, powerPreference: 'high-performance', preserveDrawingBuffer: true });
@@ -471,6 +614,35 @@ scene.add(cloudDeckGroup);
 const world = new THREE.Group(), actors = new THREE.Group();
 scene.add(world, actors);
 
+const voxelSurveyGroup = new THREE.Group();
+voxelSurveyGroup.name = 'voxel-survey-volume';
+voxelSurveyGroup.visible = false;
+scene.add(voxelSurveyGroup);
+
+// Survey deliberately switches from the gameplay surface meshes to the
+// volumetric terrain/water representation, so the inspection view cannot
+// accidentally hide the physical depth behind the old sheets.
+const surveyHiddenSurfaceMeshes = new Set<THREE.Object3D>();
+function setSurveySurfaceMeshesVisible(visible: boolean) {
+  if (!visible) {
+    world.traverse(o => {
+      if (!(o instanceof THREE.Mesh)) return;
+      if (o.name === 'terrain' || o.name === 'water-surface') {
+        o.visible = false;
+        surveyHiddenSurfaceMeshes.add(o);
+      }
+    });
+    return;
+  }
+
+  for (const o of surveyHiddenSurfaceMeshes) o.visible = true;
+  surveyHiddenSurfaceMeshes.clear();
+}
+
+const survey = new WorldSurvey();
+scene.add(survey.root);
+survey.setWorldScene(scene, camera);
+
 const splashMaterial = new THREE.MeshBasicMaterial({ color: 0xb7e5d8, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
 const splashRing = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.32, 24), splashMaterial);
 splashRing.rotation.x = -Math.PI / 2;
@@ -480,7 +652,7 @@ let splashAge = 1;
 
 function waterSplash(x: number, z: number) {
   splashAge = 0;
-  splashRing.position.set(x, WATER_LEVEL + 0.16, z);
+  splashRing.position.set(x, waterSurfaceAt(x, z) + 0.08, z);
   splashRing.scale.setScalar(0.65);
   splashRing.visible = true;
 }
@@ -508,13 +680,21 @@ function disposeWorldObjects(root: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
   root.traverse(o => {
     if (!(o instanceof THREE.Mesh)) return;
-    if (!isSharedAnimalAsset(o.geometry) && !geometries.has(o.geometry)) {
+    if (!isSharedAnimalAsset(o.geometry) && !environmentAssets.isSharedGeometry(o.geometry) && !geometries.has(o.geometry)) {
       geometries.add(o.geometry);
       o.geometry.dispose();
     }
     const list = Array.isArray(o.material) ? o.material : [o.material];
     for (const material of list) {
-      if (material !== waterMaterial && material !== terrainMaterial && !isSharedAnimalAsset(material) && !materials.has(material)) {
+      if (
+        material !== waterMaterial &&
+        material !== terrainMaterial &&
+        material !== waterfallMaterial &&
+        material !== springMaterial &&
+        !isSharedAnimalAsset(material) &&
+        !environmentAssets.isSharedMaterial(material) &&
+        !materials.has(material)
+      ) {
         materials.add(material);
         material.dispose();
       }
@@ -587,18 +767,26 @@ class Chunks {
     const key = this.key(cx, cz), g = new THREE.Group();
     g.name = `chunk:${key}`;
     g.userData.lod = lod;
+    // Chunks partition the physical voxel volume too. The actual base material
+    // is deterministic, while edits remain sparse inside VoxelChunk.
+    g.userData.voxelChunk = voxelWorld.chunk(cx, cz);
 
     const lodSetting = settings.current.lodDetail || 'ultra';
+    // Match the visible terrain tessellation to the water mesh at every LOD.
+    // Misaligned grids let the water sample finer terrain cuts than the ground
+    // mesh can display, creating apparent raised riverbank ledges.
     const segs =
       lod === 0
-        ? (lodSetting === 'ultra' ? 24 : lodSetting === 'balanced' ? 16 : 12)
+        ? (LOW_POWER_MODE ? 16 : lodSetting === 'ultra' ? 32 : 16)
         : lod === 1
-        ? (lodSetting === 'ultra' ? 12 : 8)
-        : 4;
+        ? 16
+        : 8;
     const terrain = new THREE.PlaneGeometry(SIZE, SIZE, segs, segs);
     terrain.rotateX(-Math.PI / 2);
     const pos = terrain.getAttribute('position');
     const colors = new Float32Array(pos.count * 3);
+    const waterMasks = new Float32Array(pos.count);
+    const terrainWaterDepths = new Float32Array(pos.count);
     const chunkBiome = biomeAt(cx * SIZE + SIZE / 2, cz * SIZE + SIZE / 2);
 
     for (let i = 0; i < pos.count; i++) {
@@ -606,12 +794,17 @@ class Chunks {
       const lz = pos.getZ(i) + cz * SIZE + SIZE / 2;
       const h = terrainHeightAt(lx, lz);
       pos.setY(i, h);
+      const wetDepth = waterDepthAt(lx, lz);
+      waterMasks[i] = clamp(wetDepth / 0.42, 0, 1);
+      terrainWaterDepths[i] = wetDepth;
       const c = terrainColorAt(h, lx, lz, chunkBiome);
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
       colors[i * 3 + 2] = c.b;
     }
     terrain.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    terrain.setAttribute('aWaterMask', new THREE.BufferAttribute(waterMasks, 1));
+    terrain.setAttribute('aWaterDepth', new THREE.BufferAttribute(terrainWaterDepths, 1));
     terrain.computeVertexNormals();
 
     const ground = new THREE.Mesh(terrain, terrainMaterial);
@@ -665,17 +858,23 @@ class Chunks {
     waterGroup.name = 'water';
     waterGroup.position.set(cx * SIZE, 0, cz * SIZE);
 
-    const waterGrid = lod === 0 ? 16 : lod === 1 ? 8 : 4;
+    // Terrain and water now share the same vertices at each LOD.
+    const waterGrid = segs;
     const step = SIZE / waterGrid;
     const waterPositions: number[] = [], waterColors: number[] = [], waterIndices: number[] = [];
+    // Per-vertex real water depth and surface flow (m/s), consumed by the water shader.
+    const waterDepthAttr: number[] = [], waterFlowAttr: number[] = [];
 
     const deepNavy = new THREE.Color(0x0e2b47);
     const emeraldMid = new THREE.Color(0x23757a);
     const turquoiseShallow = new THREE.Color(0x56b8ad);
     const shorelineFoam = new THREE.Color(0xf4f9fa);
 
-    // Build grid vertices for wet cells and shoreline boundary
+    // Build grid vertices for wet cells and a one-cell shoreline skirt.
+    // Triangle inclusion below still uses the authoritative wet mask, so a
+    // dry island cannot become covered by a bridge of water triangles.
     const vertIndex = new Int32Array((waterGrid + 1) * (waterGrid + 1)).fill(-1);
+    const wetVertex = new Uint8Array((waterGrid + 1) * (waterGrid + 1));
     let nextIdx = 0;
 
     for (let iz = 0; iz <= waterGrid; iz++) {
@@ -685,34 +884,29 @@ class Chunks {
         if (nearHome(wx, wz)) continue;
 
         const depth = waterDepthAt(wx, wz);
-        let isWetOrShore = depth > 0.005;
-        if (!isWetOrShore) {
-          if (
-            (!nearHome(wx + step, wz) && waterDepthAt(wx + step, wz) > 0.01) ||
-            (!nearHome(wx - step, wz) && waterDepthAt(wx - step, wz) > 0.01) ||
-            (!nearHome(wx, wz + step) && waterDepthAt(wx, wz + step) > 0.01) ||
-            (!nearHome(wx, wz - step) && waterDepthAt(wx, wz - step) > 0.01)
-          ) {
-            isWetOrShore = true;
-          }
-        }
+        // A water-surface vertex must be genuinely wet. Do not create a dry
+        // shoreline vertex and then bridge it to wet vertices: that produces a
+        // thin sheet of "water" over grass/high ground. The shoreline is now
+        // represented only by the physical water edge/side wall below.
+        if (depth > 0.005) {
+          const vertexSlot = iz * (waterGrid + 1) + ix;
+          vertIndex[vertexSlot] = nextIdx++;
+          wetVertex[vertexSlot] = 1;
+          const surfaceY = waterSurfaceAt(wx, wz);
+          waterPositions.push(ix * step, surfaceY, iz * step);
 
-        if (isWetOrShore) {
-          vertIndex[iz * (waterGrid + 1) + ix] = nextIdx++;
-          waterPositions.push(ix * step, WATER_LEVEL, iz * step);
+          waterDepthAttr.push(depth);
+          const flow = waterFlowAt(wx, wz);
+          waterFlowAttr.push(flow.flowVector.x * flow.flowSpeed, flow.flowVector.y * flow.flowSpeed);
 
+          // Base tint by depth. White shoreline foam is added in the shader
+          // (animated, depth-driven), so shallows here stay a clear turquoise.
           const c = new THREE.Color();
-          if (depth <= 0.05) {
-            // Shoreline contact line: white foam
-            c.copy(shorelineFoam);
-          } else if (depth < 0.45) {
-            // Shallow crystal turquoise
-            c.copy(shorelineFoam).lerp(turquoiseShallow, depth / 0.45);
+          if (depth < 0.45) {
+            c.copy(turquoiseShallow).lerp(shorelineFoam, (1 - depth / 0.45) * 0.3);
           } else if (depth < 1.1) {
-            // Mid depth emerald
             c.copy(turquoiseShallow).lerp(emeraldMid, (depth - 0.45) / 0.65);
           } else {
-            // Deep volumetric navy
             c.copy(emeraldMid).lerp(deepNavy, clamp((depth - 1.1) / 1.2, 0, 1));
           }
           waterColors.push(c.r, c.g, c.b);
@@ -732,12 +926,16 @@ class Chunks {
         const wzMid = cz * SIZE + (iz + 0.5) * step;
         if (nearHome(wxMid, wzMid)) continue;
 
+        // Never span a triangle across dry land. This is the renderer-side
+        // enforcement of the hydrology rule: if a location has insufficient
+        // water to occupy the cell, it stays grass/terrain and the water ends.
         const hasWaterInCell =
-          waterDepthAt(wxMid, wzMid) > 0.005 || (i00 >= 0 && i10 >= 0 && i11 >= 0 && i01 >= 0);
+          waterDepthAt(wxMid, wzMid) > 0.005 &&
+          i00 >= 0 && i10 >= 0 && i11 >= 0 && i01 >= 0;
 
         if (hasWaterInCell) {
-          if (i00 >= 0 && i01 >= 0 && i11 >= 0) waterIndices.push(i00, i01, i11);
-          if (i00 >= 0 && i11 >= 0 && i10 >= 0) waterIndices.push(i00, i11, i10);
+          waterIndices.push(i00, i01, i11);
+          waterIndices.push(i00, i11, i10);
         }
       }
     }
@@ -746,13 +944,84 @@ class Chunks {
       const geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.Float32BufferAttribute(waterPositions, 3));
       geom.setAttribute('color', new THREE.Float32BufferAttribute(waterColors, 3));
+      geom.setAttribute('aDepth', new THREE.Float32BufferAttribute(waterDepthAttr, 1));
+      geom.setAttribute('aFlow', new THREE.Float32BufferAttribute(waterFlowAttr, 2));
       geom.setIndex(waterIndices);
       geom.computeVertexNormals();
       const waterMesh = new THREE.Mesh(geom, waterMaterial);
       waterMesh.name = 'water-surface';
       waterGroup.add(waterMesh);
+
+      // Do not extrude a vertical wall around every wet/dry grid edge.
+      // The carved terrain forms the natural bank; the old cell-by-cell walls
+      // looked like raised platforms and could snag the player at the shore.
+
       g.add(waterGroup);
       g.userData.water = true;
+    }
+
+    // Natural waterfalls and alpine spring pools are driven by the same
+    // drainage field as terrain and water.
+    if (lod <= 1) {
+      const sampleStep = lod === 0 ? 4 : 8;
+      let waterfallCount = 0;
+      for (let fz = sampleStep * 0.5; fz < SIZE && waterfallCount < 2; fz += sampleStep) {
+        for (let fx = sampleStep * 0.5; fx < SIZE && waterfallCount < 2; fx += sampleStep) {
+          const wx = cx * SIZE + fx;
+          const wz = cz * SIZE + fz;
+          if (nearHome(wx, wz) || nearVillage(wx, wz) || !waterAt(wx, wz)) continue;
+
+          const flow = waterFlowAt(wx, wz);
+          if (flow.flowDrop < 1.25 || flow.flowSpeed < 1.05) continue;
+
+          const ux = flow.flowVector.x;
+          const uz = flow.flowVector.y;
+          const downX = wx + ux * SIZE * 0.35;
+          const downZ = wz + uz * SIZE * 0.35;
+          const topY = waterSurfaceAt(wx, wz);
+          const bottomY = waterSurfaceAt(downX, downZ);
+          const fallHeight = topY - bottomY;
+          if (fallHeight < 0.85) continue;
+
+          const visibleHeight = Math.min(8.0, fallHeight);
+          const width = clamp(0.8 + flow.flowSpeed * 0.62 + flow.flowAccumulation / 4200, 0.9, 4.5);
+          const waterfall = new THREE.Mesh(
+            new THREE.PlaneGeometry(width, visibleHeight, 1, 6),
+            waterfallMaterial
+          );
+          waterfall.name = 'waterfall';
+          waterfall.position.set(
+            wx + ux * 0.9,
+            bottomY + visibleHeight * 0.5,
+            wz + uz * 0.9
+          );
+          waterfall.rotation.y = Math.atan2(ux, uz);
+          g.add(waterfall);
+          waterfallCount++;
+        }
+      }
+
+      if (lod === 0) {
+        const springStep = 8;
+        let springCount = 0;
+        for (let fz = springStep * 0.5; fz < SIZE && springCount < 1; fz += springStep) {
+          for (let fx = springStep * 0.5; fx < SIZE && springCount < 1; fx += springStep) {
+            const wx = cx * SIZE + fx;
+            const wz = cz * SIZE + fz;
+            const flow = waterFlowAt(wx, wz);
+            if (flow.waterType !== 'spring' || !waterAt(wx, wz)) continue;
+
+            const pool = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.34, 0.58, 0.08, 18),
+              springMaterial
+            );
+            pool.name = 'spring-pool';
+            pool.position.set(wx, waterSurfaceAt(wx, wz) + 0.035, wz);
+            g.add(pool);
+            springCount++;
+          }
+        }
+      }
     }
 
     // Trees and Rocks (Rule: Tree will never spawn into a rock)
@@ -886,6 +1155,71 @@ class Chunks {
     }
   }
 
+  async surveyAll(active: boolean, onProgress?: (done: number, total: number) => void) {
+    if (active) {
+      // The survey is deliberately expensive: materialize the complete finite
+      // world at gameplay-quality LOD0, but yield to the browser between batches
+      // so the loading overlay can paint instead of looking like a frozen/crashed game.
+      const total = (WORLD_RADIUS * 2 + 1) ** 2;
+      let done = 0;
+      const batchSize = LOW_POWER_MODE ? 4 : 8;
+      onProgress?.(0, total);
+
+      for (let x = -WORLD_RADIUS; x <= WORLD_RADIUS; x++) {
+        for (let z = -WORLD_RADIUS; z <= WORLD_RADIUS; z++) {
+          const key = this.key(x, z);
+          if (!this.loaded.has(key)) this.build(x, z, 0);
+          else if (this.loaded.get(key)?.userData.lod !== 0) {
+            const old = this.loaded.get(key)!;
+            fauna?.removeChunk(key);
+            this.releaseChunk(old);
+            world.remove(old);
+            this.loaded.delete(key);
+            this.build(x, z, 0);
+          }
+
+          done++;
+          if (done % batchSize === 0) {
+            onProgress?.(done, total);
+            await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+          }
+        }
+      }
+
+      // The expensive full-world volume is survey-only. Normal gameplay keeps
+      // the compact surface representation, while WORLD Survey gets a real
+      // vertical geological mass when the camera is lifted to the side.
+      if (!voxelSurveyGroup.getObjectByName('voxel-world-volume')) {
+        const volume = buildVoxelWorldVolumeMesh();
+        if (volume) voxelSurveyGroup.add(volume);
+      }
+      if (!voxelSurveyGroup.getObjectByName('voxel-water-volume')) {
+        const waterVolume = buildVoxelWorldWaterVolumeMesh();
+        if (waterVolume) voxelSurveyGroup.add(waterVolume);
+      }
+
+      // The closed voxel meshes are now the authoritative visual surface for
+      // Survey. Roads/buildings/vegetation/actors remain visible on top.
+      setSurveySurfaceMeshesVisible(false);
+      voxelSurveyGroup.visible = true;
+
+      onProgress?.(total, total);
+      return;
+    }
+    voxelSurveyGroup.visible = false;
+    for (const child of [...voxelSurveyGroup.children]) {
+      child.removeFromParent();
+      const mesh = child as THREE.Mesh;
+      if (mesh.geometry instanceof THREE.BufferGeometry) mesh.geometry.dispose();
+      if (mesh.material) {
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const mat of materials) mat.dispose();
+      }
+    }
+    setSurveySurfaceMeshesVisible(true);
+    this.stream(player.root.position.x, player.root.position.z);
+  }
+
   rebuildAll() {
     for (const [k, g] of this.loaded) {
       this.releaseChunk(g);
@@ -914,6 +1248,7 @@ try {
 
 chunks.changes = save.changes || {};
 chunks.homeLevel = save.homeLevel || 1;
+voxelWorld.applyEdits(save.voxelEdits || []);
 player.root.position.set(save.player.x, save.player.y, save.player.z);
 
 // Safety validation: If saved position was inside ocean/water or invalid, spawn on dry homestead porch!
@@ -944,8 +1279,18 @@ function saveNow() {
     wildlifeTrust: fauna?.trust ?? save.wildlifeTrust ?? {},
     worldTime,
     homeLevel: chunks.homeLevel,
+    voxelEdits: voxelWorld.edits(),
   };
   localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+}
+
+// Untouched terrain keeps its continuous heightfield behavior. A voxel-edited
+// column becomes grounded by its actual top solid cell until the next remesh
+// milestone replaces the visible gameplay surface too.
+function physicalGroundHeightAt(x: number, z: number): number {
+  return voxelWorld.hasGroundOverride(x, z)
+    ? voxelWorld.groundHeight(x, z)
+    : terrainHeightAt(x, z);
 }
 
 // --- INPUTS & CONTROLS ---
@@ -982,11 +1327,22 @@ addEventListener('keyup', e => {
 
 // Look drag with Independent X / Y Sensitivities
 let pointer: number | null = null, lastX = 0, lastY = 0;
+const surveyPointers = new Map<number, { x: number; y: number }>();
+let surveyPinchDistance = 0;
+let surveyLastMidX = 0;
+let surveyLastMidY = 0;
+let surveyMoved = false;
 const gameDom = renderer.domElement;
 
 function onLookMove(clientX: number, clientY: number) {
   const dx = clientX - lastX;
   const dy = clientY - lastY;
+  if (survey.isActive) {
+    survey.pan(dx, dy);
+    lastX = clientX;
+    lastY = clientY;
+    return;
+  }
   lastX = clientX;
   lastY = clientY;
 
@@ -999,21 +1355,74 @@ function onLookMove(clientX: number, clientY: number) {
 }
 
 gameDom.addEventListener('pointerdown', e => {
-  // If clicked directly on the 3D canvas (desktop)
+  if (survey.isActive) {
+    surveyPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    surveyMoved = false;
+    if (surveyPointers.size === 2) {
+      const [a, b] = [...surveyPointers.values()];
+      surveyPinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+      surveyLastMidX = (a.x + b.x) * 0.5;
+      surveyLastMidY = (a.y + b.y) * 0.5;
+    }
+    gameDom.setPointerCapture(e.pointerId);
+    return;
+  }
   pointer = e.pointerId;
   lastX = e.clientX;
   lastY = e.clientY;
   gameDom.setPointerCapture(e.pointerId);
 });
 gameDom.addEventListener('pointermove', e => {
+  if (survey.isActive) {
+    const existing = surveyPointers.get(e.pointerId);
+    if (!existing) return;
+    const dx = e.clientX - existing.x;
+    const dy = e.clientY - existing.y;
+    existing.x = e.clientX;
+    existing.y = e.clientY;
+    if (surveyPointers.size >= 2) {
+      const [a, b] = [...surveyPointers.values()];
+      const nextDistance = Math.hypot(a.x - b.x, a.y - b.y);
+      if (surveyPinchDistance > 0) {
+        survey.zoom(surveyPinchDistance - nextDistance);
+        surveyMoved = true;
+      }
+      surveyPinchDistance = nextDistance;
+      const midX = (a.x + b.x) * 0.5;
+      const midY = (a.y + b.y) * 0.5;
+      survey.pan(midX - surveyLastMidX, midY - surveyLastMidY);
+      surveyLastMidX = midX;
+      surveyLastMidY = midY;
+    } else {
+      if (Math.hypot(dx, dy) > 4) surveyMoved = true;
+      survey.orbit(dx, dy);
+    }
+    return;
+  }
   if (pointer !== e.pointerId) return;
   onLookMove(e.clientX, e.clientY);
 });
-gameDom.addEventListener('pointerup', () => (pointer = null));
-gameDom.addEventListener('pointercancel', () => (pointer = null));
+const endSurveyPointer = (e: PointerEvent) => {
+  if (!survey.isActive) return;
+  if (!surveyMoved && surveyPointers.size === 1) {
+    survey.focusScreen(e.clientX, e.clientY, gameDom.getBoundingClientRect());
+  }
+  surveyPointers.delete(e.pointerId);
+  if (surveyPointers.size < 2) {
+    surveyPinchDistance = 0;
+    surveyLastMidX = surveyLastMidY = 0;
+  }
+  pointer = null;
+};
+gameDom.addEventListener('pointerup', endSurveyPointer);
+gameDom.addEventListener('pointercancel', endSurveyPointer);
 
 gameDom.addEventListener('wheel', e => {
   e.preventDefault();
+  if (survey.isActive) {
+    survey.zoom(e.deltaY);
+    return;
+  }
   targetDistance = clamp(targetDistance + e.deltaY * 0.008, 2.2, 13);
 }, { passive: false });
 
@@ -1161,6 +1570,14 @@ const touchControls = document.querySelector('#touch') as HTMLDivElement;
 const inventoryEl = document.querySelector('#inventory') as HTMLDivElement;
 const compass = document.querySelector('#compass') as HTMLDivElement;
 const waypointBadge = document.querySelector('#waypointBadge') as HTMLDivElement;
+const surveyBtn = document.querySelector('#surveyBtn') as HTMLButtonElement | null;
+const surveyOverlay = document.querySelector('#surveyOverlay') as HTMLDivElement | null;
+const surveyCloseBtn = document.querySelector('#surveyCloseBtn') as HTMLButtonElement | null;
+const surveyTerrainBtn = document.querySelector('#surveyTerrainBtn') as HTMLButtonElement | null;
+const surveyHydrologyBtn = document.querySelector('#surveyHydrologyBtn') as HTMLButtonElement | null;
+const surveyCaptureBtn = document.querySelector('#surveyCaptureBtn') as HTMLButtonElement | null;
+const surveyCaptureSize = document.querySelector('#surveyCaptureSize') as HTMLSelectElement | null;
+const surveyStatus = document.querySelector('#surveyStatus') as HTMLSpanElement | null;
 const minimapHomeDist = document.querySelector('#minimapHomeDist') as HTMLSpanElement;
 
 // Mini-Map & Full Map
@@ -1472,6 +1889,160 @@ async function toggleFullscreen() {
 }
 bindAction(fullscreenBtn, toggleFullscreen);
 
+// --- WORLD SURVEY: AUTHORITATIVE TOPOLOGY + HYDROLOGY DIAGNOSTICS ---
+let surveyWasFog: THREE.Scene['fog'] = gameplayFog;
+function updateSurveyUI() {
+  if (surveyOverlay) surveyOverlay.classList.toggle('show', survey.isActive);
+  if (surveyTerrainBtn) surveyTerrainBtn.classList.toggle('active', survey.currentView === 'terrain');
+  const surveyWorldBtn = document.querySelector('#surveyWorldBtn') as HTMLButtonElement | null;
+  if (surveyWorldBtn) surveyWorldBtn.classList.toggle('active', survey.currentView === 'world');
+  if (surveyHydrologyBtn) surveyHydrologyBtn.classList.toggle('active', survey.currentView === 'hydrology');
+  if (surveyStatus) surveyStatus.textContent = survey.currentView === 'world'
+    ? 'FULL WORLD · ALL RENDERED'
+    : survey.currentView === 'terrain'
+      ? 'ROCK + WATER · TOPOLOGY'
+      : 'WATER TRUTH · FLOW';
+}
+let surveyOpening = false;
+
+function setSurveyLoading(stage: string, progress: number) {
+  const loader = document.querySelector('#surveyLoading') as HTMLElement | null;
+  const stageEl = document.querySelector('#surveyLoadingStage') as HTMLElement | null;
+  const bar = document.querySelector('#surveyLoadingBar') as HTMLElement | null;
+  if (loader) loader.classList.add('show');
+  if (stageEl) stageEl.textContent = stage;
+  if (bar) bar.style.width = String(Math.round(clamp(progress, 0, 1) * 100)) + '%';
+}
+
+function hideSurveyLoading() {
+  const loader = document.querySelector('#surveyLoading') as HTMLElement | null;
+  if (loader) loader.classList.remove('show');
+}
+
+function setSurveyMode(active: boolean) {
+  if (active) {
+    if (surveyOpening || survey.isActive) return;
+    surveyOpening = true;
+    isPhotoMode = false;
+    document.body.classList.remove('photo-mode-active', 'photo-clean-mode');
+
+    // Show the survey shell + loader BEFORE the expensive world materialization.
+    // The browser gets a chance to paint this overlay between chunk batches.
+    document.body.classList.add('survey-active');
+    if (surveyOverlay) surveyOverlay.classList.add('show');
+    setSurveyLoading('CALCULATING…', 0.02);
+
+    survey.setActive(true);
+    world.visible = true;
+    actors.visible = true;
+    celestialGroup.visible = true;
+    // Survey is the finite world only. The distant horizon is an old extended-terrain
+    // background and must not leak a second procedural world outside the boundary.
+    distantHorizonMesh.visible = false;
+    // WORLD survey is an inspection/capture mode: the atmospheric cloud deck must not occlude the finite world.
+    cloudDeckGroup.visible = false;
+    splashRing.visible = false;
+    surveyWasFog = scene.fog;
+    scene.fog = null;
+    scene.background = new THREE.Color(0x090d12);
+    updateSurveyUI();
+
+    void (async () => {
+      try {
+        await chunks.surveyAll(true, (done, total) => {
+          setSurveyLoading('CALCULATING…', 0.02 + (done / Math.max(1, total)) * 0.68);
+        });
+
+        setSurveyLoading('RENDERING…', 0.78);
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+        setSurveyLoading('OPENING…', 0.94);
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+        updateSurveyUI();
+        hideSurveyLoading();
+        say('World Survey · drag to orbit · two fingers pan/zoom · tap a place to focus');
+      } catch (err) {
+        console.error('World survey failed to open:', err);
+        hideSurveyLoading();
+        setSurveyMode(false);
+        say('World Survey failed to open');
+      } finally {
+        surveyOpening = false;
+      }
+    })();
+  } else {
+    surveyOpening = false;
+    hideSurveyLoading();
+    survey.setActive(false);
+    void chunks.surveyAll(false);
+    world.visible = true;
+    actors.visible = true;
+    celestialGroup.visible = true;
+    distantHorizonMesh.visible = true;
+    cloudDeckGroup.visible = true;
+    splashRing.visible = false;
+    scene.background = skyColor;
+    scene.fog = surveyWasFog;
+    document.body.classList.remove('survey-active');
+    if (surveyOverlay) surveyOverlay.classList.remove('show');
+  }
+}
+function setSurveyView(view: SurveyView) {
+  survey.setView(view);
+  if (survey.isActive) world.visible = view === 'world';
+  updateSurveyUI();
+}
+function captureSurvey() {
+  const value = surveyCaptureSize?.value || '1920x1080';
+  const [w, h] = value.split('x').map(Number);
+  if (!Number.isFinite(w) || !Number.isFinite(h)) return;
+  try {
+    document.body.classList.add('taking-screenshot');
+    const dataUrl = survey.capture(renderer, w, h);
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = `world-survey-${survey.currentView}-${w}x${h}-${ts}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showPhotoToast(`Survey capture saved · ${w}×${h}`);
+  } catch (err) {
+    console.error('World survey capture failed:', err);
+    showPhotoToast('Survey capture failed · try a smaller size');
+  } finally {
+    document.body.classList.remove('taking-screenshot');
+  }
+}
+if (surveyBtn) bindAction(surveyBtn, () => setSurveyMode(true));
+if (surveyCloseBtn) bindAction(surveyCloseBtn, () => setSurveyMode(false));
+if (!document.querySelector('#surveyWorldBtn')) {
+  const viewButtons = document.querySelector('.surveyViewButtons');
+  if (viewButtons) {
+    const worldButton = document.createElement('button');
+    worldButton.id = 'surveyWorldBtn';
+    worldButton.className = 'surveyModeBtn active';
+    worldButton.textContent = '🌍 WORLD';
+    viewButtons.prepend(worldButton);
+  }
+}
+const surveyWorldBtn = document.querySelector('#surveyWorldBtn') as HTMLButtonElement | null;
+if (surveyWorldBtn) bindAction(surveyWorldBtn, () => setSurveyView('world'));
+if (surveyTerrainBtn) bindAction(surveyTerrainBtn, () => setSurveyView(survey.currentView === 'terrain' ? 'world' : 'terrain'));
+if (surveyHydrologyBtn) bindAction(surveyHydrologyBtn, () => setSurveyView(survey.currentView === 'hydrology' ? 'world' : 'hydrology'));
+if (surveyCaptureBtn) bindAction(surveyCaptureBtn, captureSurvey);
+window.addEventListener('keydown', e => {
+  if (survey.isActive) {
+    if (e.key === 'Escape') {
+      setSurveyMode(false);
+      return;
+    }
+    if (e.key === '+' || e.key === '=') survey.zoom(-90);
+    if (e.key === '-' || e.key === '_') survey.zoom(90);
+  }
+});
+
 // --- PHOTO MODE: CLEAN SCREENSHOT TAKING & LOCAL DOWNLOAD ---
 const photoBtn = document.querySelector('#photoBtn') as HTMLButtonElement | null;
 const photoCloseBtn = document.querySelector('#photoCloseBtn') as HTMLButtonElement | null;
@@ -1666,10 +2237,16 @@ fauna = new WildlifeSystem({
 });
 
 chunks.stream(save.player.x, save.player.z);
+void environmentAssets.preload().then(() => {
+  chunks.rebuildAll();
+});
 
 function hitResource(obj: THREE.Object3D) {
   const res = obj.userData.resource as { kind: ResourceKind; hits: number; maxHits: number };
   const def = RESOURCE_DEFS[res.kind];
+  // The production human rig includes a "Working" clip. Play the short
+  // inspect/gather emote only while nearly stationary to avoid a sliding-work pose.
+  if (Math.hypot(player.velocity.x, player.velocity.z) < 1.0) player.playEmote('inspect');
   res.hits--;
   obj.scale.setScalar(Math.max(0.7, 1 - 0.08 * (res.maxHits - res.hits)));
 
@@ -1922,6 +2499,11 @@ function input() {
 }
 
 function update(dt: number) {
+  if (survey.isActive) {
+    // Survey is a frozen world snapshot: no weather, fauna, physics, terrain
+    // streaming, or other live simulation advances while the user inspects it.
+    return;
+  }
   aimTimer = Math.max(0, aimTimer - dt);
 
   // Time cycle: 24h cycle
@@ -1951,6 +2533,10 @@ function update(dt: number) {
   const wDepth = worldFields.waterDepth;
   player.swimming = wDepth > 0.65;
   const isWading = wDepth > 0.05 && !player.swimming;
+
+  // Water wake: rings spread from the player while wading or swimming, stronger when moving.
+  const wakeSpeed = Math.hypot(player.velocity.x, player.velocity.z);
+  waterWake.set(p.x, p.z, wDepth > 0.05 ? clamp(0.25 + wakeSpeed * 0.25, 0, 1.2) : 0);
 
   // Slope resistance & downhill agility
   const slope = worldFields.slope;
@@ -2015,10 +2601,18 @@ function update(dt: number) {
   let currentVz = 0;
   if (worldFields.flowSpeed > 0 && (worldFields.waterType === 'river' || worldFields.waterType === 'stream' || worldFields.waterType === 'lake')) {
     // When movement input is pressed, player authority counteracts current
-    const currentImmersion = player.swimming ? (hasInput ? 0.45 : 0.85) : isWading ? clamp(wDepth / 0.65, 0.15, 0.45) : 0;
+    const currentImmersion = player.swimming
+      ? (hasInput ? 0.30 : 0.72)
+      : isWading
+      ? clamp(wDepth / 0.65, 0.12, 0.38)
+      : 0;
     if (currentImmersion > 0) {
-      currentVx = worldFields.flowVector.x * worldFields.flowSpeed * currentImmersion;
-      currentVz = worldFields.flowVector.y * worldFields.flowSpeed * currentImmersion;
+      // Rivers can be powerful, but a swimmer must retain a meaningful chance
+      // to cross them. Cap the physical drift while preserving downstream pull.
+      const maxCurrent = player.swimming ? 2.35 : 1.25;
+      const currentSpeed = Math.min(worldFields.flowSpeed * currentImmersion, maxCurrent);
+      currentVx = worldFields.flowVector.x * currentSpeed;
+      currentVz = worldFields.flowVector.y * currentSpeed;
     }
   }
 
@@ -2030,19 +2624,24 @@ function update(dt: number) {
   }
 
   moveWithCollisions((player.velocity.x + currentVx) * dt, (player.velocity.z + currentVz) * dt);
-  player.swimming = waterAt(p.x, p.z) && WATER_LEVEL - terrainHeightAt(p.x, p.z) > 0.65;
+  player.swimming = waterAt(p.x, p.z) && waterDepthAt(p.x, p.z) > 0.65;
 
   if (player.swimming) {
-    const bedY = terrainHeightAt(p.x, p.z);
+    const bedY = physicalGroundHeightAt(p.x, p.z);
+    const surfaceY = waterSurfaceAt(p.x, p.z);
     const minY = bedY + 0.15;
-    // Allow swimming up to and above water level so player can easily step or hop out onto riverbank
+    // Swimming follows the local river or lake surface.
     const jumpingOut = keys.has(' ');
-    const bankAhead = terrainHeightAt(p.x + dir.x * 0.8, p.z + dir.z * 0.8) >= WATER_LEVEL - 0.28;
+    const aheadX = p.x + dir.x * 0.8;
+    const aheadZ = p.z + dir.z * 0.8;
+    const aheadSurface = waterSurfaceAt(aheadX, aheadZ);
+    const bankAhead = !waterAt(aheadX, aheadZ) &&
+      terrainHeightAt(aheadX, aheadZ) >= aheadSurface - 0.28;
     const targetY = keys.has('control')
-      ? Math.max(minY, WATER_LEVEL - 2.0)
+      ? Math.max(minY, surfaceY - 2.0)
       : jumpingOut || bankAhead
-      ? WATER_LEVEL + 0.35
-      : WATER_LEVEL - 0.85;
+      ? surfaceY + 0.35
+      : surfaceY - 0.85;
 
     player.velocity.y = lerp(player.velocity.y, (targetY - p.y) * 5, Math.min(1, dt * 4.5));
     if (jumpingOut && bankAhead) {
@@ -2051,7 +2650,7 @@ function update(dt: number) {
     p.y += player.velocity.y * dt;
 
     // Smooth transition from swimming to ground when climbing out onto shore
-    if (p.y >= WATER_LEVEL - 0.25 && wDepth < 0.48) {
+    if (p.y >= surfaceY - 0.25 && wDepth < 0.48) {
       player.swimming = false;
       player.onGround = true;
     }
@@ -2071,7 +2670,7 @@ function update(dt: number) {
     player.velocity.y = Math.max(player.velocity.y, MAX_FALL_SPEED);
     p.y += player.velocity.y * dt;
 
-    let groundY = terrainHeightAt(p.x, p.z);
+    let groundY = physicalGroundHeightAt(p.x, p.z);
     // Solid Home Structure Collision
     const home = chunks.loaded.get('0,0')?.getObjectByName('home') as THREE.Group | undefined;
     if (home) {
@@ -2177,9 +2776,9 @@ function update(dt: number) {
     const floorAtPos = terrainHeightAt(pos.x, pos.z) + 0.65;
     if (pos.y < floorAtPos) pos.y = floorAtPos;
 
-    // Water surface clearance when not in deliberate underwater dive
-    if (!underwater && !keys.has('control')) {
-      pos.y = Math.max(pos.y, WATER_LEVEL + 0.45);
+    // Water surface clearance when not in deliberate underwater dive.
+    if (!underwater && !keys.has('control') && waterAt(p.x, p.z)) {
+      pos.y = Math.max(pos.y, waterSurfaceAt(p.x, p.z) + 0.45);
     }
 
     camera.position.lerp(pos, Math.min(1, dt * 14));
@@ -2201,7 +2800,8 @@ function update(dt: number) {
     camera.lookAt(look);
   }
 
-  const cameraUnderwater = player.swimming && camera.position.y < WATER_LEVEL - 0.04;
+  const localWaterSurface = waterAt(p.x, p.z) ? waterSurfaceAt(p.x, p.z) : WATER_LEVEL;
+  const cameraUnderwater = player.swimming && camera.position.y < localWaterSurface - 0.04;
   if (cameraUnderwater !== underwater) {
     underwater = cameraUnderwater;
     hud.classList.toggle('underwater', underwater);
@@ -2213,7 +2813,16 @@ function update(dt: number) {
     }
   }
 
-  player.animate(walkTime += dt, moving, sprinting, player.swimming, dt, horizontalSpeed, angularVelocity, player.onGround, player.velocity.y);
+  // Choose directional animation from velocity relative to the character's facing,
+  // not raw joystick direction. Assets without a matching clip safely use locomotion.
+  const facingYaw = player.root.rotation.y;
+  const localForwardSpeed = player.velocity.x * Math.sin(facingYaw) + player.velocity.z * Math.cos(facingYaw);
+  const localSideSpeed = -player.velocity.x * Math.cos(facingYaw) + player.velocity.z * Math.sin(facingYaw);
+  const movementIntent: 'forward' | 'backward' | 'strafe-left' | 'strafe-right' =
+    Math.abs(localSideSpeed) > Math.abs(localForwardSpeed) * 1.15 && Math.abs(localSideSpeed) > 0.35
+      ? (localSideSpeed < 0 ? 'strafe-left' : 'strafe-right')
+      : localForwardSpeed < -0.35 ? 'backward' : 'forward';
+  player.animate(walkTime += dt, moving, sprinting, player.swimming, dt, horizontalSpeed, angularVelocity, player.onGround, player.velocity.y, movementIntent);
   if (isPhotoMode) updatePhotoBadges();
 
   // Record breadcrumb displacement trail
@@ -2295,6 +2904,7 @@ function update(dt: number) {
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  survey.resize(innerWidth / innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, LOW_POWER_MODE ? 1.25 : 1.65));
   renderer.setSize(innerWidth, innerHeight);
 });
@@ -2303,7 +2913,14 @@ addEventListener('beforeunload', saveNow);
 
 function loop() {
   requestAnimationFrame(loop);
-  update(Math.min(clock.getDelta(), 0.05));
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (survey.isActive) {
+    // Only redraw the frozen survey scene when its camera actually changes.
+    // This keeps the full-world survey detailed without continuously burning GPU.
+    if (survey.update(dt)) renderer.render(scene, survey.camera);
+    return;
+  }
+  update(dt);
   renderer.render(scene, camera);
 }
 loop();
