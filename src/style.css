@@ -1355,3 +1355,198 @@ body.survey-active #upgradeOverlay {
   #surveyCloseBtn, #surveyCaptureBtn, .surveyModeBtn, #surveyCaptureSize { min-height: 38px; font-size: 9px; padding: 7px 10px; }
   .surveyHint { font-size: 8px; }
 }
+
+
+/* --- INTEGRATED FIRST-PERSON ZOMBIE SURVIVAL HUD --- */
+#survivalHud {
+  display: none;
+  position: absolute;
+  left: calc(12px + env(safe-area-inset-left));
+  top: calc(124px + env(safe-area-inset-top));
+  width: min(224px, 39vw);
+  padding: 10px 12px;
+  border: 1px solid rgba(198, 216, 227, 0.24);
+  border-radius: 12px;
+  background: linear-gradient(140deg, rgba(9, 17, 23, 0.92), rgba(14, 24, 29, 0.76));
+  box-shadow: 0 8px 24px rgba(0,0,0,0.32);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+body.survival-mode #survivalHud { display: block; }
+.survivalHudTop, .survivalHealthRow, .survivalAmmoRow, .survivalStatsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.survivalHudKicker {
+  color: #a9bac4;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 1.05px;
+}
+.survivalZoneStatus {
+  border-radius: 5px;
+  padding: 3px 6px;
+  color: #a8ffd0;
+  background: rgba(22, 163, 74, 0.20);
+  border: 1px solid rgba(74, 222, 128, 0.42);
+  font-size: 8px;
+  letter-spacing: .55px;
+  font-weight: 900;
+  text-align: right;
+}
+.survivalZoneStatus.danger {
+  color: #ffd19a;
+  background: rgba(194, 65, 12, 0.22);
+  border-color: rgba(251, 146, 60, 0.48);
+}
+.survivalHealthRow { margin-top: 8px; color: #f4f7f8; font-size: 10px; }
+.survivalHealthRow > span { color: #a9bac4; font-weight: 900; letter-spacing: .8px; }
+.survivalHealthTrack {
+  height: 5px;
+  margin: 5px 0 10px;
+  overflow: hidden;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.12);
+}
+#survivalHealthBar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #e87942, #f5c26b);
+  transition: width .14s linear, background .14s;
+}
+.survivalAmmoRow {
+  padding-top: 7px;
+  border-top: 1px solid rgba(255,255,255,.10);
+}
+#survivalWeapon { display: block; margin-top: 3px; color: #eef4f6; font-size: 10px; letter-spacing: .6px; }
+.survivalAmmoValue { display: flex; align-items: baseline; gap: 3px; color: #fff1d7; }
+#survivalAmmo { font-size: 22px; line-height: 1; }
+#survivalReserve { color: #a9bac4; font-size: 10px; }
+.survivalStatsRow {
+  margin-top: 10px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255,255,255,.10);
+  color: #becbd2;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .45px;
+}
+#survivalBtn {
+  border-color: #fa8a45aa;
+  background: #321b18ed;
+}
+#survivalBtn:hover { border-color: #fb923c; background: #4b241bed; }
+body.survival-mode #survivalBtn {
+  border-color: #4ade80a0;
+  background: #103a2aee;
+  box-shadow: 0 0 14px rgba(34,197,94,.12), 0 4px 14px #000a;
+}
+body.survival-mode #survivalBtn:hover { border-color: #86efac; }
+
+/* In survival mode, keep the same world touch controller but replace fantasy actions with FPS controls. */
+#shootBtn, #aimBtn, #reloadBtn { display: none !important; }
+body.survival-mode #attackBtn,
+body.survival-mode #punchBtn,
+body.survival-mode #kickBtn,
+body.survival-mode #castBtn,
+body.survival-mode #emoteBtn,
+body.survival-mode #modeBtn,
+body.survival-mode #diveBtn { display: none !important; }
+body.survival-mode #shootBtn,
+body.survival-mode #aimBtn,
+body.survival-mode #reloadBtn { display: grid !important; }
+body.survival-mode .actions {
+  max-width: min(410px, 52vw);
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+body.survival-mode #shootBtn {
+  width: 70px;
+  height: 70px;
+  color: #fff7ed;
+  background: rgba(135, 45, 24, .90);
+  border: 1px solid rgba(251, 146, 60, .8);
+  box-shadow: 0 0 22px rgba(234,88,12,.16), inset 0 0 0 2px rgba(255,255,255,.05);
+}
+body.survival-mode #aimBtn, body.survival-mode #reloadBtn {
+  width: 54px;
+  height: 54px;
+  border-color: rgba(203, 213, 225, .38);
+  background: rgba(15, 23, 42, .9);
+}
+body.survival-mode #reloadBtn { color: #fed7aa; }
+body.survival-mode #runBtn { border-color: rgba(251, 146, 60, .42); }
+body.survival-mode #target { color: #e9f3f8; text-shadow: 0 1px 3px #000, 0 0 5px rgba(255,255,255,.45); }
+body.survival-mode #wildlife { display: none; }
+body.survival-mode #waypointBadge { top: calc(88px + env(safe-area-inset-top)); }
+body.survival-mode #controls { display: none; }
+body.survival-mode #status { color: #fed7aa; border-color: rgba(251,146,60,.28); }
+body.survival-damaged #survivalHud { border-color: rgba(248, 113, 113, .88); }
+body.survival-damaged #survivalHealthBar { background: #ef4444; }
+#survivalDeathOverlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: radial-gradient(ellipse at center, rgba(54,17,18,.68), rgba(4,8,11,.94));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+#survivalDeathOverlay.show { display: flex; }
+.survivalDeathCard {
+  width: min(360px, 90vw);
+  padding: 28px 24px;
+  border: 1px solid rgba(248,113,113,.42);
+  border-radius: 18px;
+  text-align: center;
+  color: #fff;
+  background: linear-gradient(155deg, rgba(30,17,21,.98), rgba(10,15,20,.98));
+  box-shadow: 0 18px 55px #0009;
+}
+.survivalDeathEyebrow {
+  color: #fca5a5;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 3px;
+}
+.survivalDeathCard h2 { margin: 9px 0; font-size: clamp(30px, 7vw, 46px); letter-spacing: 2px; }
+.survivalDeathCard p { color: #cbd5e1; font-size: 13px; }
+#survivalRestartBtn {
+  margin-top: 14px;
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgba(74,222,128,.55);
+  border-radius: 10px;
+  color: #ecfdf5;
+  background: linear-gradient(90deg, #166534, #14532d);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .7px;
+}
+@media (orientation: landscape) and (pointer: coarse) {
+  body.survival-mode #survivalHud {
+    top: calc(114px + env(safe-area-inset-top));
+    width: 188px;
+    padding: 8px 10px;
+  }
+  body.survival-mode #playerCard { transform: scale(.88); transform-origin: top left; }
+  body.survival-mode #minimapContainer { width: 84px; height: 84px; }
+  body.survival-mode #miniCanvas { width: 84px; height: 84px; }
+}
+@media (max-width: 640px) {
+  #survivalHud { width: min(194px, 48vw); }
+  body.survival-mode .actions { max-width: 55vw; gap: 5px; }
+  body.survival-mode #shootBtn { width: 60px; height: 60px; }
+  body.survival-mode #aimBtn, body.survival-mode #reloadBtn { width: 46px; height: 46px; }
+}
