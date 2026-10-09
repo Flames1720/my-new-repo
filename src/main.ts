@@ -1470,7 +1470,7 @@ addEventListener('keydown', e => {
   if (key === 'c' && !survival?.enabled) mode = 'tpp';
   if (!e.repeat && key === 'e') interact();
   if (!e.repeat && key === 'q' && !survival?.enabled) triggerSwordAttack();
-  if (!e.repeat && key === 'z' && !survival?.enabled) triggerPunch();
+  if (!e.repeat && key === 'z') setSurvivalEnabled(!survival.enabled);
   if (!e.repeat && key === 'x' && !survival?.enabled) triggerKick();
   if (!e.repeat && key === 'v' && !survival?.enabled) player.playAction('roll') && say('Dodge roll');
   if (!e.repeat && key === 'r') {
@@ -3212,8 +3212,9 @@ function update(dt: number) {
   if (mapAccumulator >= 0.08) {
     mapAccumulator = 0;
     const markers = fauna?.markers() ?? [];
-    minimap.renderMini(p, camYaw, markers);
-    if (minimap.isOpen()) minimap.renderFull(p, camYaw, markers);
+    const survivalRadar = survival.enabled ? survival.getRadarState() : undefined;
+    minimap.renderMini(p, camYaw, markers, survivalRadar);
+    if (minimap.isOpen()) minimap.renderFull(p, camYaw, markers, survivalRadar);
 
     // Distance to Home & Village on HUD
     const dHome = Math.round(Math.hypot(p.x - HOME_X, p.z - HOME_Z));
