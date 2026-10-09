@@ -8,6 +8,7 @@ export const defaultSettings: SettingsState = {
   invertY: false,
   cameraAcceleration: 'fixed',
   cameraAccelerationStrength: 0.65,
+  cameraAccelerationThreshold: 1.0,
   graphics: 'high',
   weatherMode: 'dynamic',
   chunkRadius: 6,
@@ -45,6 +46,10 @@ class SettingsManager {
           this.current.cameraAccelerationStrength = defaultSettings.cameraAccelerationStrength;
         }
         this.current.cameraAccelerationStrength = Math.max(0, Math.min(2, this.current.cameraAccelerationStrength));
+        if (!Number.isFinite(this.current.cameraAccelerationThreshold)) {
+          this.current.cameraAccelerationThreshold = defaultSettings.cameraAccelerationThreshold;
+        }
+        this.current.cameraAccelerationThreshold = Math.max(0.5, Math.min(2, this.current.cameraAccelerationThreshold));
       }
     } catch {
       this.current = { ...defaultSettings };
