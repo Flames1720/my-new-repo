@@ -133,6 +133,8 @@ export interface AnimalState {
   scale: number;
   hp: number;
   maxHp: number;
+  burnUntil?: number;
+  burnTick?: number;
   hunger: number;
   thirst?: number;
   matingCooldown: number;

@@ -681,3 +681,33 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Changed:** Increased foreground terrain tessellation to 64 segments in Ultra, 40 in Balanced and 24 in Fast/low-power mode; LOD1 now uses 20 segments. Water continues to use the same `segs` value as its terrain chunk, preserving shared visual sampling.
 
 **Remaining verification:** Recheck the player-area slope and chunk edges in the browser, then run lint/build and push if the alignment is improved. Monitor mobile frame time because the Ultra foreground mesh has more vertices.
+
+
+## 2026-10-09 07:25 UTC — Fast combat and animal damage pass
+
+**Scope:** Player combat integration, TPP/FPP wildlife targeting, and rapid fire-action feedback.
+
+**Starting point:** `integration/character-world-foundation`, continuing the existing character/world work.
+
+**Inspected:** `src/character.ts`, `src/magic-effects.ts`, `src/main.ts`, `src/fauna.ts`, `src/types.ts`, `index.html`, `src/style.css`.
+
+**Changed:**
+- Extended verified Quaternius action aliases with semantic `punch`, `kick`, and `roll` actions. Combat clips run at a faster action-game tempo while one-shot actions still return to locomotion.
+- Added desktop controls: `Q` sword slash, `Z` fast punch, `X` kick, `V` dodge roll, and `R` fire bolt. Preserved `C`/`F` for TPP/FPP switching.
+- Added mobile `PUNCH` and `KICK` buttons beside the existing sword and fire actions.
+- Added shared TPP/FPP targeting for attached wildlife. TPP uses a forward combat cone out to 6m; FPP uses a center-screen ray out to 10m. A rotating red ground marker identifies the selected animal.
+- Added `WildlifeSystem.damageAt()` with melee damage, fire impact damage, short flee reaction, HP synchronization and removal on defeat. Fire applies a 3-second burn with 0.45-second damage ticks, plus a visible temporary fire effect.
+
+**Verification:**
+- Build: PASS (`npm run build`)
+- Typecheck: PASS (`npm run lint` / `tsc --noEmit`)
+- Runtime/browser: VERIFIED for sword, punch, kick, fire, FPP/TPP switching, and mobile combat button handlers.
+- Browser console: no runtime errors observed during smoke testing.
+- Formatting: PASS (`git diff --check`)
+- Device: NOT VERIFIED on a physical mobile device.
+
+**Important findings:** Existing checked-in Quaternius clips already provide sword slash, punch, kick and roll coverage, so no Mixamo download was added; this avoids introducing an unverified rig/retargeting dependency during the fast combat pass. The current implementation is player-versus-wildlife combat, not a complete RPG combat system.
+
+**Remaining work:** Enemy attack AI against the player, authored hitbox timing per combo frame, weapon progression, sound/haptics, stamina/cooldowns, and deeper device testing remain future work.
+
+**Next agent:** Deploy this integration branch for browser review, then tune target selection and combat feel using real device feedback before adding more combat content.

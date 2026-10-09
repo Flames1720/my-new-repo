@@ -34,7 +34,7 @@ import {
   lerp,
 } from './terrain';
 import { isCharacterModelId, PLAYER_CHARACTER_MODELS, PlayerCharacter } from './character';
-import { createMagicBurst, disposeMagicEffect, MagicProjectileEffect } from './magic-effects';
+import { createMagicBurst, disposeMagicEffect, MagicProjectileEffect, type MagicElement } from './magic-effects';
 import { WeatherSystem } from './weather';
 import { buildHome, buildVillage, buildBridge, HOME_UPGRADE_COSTS } from './settlement';
 import { WildlifeSystem, isSharedAnimalAsset, speciesColor, SPECIES_NAME, SPECIES_ICON } from './fauna';
@@ -676,8 +676,18 @@ const player = new PlayerCharacter(LOW_POWER_MODE, initialCharacterModel);
 actors.add(player.root);
 
 type ImpactEffect = { object: THREE.Group; age: number; lifetime: number };
+type BurnEffect = { object: THREE.Group; root: THREE.Group; age: number; lifetime: number };
 const fireProjectiles: MagicProjectileEffect[] = [];
 const impactEffects: ImpactEffect[] = [];
+const burnEffects: BurnEffect[] = [];
+const combatTargetMarker = new THREE.Mesh(
+  new THREE.RingGeometry(0.34, 0.46, 20),
+  new THREE.MeshBasicMaterial({ color: 0xff5533, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+);
+combatTargetMarker.name = 'combat-target-marker';
+combatTargetMarker.rotation.x = -Math.PI / 2;
+combatTargetMarker.visible = false;
+scene.add(combatTargetMarker);
 
 function setEffectOpacity(root: THREE.Object3D, opacity: number) {
   root.traverse(object => {
@@ -690,21 +700,33 @@ function setEffectOpacity(root: THREE.Object3D, opacity: number) {
   });
 }
 
-function spawnFireProjectile() {
+function spawnMagicImpact(element: MagicElement, position: THREE.Vector3, radius = 0.42) {
+  const object = createMagicBurst(element, radius);
+  object.position.copy(position);
+  impactEffects.push({ object, age: 0, lifetime: element === 'fire' ? 0.42 : 0.28 });
+  scene.add(object);
+}
+
+function spawnFireImpact(position: THREE.Vector3) {
+  spawnMagicImpact('fire', position);
+}
+
+function spawnBurnEffect(root: THREE.Group) {
+  const object = createMagicBurst('fire', 0.32);
+  burnEffects.push({ object, root, age: 0, lifetime: 3.0 });
+  scene.add(object);
+}
+
+function spawnFireProjectile(directionOverride?: THREE.Vector3) {
   const origin = player.root.position.clone();
-  const direction = new THREE.Vector3(Math.sin(player.root.rotation.y), 0, Math.cos(player.root.rotation.y));
+  const direction = directionOverride?.clone() ?? new THREE.Vector3(Math.sin(player.root.rotation.y), 0, Math.cos(player.root.rotation.y));
+  direction.y = 0;
+  direction.normalize();
   origin.y += player.swimming ? 0.35 : 1.15;
   origin.addScaledVector(direction, 0.65);
   const projectile = new MagicProjectileEffect('fire', origin, direction, 9, 1.15);
   fireProjectiles.push(projectile);
   scene.add(projectile.object);
-}
-
-function spawnFireImpact(position: THREE.Vector3) {
-  const object = createMagicBurst('fire', 0.42);
-  object.position.copy(position);
-  impactEffects.push({ object, age: 0, lifetime: 0.42 });
-  scene.add(object);
 }
 
 function updateMagicEffects(dt: number) {
@@ -713,6 +735,15 @@ function updateMagicEffects(dt: number) {
     const previous = projectile.object.position.clone();
     const alive = projectile.update(dt);
     const p = projectile.object.position;
+    const animalHit = fauna?.damageAt(p.x, p.y, p.z, 0.75, 18, 'fire') ?? null;
+    if (animalHit) {
+      spawnMagicImpact('fire', p, 0.48);
+      if (!animalHit.killed) spawnBurnEffect(animalHit.root);
+      scene.remove(projectile.object);
+      projectile.dispose();
+      fireProjectiles.splice(i, 1);
+      continue;
+    }
     const terrainImpact = p.y <= terrainHeightAt(p.x, p.z) + 0.12;
     if (!alive || terrainImpact) {
       if (terrainImpact) spawnFireImpact(p);
@@ -739,16 +770,59 @@ function updateMagicEffects(dt: number) {
       impactEffects.splice(i, 1);
     }
   }
+
+  for (let i = burnEffects.length - 1; i >= 0; i--) {
+    const effect = burnEffects[i];
+    effect.age += dt;
+    effect.object.position.copy(effect.root.position);
+    effect.object.position.y += 0.75;
+    const progress = clamp(effect.age / effect.lifetime, 0, 1);
+    effect.object.scale.setScalar(0.65 + Math.sin(effect.age * 18) * 0.08 + progress * 0.55);
+    setEffectOpacity(effect.object, 0.78 * (1 - progress));
+    if (progress >= 1 || !effect.root.parent) {
+      scene.remove(effect.object);
+      disposeMagicEffect(effect.object);
+      burnEffects.splice(i, 1);
+    }
+  }
+}
+
+function performMelee(kind: 'attack' | 'punch' | 'kick') {
+  const target = getAimTarget(true, true);
+  if (!player.playAction(kind)) return;
+  const damage = kind === 'attack' ? 32 : kind === 'kick' ? 26 : 22;
+  if (target?.userData.animal) {
+    const hit = fauna?.damageAt(target.position.x, target.position.y + 0.9, target.position.z, kind === 'attack' ? 3.2 : 2.65, damage, 'melee');
+    if (hit) {
+      spawnMagicImpact('lightning', target.position.clone().setY(target.position.y + 0.45), 0.28);
+      say(`${kind === 'attack' ? 'Sword slash' : kind === 'kick' ? 'Round kick' : 'Fast punch'} · ${hit.hp}/${hit.hp + damage} HP`);
+      return;
+    }
+  }
+  say(kind === 'attack' ? 'Sword slash' : kind === 'kick' ? 'Round kick' : 'Fast punch');
 }
 
 function triggerSwordAttack() {
-  if (player.playAction('attack')) say('Sword slash · animation only');
+  performMelee('attack');
+}
+
+function triggerPunch() {
+  performMelee('punch');
+}
+
+function triggerKick() {
+  performMelee('kick');
 }
 
 function triggerFireCast() {
   if (!player.playAction('cast')) return;
-  spawnFireProjectile();
-  say('Fire bolt · visual prototype only');
+  const target = getAimTarget(true, true);
+  const origin = player.root.position.clone().setY(player.root.position.y + (player.swimming ? 0.35 : 1.15));
+  const direction = target
+    ? target.position.clone().add(new THREE.Vector3(0, 0.75, 0)).sub(origin).normalize()
+    : new THREE.Vector3(Math.sin(player.root.rotation.y), 0, Math.cos(player.root.rotation.y));
+  spawnFireProjectile(direction);
+  say(target?.userData.animal ? 'Fire bolt · burning target' : 'Fire bolt');
 }
 
 let fauna: WildlifeSystem | null = null;
@@ -1394,6 +1468,9 @@ addEventListener('keydown', e => {
   if (key === 'c') mode = 'tpp';
   if (!e.repeat && key === 'e') interact();
   if (!e.repeat && key === 'q') triggerSwordAttack();
+  if (!e.repeat && key === 'z') triggerPunch();
+  if (!e.repeat && key === 'x') triggerKick();
+  if (!e.repeat && key === 'v') player.playAction('roll') && say('Dodge roll');
   if (!e.repeat && key === 'r') triggerFireCast();
   if (!e.repeat && key === 'b') toggleEmoteBar();
   if (!e.repeat && key === 'p') togglePhotoMode();
@@ -1617,6 +1694,8 @@ function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void) {
 // Touch buttons
 bindAction(document.querySelector('#modeBtn') as HTMLButtonElement, () => (mode = mode === 'tpp' ? 'fpp' : 'tpp'));
 bindAction(document.querySelector('#attackBtn') as HTMLButtonElement, triggerSwordAttack);
+bindAction(document.querySelector('#punchBtn') as HTMLButtonElement, triggerPunch);
+bindAction(document.querySelector('#kickBtn') as HTMLButtonElement, triggerKick);
 bindAction(document.querySelector('#castBtn') as HTMLButtonElement, triggerFireCast);
 bindHoldAction(document.querySelector('#jumpBtn') as HTMLButtonElement, ' ', jump);
 bindHoldAction(document.querySelector('#diveBtn') as HTMLButtonElement, 'control');
@@ -2385,12 +2464,20 @@ const aimNdc = new THREE.Vector2();
 const aimObjects: THREE.Object3D[] = [];
 const aimHits: THREE.Intersection[] = [];
 let aimCache: THREE.Object3D | null = null, aimTimer = 0;
+let combatAimCache: THREE.Object3D | null = null, combatAimTimer = 0;
+const combatMarkerWorld = new THREE.Vector3();
 
-function getAimTarget(force = false): THREE.Object3D | null {
-  if (!force && aimTimer > 0) return aimCache;
-  aimTimer = LOW_POWER_MODE ? 0.10 : 0.05;
+function getAimTarget(force = false, combat = false): THREE.Object3D | null {
+  const cache = combat ? combatAimCache : aimCache;
+  const timer = combat ? combatAimTimer : aimTimer;
+  if (!force && timer > 0) return cache;
+  if (combat) combatAimTimer = LOW_POWER_MODE ? 0.10 : 0.05;
+  else aimTimer = LOW_POWER_MODE ? 0.10 : 0.05;
 
   const pp = player.root.position;
+  aimObjects.length = 0;
+  for (const o of chunks.aimTargets) aimObjects.push(o);
+  fauna?.targetObjects(aimObjects);
 
   if (mode === 'tpp') {
     // Call of Duty Battle Royale style character-centric action volume
@@ -2403,7 +2490,7 @@ function getAimTarget(force = false): THREE.Object3D | null {
     const forwardX = Math.sin(charYaw);
     const forwardZ = Math.cos(charYaw);
 
-    for (const o of chunks.aimTargets) {
+    for (const o of aimObjects) {
       if (!o.visible || !o.parent) continue;
       const ox = o.matrixWorld.elements[12];
       const oy = o.matrixWorld.elements[13];
@@ -2414,16 +2501,16 @@ function getAimTarget(force = false): THREE.Object3D | null {
       const dz = oz - pp.z;
       const dist = Math.hypot(dx, dz);
 
-      if (dist > 3.4 || Math.abs(dy) > 2.8) continue;
+      if (dist > (combat ? 6.0 : 3.4) || Math.abs(dy) > (combat ? 3.5 : 2.8)) continue;
 
       // Facing alignment (-1 to 1)
       const dot = dist > 0.05 ? (dx * forwardX + dz * forwardZ) / dist : 1.0;
 
       // In TPP: allow anything immediately adjacent (<1.3m), or in forward cone (dot >= 0.28, ~73 deg)
-      if (dist > 1.3 && dot < 0.28) continue;
+      if (dist > (combat ? 1.8 : 1.3) && dot < (combat ? 0.15 : 0.28)) continue;
 
       // Score prefers closer objects with high directional alignment
-      const score = (1.0 - dist / 3.4) * 2.0 + dot * 1.5;
+      const score = (1.0 - dist / (combat ? 6.0 : 3.4)) * 2.0 + dot * 1.5;
       if (score > bestScore) {
         bestScore = score;
         bestObj = o;
@@ -2433,21 +2520,19 @@ function getAimTarget(force = false): THREE.Object3D | null {
     if (bestObj) {
       let o = bestObj;
       while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable && !o.userData.animal) o = o.parent;
-      return (aimCache = o);
+      return combat ? (combatAimCache = o) : (aimCache = o);
     }
-    return (aimCache = null);
+    return combat ? (combatAimCache = null) : (aimCache = null);
   }
 
   // FPP mode: Precision raycast from camera eye
   aimRay.setFromCamera(aimNdc.set(0, 0), camera);
-  aimObjects.length = 0;
-  for (const o of chunks.aimTargets) aimObjects.push(o);
   aimHits.length = 0;
   const hit = aimRay.intersectObjects(aimObjects, true, aimHits)[0];
-  if (!hit || hit.distance > 3.8) return (aimCache = null);
+  if (!hit || hit.distance > (combat ? 10 : 3.8)) return combat ? (combatAimCache = null) : (aimCache = null);
   let o = hit.object;
   while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable && !o.userData.animal) o = o.parent;
-  return (aimCache = o);
+  return combat ? (combatAimCache = o) : (aimCache = o);
 }
 
 function interact() {
@@ -2586,6 +2671,7 @@ function update(dt: number) {
     return;
   }
   aimTimer = Math.max(0, aimTimer - dt);
+  combatAimTimer = Math.max(0, combatAimTimer - dt);
 
   // Time cycle: 24h cycle
   worldTime = (worldTime + dt * 0.04) % 24;
@@ -2911,12 +2997,24 @@ function update(dt: number) {
   minimap.recordPosition(p.x, p.z);
 
   const aimed = getAimTarget();
+  const combatTarget = getAimTarget(false, true);
+  if (combatTarget?.userData.animal) {
+    combatTarget.getWorldPosition(combatMarkerWorld);
+    combatTargetMarker.position.set(combatMarkerWorld.x, combatMarkerWorld.y + 0.04, combatMarkerWorld.z);
+    combatTargetMarker.visible = true;
+    combatTargetMarker.rotation.z += dt * 2.4;
+  } else {
+    combatTargetMarker.visible = false;
+  }
   if (aimed) {
     const r = aimed.userData.resource as { kind: string; hits: number; maxHits: number } | undefined;
     const animal = aimed.userData.animal as { species: keyof typeof SPECIES_NAME } | undefined;
     const interactable = aimed.userData.interactable as { action: string; label: string } | undefined;
     let label = 'Interact';
-    if (animal) label = `Pet ${SPECIES_NAME[animal.species]}${inventory.Fruit ? ' (Feed Fruit)' : ''}`;
+    if (animal) {
+      const combatData = aimed.userData.animal as { hp?: number; maxHp?: number; species: keyof typeof SPECIES_NAME };
+      label = `Pet ${SPECIES_NAME[animal.species]} · HP ${combatData.hp ?? '?'}${inventory.Fruit ? ' · Feed Fruit' : ''}`;
+    }
     else if (r) label = `Harvest ${r.kind.replace('_', ' ')} (${r.maxHits - r.hits}/${r.maxHits})`;
     else if (interactable) label = interactable.label;
     else label = aimed.name.replace('front-door', 'Front Door').replace('tree-', 'Tree ');

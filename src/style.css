@@ -760,6 +760,11 @@ select {
   background: #4a2b16cc;
 }
 
+#punchBtn, #kickBtn {
+  border-color: #f59e0b66;
+  background: #3d2a18cc;
+}
+
 #castBtn {
   border-color: #fb6b3b88;
   background: #5b241dcc;

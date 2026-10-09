@@ -4,7 +4,7 @@ import type { CharacterModelId, EmoteKind, Gender } from './types';
 import { clamp, lerp } from './terrain';
 
 export type CharacterOutfitKind = 'explorer' | 'ranger' | 'scout' | 'arctic' | 'lagos';
-export type CharacterActionKind = 'attack' | 'cast' | 'hit' | 'death';
+export type CharacterActionKind = 'attack' | 'punch' | 'kick' | 'roll' | 'cast' | 'hit' | 'death';
 
 export const OUTFIT_PALETTES: Record<
   CharacterOutfitKind,
@@ -502,6 +502,9 @@ export class PlayerCharacter {
         aliasFromClip('climb', [/climb/]);
         aliasFromClip('turn', [/turn left/, /turn right/, /turn in place/]);
         aliasFromClip('attack', [/sword[_ -]?slash/, /punch[_ -]?(?:left|right)/, /kick[_ -]?(?:left|right)/, /attack/]);
+        aliasFromClip('punch', [/punch[_ -]?(?:left|right)/, /punch/]);
+        aliasFromClip('kick', [/kick[_ -]?(?:left|right)/, /kick/]);
+        aliasFromClip('roll', [/roll/, /dodge/]);
         aliasFromClip('hit', [/hit[_ -]?recieve/, /hit[_ -]?receive/, /hit reaction/, /damage/]);
         aliasFromClip('death', [/death/, /die/]);
         // No bundled asset currently has a spell-specific clip. Interact is a
@@ -709,7 +712,8 @@ export class PlayerCharacter {
     next.enabled = true;
     next.paused = false;
     next.setEffectiveWeight(1);
-    next.setEffectiveTimeScale(kind === 'death' ? 0.92 : 1);
+    const actionSpeed = kind === 'death' ? 0.92 : kind === 'cast' ? 1.2 : 1.45;
+    next.setEffectiveTimeScale(actionSpeed);
     next.setLoop(THREE.LoopOnce, 1);
     next.clampWhenFinished = true;
     next.play();
