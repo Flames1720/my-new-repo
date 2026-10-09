@@ -434,6 +434,12 @@ function hydrologyRainfallAt(x: number, z: number): number {
   return clamp(rain * runoffBias, 0.08, 0.98);
 }
 
+function applyOuterCoast(h: number, x: number, z: number): number {
+  const edgeT = clamp((Math.hypot(x, z) - 208) / 40, 0, 1);
+  const edgeBlend = edgeT * edgeT * (3 - 2 * edgeT);
+  return Math.max(0.2, h + (0.2 - h) * edgeBlend);
+}
+
 function hydrologyBaseElevationAt(x: number, z: number): number {
   let h = rawTerrainHeightAt(x, z);
 
@@ -442,7 +448,7 @@ function hydrologyBaseElevationAt(x: number, z: number): number {
   if (nearHome(x, z)) h = Math.max(h, HOME_BASE_HEIGHT + 0.65);
   if (nearVillage(x, z)) h = Math.max(h, VILLAGE_BASE_HEIGHT + 0.65);
 
-  return h;
+  return applyOuterCoast(h, x, z);
 }
 
 function buildHydrology(): HydrologyGrid {
@@ -1273,12 +1279,9 @@ function terrainBaseHeightAt(x: number, z: number): number {
     ground = ground + (VILLAGE_BASE_HEIGHT - ground) * (t * t * (3 - 2 * t) * 0.7);
   }
 
-  // Lower the outer terrain band toward sea level so the ocean meets the land
-  // as a coastline, rather than appearing as an invisible boundary around cliffs.
-  const edgeT = clamp((Math.hypot(x, z) - 208) / 40, 0, 1);
-  const edgeBlend = edgeT * edgeT * (3 - 2 * edgeT);
-  ground = Math.max(0.2, ground + (0.2 - ground) * edgeBlend);
-  return Math.max(0.2, ground);
+  // Use the same outer-coast adjustment as hydrology so river surfaces, water
+  // depth and collision remain aligned as the terrain falls into the ocean.
+  return applyOuterCoast(ground, x, z);
 }
 
 export function terrainHeightAt(x: number, z: number): number {
