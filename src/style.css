@@ -1390,7 +1390,8 @@ body.survival-mode #aimBtn{grid-area:aim}
 body.survival-mode #jumpBtn{grid-area:jump}
 body.survival-mode #reloadBtn{grid-area:reload}
 body.survival-mode #shootBtn{grid-area:shoot;width:66px;height:66px;color:#fff;background:rgba(135,45,24,.62);border:1px solid rgba(255,180,125,.9);box-shadow:0 0 16px rgba(234,88,12,.14),inset 0 0 0 2px rgba(255,255,255,.08)}
-body.survival-mode #aimBtn,body.survival-mode #reloadBtn,body.survival-mode #jumpBtn{width:46px;height:46px;border-color:rgba(255,255,255,.42);background:rgba(15,23,42,.48);color:#fff}
+body.survival-mode #aimBtn,body.survival-mode #reloadBtn,body.survival-mode #jumpBtn,body.survival-mode #slideBtn{width:46px;height:46px;border-color:rgba(255,255,255,.42);background:rgba(15,23,42,.48);color:#fff}
+body.survival-mode #slideBtn{border-color:rgba(125,211,252,.56);background:rgba(12,74,110,.52);font-size:8px}
 body.survival-mode #reloadBtn{font-size:8px}
 body.survival-mode #interactBtn{display:none!important}
 body.survival-mode.survival-can-interact #interactBtn{display:grid!important}
