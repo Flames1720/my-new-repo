@@ -2745,6 +2745,8 @@ survival = new ZombieSurvivalSystem({
   canOccupy: (x, z) => canOccupy(x, z),
   getSightBlockers: () => {
     const pcx = chunks.coord(player.root.position.x), pcz = chunks.coord(player.root.position.z);
+    const cacheX = Math.floor(player.root.position.x / 8);
+    const cacheZ = Math.floor(player.root.position.z / 8);
     const nearby: string[] = [];
     for (let ox = -2; ox <= 2; ox++) {
       for (let oz = -2; oz <= 2; oz++) {
@@ -2754,9 +2756,18 @@ survival = new ZombieSurvivalSystem({
       }
     }
     // Cache the scene-graph walk. Automatic fire can call this many times per second on mobile.
-    const cacheKey = `${pcx}:${pcz}:${chunks.loaded.size}:${chunks.cameraBlockers.size}:${nearby.join('|')}`;
+    const cacheKey = `${pcx}:${pcz}:${cacheX}:${cacheZ}:${chunks.loaded.size}:${chunks.cameraBlockers.size}:${nearby.join('|')}`;
     if (cacheKey !== sightBlockerCacheKey) {
-      const blockers = new Set<THREE.Object3D>(chunks.cameraBlockers);
+      // Only nearby colliders can matter for the initial 15–25 m hostile encounters.
+      // A 50 m margin covers chunk-edge movement while avoiding ray-testing every distant prop.
+      const blockers = new Set<THREE.Object3D>();
+      const blockerPosition = new THREE.Vector3();
+      const playerPosition = player.root.position;
+      for (const object of chunks.cameraBlockers) {
+        if (!object.visible || !object.parent) continue;
+        object.getWorldPosition(blockerPosition);
+        if (blockerPosition.distanceToSquared(playerPosition) <= 2500) blockers.add(object);
+      }
       for (let ox = -2; ox <= 2; ox++) {
         for (let oz = -2; oz <= 2; oz++) {
           const chunk = chunks.loaded.get(chunks.key(pcx + ox, pcz + oz));
