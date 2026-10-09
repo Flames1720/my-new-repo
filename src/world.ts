@@ -1225,32 +1225,12 @@ export function waterFlowAt(x: number, z: number): {
 // ============================================================================
 
 export function geologicalBasinDepressionAt(x: number, z: number): number {
-  // These are geological depressions; the hydrology solver decides whether
-  // they become lakes.
-  const basins = [
-    { x: -85, z: -65, radius: 44, depth: 6.2 },
-    { x: 150, z: 58, radius: 30, depth: 3.8 },
-  ];
-
-  let depression = 0;
-  for (const basin of basins) {
-    const d = Math.hypot(x - basin.x, z - basin.z);
-    if (d >= basin.radius) continue;
-
-    const t = 1 - d / basin.radius;
-    const smooth = t * t * (3 - 2 * t);
-    depression = Math.max(depression, smooth * basin.depth);
-  }
-
-  // Broad continental shelf: the playable land naturally meets open ocean
-  // instead of ending in a vertical square-world wall.
+  // Zombie survival has no large inland lake basins: keep the interior land
+  // continuous and reserve the broad water body for the island's outer coast.
   const radial = Math.hypot(x, z);
   const coastT = clamp((radial - 242) / 78, 0, 1);
-  // A gentle broad shelf starts the coastline; the survival island's final ocean band
-  // is lowered in terrainBaseHeightAt so high edge ridges cannot break the water ring.
   const shelf = coastT * coastT * (3 - 2 * coastT) * 5.8;
-
-  return depression + shelf;
+  return shelf;
 }
 
 export function rawTerrainHeightAt(x: number, z: number): number {
