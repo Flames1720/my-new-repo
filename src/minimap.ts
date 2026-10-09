@@ -187,7 +187,9 @@ export class MinimapSystem {
     const toRadar = (wx: number, wz: number): { x: number; y: number } => {
       const dx = wx - playerPos.x;
       const dz = wz - playerPos.z;
-      const sx = cx + (dx * cosY - dz * sinY) * scale;
+      // Camera-right in world space is (-cosY, sinY). Project onto it directly;
+      // the previous expression inverted radar X, making left/right hostiles misleading.
+      const sx = cx + (-dx * cosY + dz * sinY) * scale;
       const sy = cy - (dx * sinY + dz * cosY) * scale;
       return { x: sx, y: sy };
     };
