@@ -2150,6 +2150,14 @@ function updateProfileUI() {
   }
 }
 
+function updateAccelerationControlsUI() {
+  const active = camAccelSelect.value !== 'fixed';
+  camAccelStrengthSlider.disabled = !active;
+  camAccelThresholdSlider.disabled = !active;
+  camAccelStrengthVal.style.opacity = active ? '1' : '.45';
+  camAccelThresholdVal.style.opacity = active ? '1' : '.45';
+}
+
 function openSettings(open: boolean) {
   settingsOverlay.classList.toggle('show', open);
   if (open) {
@@ -2163,6 +2171,7 @@ function openSettings(open: boolean) {
     camAccelStrengthVal.textContent = `${settings.current.cameraAccelerationStrength.toFixed(2).replace(/0$/, '')}×`;
     camAccelThresholdSlider.value = String(settings.current.cameraAccelerationThreshold);
     camAccelThresholdVal.textContent = `${settings.current.cameraAccelerationThreshold.toFixed(1)}×`;
+    updateAccelerationControlsUI();
     weatherSelect.value = settings.current.weatherMode;
     graphicsSelect.value = settings.current.graphics;
     if (outfitSelect && settings.current.characterOutfit) {
@@ -2311,6 +2320,7 @@ invertYCheck.addEventListener('change', () => {
 });
 camAccelSelect.addEventListener('change', () => {
   settings.update({ cameraAcceleration: camAccelSelect.value as 'fixed' | 'distance' | 'speed' });
+  updateAccelerationControlsUI();
 });
 camAccelStrengthSlider.addEventListener('input', () => {
   const v = parseFloat(camAccelStrengthSlider.value);
