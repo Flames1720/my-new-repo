@@ -1537,13 +1537,16 @@ function onLookMove(clientX: number, clientY: number) {
   lastLookMoveAt = now;
   lookGestureDistance += Math.hypot(dx, dy);
 
+  const touchLookRect = IS_TOUCH_DEVICE ? lookZone.getBoundingClientRect() : null;
+  const lookWidth = Math.max(1, touchLookRect && touchLookRect.width > 0 ? touchLookRect.width : window.innerWidth);
+  const lookHeight = Math.max(1, touchLookRect && touchLookRect.height > 0 ? touchLookRect.height : window.innerHeight);
   const accelerationMode = settings.current.cameraAcceleration;
   const accelerationStrength = Math.max(0, Math.min(2, settings.current.cameraAccelerationStrength));
   const accelerationThreshold = Math.max(0.5, Math.min(2, settings.current.cameraAccelerationThreshold));
   let acceleration = 1;
   if (accelerationMode === 'distance') {
     const distanceFactor = clamp(
-      lookGestureDistance / Math.max(100, window.innerWidth * 0.38 * accelerationThreshold),
+      lookGestureDistance / Math.max(100, lookWidth * 0.76 * accelerationThreshold),
       0,
       1
     );
@@ -1559,9 +1562,9 @@ function onLookMove(clientX: number, clientY: number) {
   // Sensitivity is expressed in degrees for a swipe spanning the full viewport.
   // Separate pointer IDs let the left thumb move while another finger looks,
   // aims or shoots on the right without cancelling either gesture.
-  targetYaw += (dx / Math.max(1, window.innerWidth)) * (sensX * Math.PI / 180) * acceleration;
+  targetYaw += (dx / lookWidth) * (sensX * Math.PI / 180) * acceleration;
   targetPitch = clamp(
-    targetPitch - (dy / Math.max(1, window.innerHeight)) * (sensY * Math.PI / 180) * invertY * acceleration,
+    targetPitch - (dy / lookHeight) * (sensY * Math.PI / 180) * invertY * acceleration,
     -1.2,
     0.95
   );
