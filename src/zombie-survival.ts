@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createWeaponRig, type SurvivalWeaponId, type WeaponRig, SURVIVAL_WEAPON_REGISTRY } from './survival-weapons';
+import { survivalSound } from './survival-audio';
 export type { SurvivalWeaponId } from './survival-weapons';
 export type SurvivalPickupKind = 'ammo' | 'medkit';
 
@@ -329,6 +330,16 @@ export class ZombieSurvivalSystem {
     this.emitStatus();
   }
 
+  activateAudio(): void {
+    // Call only from a real key/pointer interaction so mobile browsers can unlock Web Audio.
+    survivalSound.init();
+    survivalSound.setVolumes(0.72, 0.82);
+  }
+
+  setAmbientEnabled(enabled: boolean): void {
+    survivalSound.setAmbientEnabled(enabled);
+  }
+
   setFireHeld(held: boolean): void {
     this.fireHeld = held;
   }
@@ -365,14 +376,17 @@ export class ZombieSurvivalSystem {
 
   fire(): void {
     if (!this.enabled || this.isDead || this.reloadTimer > 0 || this.fireCooldown > 0) return;
+    this.activateAudio();
     const definition = WEAPONS[this.weapon];
     const currentAmmo = this.ammo[this.weapon];
     if (currentAmmo.mag <= 0) {
+      survivalSound.playDryFire();
       this.options.notify(currentAmmo.reserve > 0 ? 'Magazine empty · reload' : 'No ammunition left');
-      this.fireCooldown = 0.18;
+      this.fireCooldown = 0.28;
       return;
     }
 
+    survivalSound.playGunshot(this.weapon);
     currentAmmo.mag--;
     this.fireCooldown = definition.fireInterval;
     this.muzzleTimer = 0.065;
@@ -414,7 +428,7 @@ export class ZombieSurvivalSystem {
         if (actor && !actor.dead) {
           const headshot = hit.object.userData.survivalHead === true;
           const damage = definition.damage * (headshot ? 2.45 : 1);
-          this.damageZombie(actor, damage, headshot);
+          this.damageZombie(actor, damage, headshot, !registeredHit);
           registeredHit = true;
         } else {
           this.spawnImpact(hit.point, false);
@@ -428,6 +442,7 @@ export class ZombieSurvivalSystem {
 
   reload(): void {
     if (!this.enabled || this.isDead || this.reloadTimer > 0) return;
+    this.activateAudio();
     const ammo = this.ammo[this.weapon];
     const definition = WEAPONS[this.weapon];
     if (ammo.mag >= definition.magSize || ammo.reserve <= 0) {
@@ -435,6 +450,7 @@ export class ZombieSurvivalSystem {
       return;
     }
     this.reloadTimer = definition.reloadTime;
+    survivalSound.playReload();
     this.options.notify('RELOADING');
     this.emitStatus();
   }
@@ -510,18 +526,21 @@ export class ZombieSurvivalSystem {
     root.position.copy(actor.position);
     root.rotation.y = Math.PI;
     this.scene.add(root);
+    survivalSound.playZombieGrowl(type === 'brute' ? 0.62 : type === 'runner' ? 1.16 : 0.92);
     return actor;
   }
 
-  private damageZombie(actor: ZombieActor, amount: number, headshot: boolean): void {
+  private damageZombie(actor: ZombieActor, amount: number, headshot: boolean, playHitSound = true): void {
     if (actor.dead) return;
     actor.hp = Math.max(0, actor.hp - amount);
     actor.flash = 0.12;
     actor.flesh.emissive.setHex(0x7c211c);
     actor.clothing.emissive.setHex(0x3a1210);
     this.spawnImpact(actor.head.getWorldPosition(new THREE.Vector3()), true);
+    if (playHitSound) survivalSound.playHitmarker(headshot);
     this.options.notify(headshot ? 'HEADSHOT!' : 'HIT');
     if (actor.hp <= 0) {
+      survivalSound.playZombieDeath();
       actor.dead = true;
       actor.deathAge = 0;
       this.kills++;
@@ -629,6 +648,9 @@ export class ZombieSurvivalSystem {
 
   private damagePlayer(amount: number): void {
     if (this.isDead || this.inSafeZone(this.options.getPlayerPosition().x, this.options.getPlayerPosition().z)) return;
+    this.activateAudio();
+    survivalSound.playZombieAttack();
+    survivalSound.playPlayerHurt();
     this.health = Math.max(0, this.health - amount);
     this.flashDamageTimer = 0.18;
     this.options.onDamage();
@@ -678,10 +700,12 @@ export class ZombieSurvivalSystem {
       if (drop.kind === 'medkit') {
         if (this.health >= this.maxHealth) continue;
         this.health = Math.min(this.maxHealth, this.health + drop.amount);
+        survivalSound.playPickup();
         this.options.notify(`FIRST AID +${drop.amount} HP`);
       } else {
         const weaponAmmo = this.ammo[this.weapon];
         weaponAmmo.reserve = Math.min(WEAPONS[this.weapon].reserveStart * 2, weaponAmmo.reserve + drop.amount);
+        survivalSound.playPickup();
         this.options.notify(`AMMUNITION +${drop.amount}`);
       }
       this.scene.remove(drop.root);
@@ -921,6 +945,7 @@ export class ZombieSurvivalSystem {
   }
 
   private emitStatus(): void {
+    survivalSound.updateHeartbeat(1);
     this.options.onStatus(this.status());
   }
 
