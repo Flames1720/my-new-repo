@@ -1538,13 +1538,18 @@ function onLookMove(clientX: number, clientY: number) {
 
   const accelerationMode = settings.current.cameraAcceleration;
   const accelerationStrength = Math.max(0, Math.min(2, settings.current.cameraAccelerationStrength));
+  const accelerationThreshold = Math.max(0.5, Math.min(2, settings.current.cameraAccelerationThreshold));
   let acceleration = 1;
   if (accelerationMode === 'distance') {
-    const distanceFactor = clamp(lookGestureDistance / Math.max(100, window.innerWidth * 0.38), 0, 1);
+    const distanceFactor = clamp(
+      lookGestureDistance / Math.max(100, window.innerWidth * 0.38 * accelerationThreshold),
+      0,
+      1
+    );
     acceleration += accelerationStrength * distanceFactor;
   } else if (accelerationMode === 'speed') {
     const speedPxPerSecond = Math.hypot(dx, dy) / elapsed;
-    acceleration += accelerationStrength * clamp(speedPxPerSecond / 1100, 0, 1);
+    acceleration += accelerationStrength * clamp(speedPxPerSecond / (1100 * accelerationThreshold), 0, 1);
   }
 
   const sensX = settings.current.sensitivityX;
@@ -1854,6 +1859,7 @@ function setHudEditMode(active: boolean) {
   hudEditorOverlay.classList.toggle('show', active);
   hudDrag = null;
   if (active) {
+    if (!survival?.enabled) setSurvivalEnabled(true);
     openSettings(false);
     const first = hudTouchButtons.find(el => el.dataset.hudId === 'shoot') || hudTouchButtons[0];
     if (first) selectHudItem(first);
@@ -2095,6 +2101,8 @@ const invertYCheck = document.querySelector('#invertYCheck') as HTMLInputElement
 const camAccelSelect = document.querySelector('#camAccelSelect') as HTMLSelectElement;
 const camAccelStrengthSlider = document.querySelector('#camAccelStrengthSlider') as HTMLInputElement;
 const camAccelStrengthVal = document.querySelector('#camAccelStrengthVal') as HTMLSpanElement;
+const camAccelThresholdSlider = document.querySelector('#camAccelThresholdSlider') as HTMLInputElement;
+const camAccelThresholdVal = document.querySelector('#camAccelThresholdVal') as HTMLSpanElement;
 const hudCustomizeBtn = document.querySelector('#hudCustomizeBtn') as HTMLButtonElement;
 const weatherSelect = document.querySelector('#weatherSelect') as HTMLSelectElement;
 const graphicsSelect = document.querySelector('#graphicsSelect') as HTMLSelectElement;
@@ -2137,7 +2145,9 @@ function openSettings(open: boolean) {
     invertYCheck.checked = settings.current.invertY;
     camAccelSelect.value = settings.current.cameraAcceleration;
     camAccelStrengthSlider.value = String(settings.current.cameraAccelerationStrength);
-    camAccelStrengthVal.textContent = `${settings.current.cameraAccelerationStrength.toFixed(1)}×`;
+    camAccelStrengthVal.textContent = `${settings.current.cameraAccelerationStrength.toFixed(2).replace(/0$/, '')}×`;
+    camAccelThresholdSlider.value = String(settings.current.cameraAccelerationThreshold);
+    camAccelThresholdVal.textContent = `${settings.current.cameraAccelerationThreshold.toFixed(1)}×`;
     weatherSelect.value = settings.current.weatherMode;
     graphicsSelect.value = settings.current.graphics;
     if (outfitSelect && settings.current.characterOutfit) {
@@ -2290,7 +2300,12 @@ camAccelSelect.addEventListener('change', () => {
 camAccelStrengthSlider.addEventListener('input', () => {
   const v = parseFloat(camAccelStrengthSlider.value);
   settings.update({ cameraAccelerationStrength: v });
-  camAccelStrengthVal.textContent = `${v.toFixed(1)}×`;
+  camAccelStrengthVal.textContent = `${v.toFixed(2).replace(/0$/, '')}×`;
+});
+camAccelThresholdSlider.addEventListener('input', () => {
+  const v = parseFloat(camAccelThresholdSlider.value);
+  settings.update({ cameraAccelerationThreshold: v });
+  camAccelThresholdVal.textContent = `${v.toFixed(1)}×`;
 });
 weatherSelect.addEventListener('change', () => {
   settings.update({ weatherMode: weatherSelect.value as any });
