@@ -1277,7 +1277,7 @@ function terrainBaseHeightAt(x: number, z: number): number {
   // as a coastline, rather than appearing as an invisible boundary around cliffs.
   const edgeT = clamp((Math.hypot(x, z) - 208) / 40, 0, 1);
   const edgeBlend = edgeT * edgeT * (3 - 2 * edgeT);
-  ground = Math.max(0.2, ground - edgeBlend * 36);
+  ground = Math.max(0.2, ground + (0.2 - ground) * edgeBlend);
   return Math.max(0.2, ground);
 }
 
@@ -1295,7 +1295,8 @@ export function waterDepthAt(x: number, z: number): number {
   if (!col) return 0;
 
   if (col.ocean) {
-    return Math.max(0, WATER_LEVEL - terrainBaseHeightAt(x, z));
+    // Ocean depth follows the same terrain surface used for collision and rendering.
+    return Math.max(0, WATER_LEVEL - terrainHeightAt(x, z));
   }
 
   // Depth is measured against the SAME carved terrain the mesh, colouring and
