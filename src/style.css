@@ -1376,8 +1376,6 @@ body.survival-mode #survivalHud{display:block}
 #survivalAmmo{font-size:20px;line-height:1}
 #survivalReserve{color:#e2e8f0;font-size:10px}
 .survivalKillsBlock{display:flex;flex-direction:column;gap:3px;color:#e2e8f0;font-size:8px;font-weight:900}
-#survivalCycleWeapon{display:grid;place-items:center;width:22px;height:21px;flex:0 0 auto;padding:0;border-radius:5px;border:1px solid rgba(255,255,255,.4);background:rgba(12,18,24,.32);color:#fff;font-size:15px;line-height:1;pointer-events:auto;touch-action:manipulation}
-#survivalCycleWeapon:active{background:rgba(74,222,128,.35)}
 #survivalBtn{border-color:#fa8a45aa;background:#321b18ed}
 #survivalBtn:hover{border-color:#fb923c;background:#4b241bed}
 body.survival-mode #survivalBtn{border-color:#4ade80a0;background:#103a2aee;box-shadow:0 0 14px rgba(34,197,94,.12),0 4px 14px #000a}
@@ -1390,9 +1388,11 @@ body.survival-mode #aimBtn{grid-area:aim}
 body.survival-mode #jumpBtn{grid-area:jump}
 body.survival-mode #reloadBtn{grid-area:reload}
 body.survival-mode #shootBtn{grid-area:shoot;width:66px;height:66px;color:#fff;background:rgba(135,45,24,.62);border:1px solid rgba(255,180,125,.9);box-shadow:0 0 16px rgba(234,88,12,.14),inset 0 0 0 2px rgba(255,255,255,.08)}
-body.survival-mode #aimBtn,body.survival-mode #reloadBtn,body.survival-mode #jumpBtn,body.survival-mode #slideBtn{width:46px;height:46px;border-color:rgba(255,255,255,.42);background:rgba(15,23,42,.48);color:#fff}
+body.survival-mode #aimBtn,body.survival-mode #reloadBtn,body.survival-mode #jumpBtn,body.survival-mode #slideBtn,body.survival-mode #weaponSwitchBtn{width:46px;height:46px;border-color:rgba(255,255,255,.42);background:rgba(15,23,42,.48);color:#fff}
 body.survival-mode #slideBtn{border-color:rgba(125,211,252,.56);background:rgba(12,74,110,.52);font-size:8px}
 body.survival-mode #reloadBtn{font-size:8px}
+.squareLoopIcon{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+body.survival-mode #weaponSwitchBtn{font-size:23px;font-weight:800}
 body.survival-mode #interactBtn{display:none!important}
 body.survival-mode.survival-can-interact #interactBtn{display:grid!important}
 body.survival-mode #interactBtn{position:absolute;right:calc(170px + env(safe-area-inset-right));bottom:calc(28px + env(safe-area-inset-bottom));width:48px;height:48px;border-color:rgba(74,222,128,.7);background:rgba(20,83,45,.65)}
@@ -1535,7 +1535,8 @@ body.hud-edit-mode #hud { pointer-events: none; }
   justify-content: space-between;
   gap: 8px;
 }
-.hudEditorHeader strong { font-size: 11px; letter-spacing: .9px; }
+.hudEditorHeader { cursor: move; user-select: none; -webkit-user-select: none; }
+.hudEditorHeader strong { font-size: 11px; letter-spacing: .9px; pointer-events: none; }
 .hudEditorHeader button, .hudEditorFooter button {
   border: 1px solid rgba(255,255,255,.26);
   border-radius: 8px;
