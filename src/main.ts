@@ -2741,16 +2741,29 @@ survival = new ZombieSurvivalSystem({
   getWaterDepth: waterDepthAt,
   canOccupy: (x, z) => canOccupy(x, z),
   getSightBlockers: () => {
-    const blockers: THREE.Object3D[] = [...chunks.cameraBlockers];
+    // Include the existing world colliders plus real meshes in the nearby combat envelope.
+    // The world is still authoritative: this does not create a duplicate shooter arena.
+    const blockers = new Set<THREE.Object3D>(chunks.cameraBlockers);
     const pcx = chunks.coord(player.root.position.x), pcz = chunks.coord(player.root.position.z);
-    for (let ox = -1; ox <= 1; ox++) {
-      for (let oz = -1; oz <= 1; oz++) {
+    for (let ox = -2; ox <= 2; ox++) {
+      for (let oz = -2; oz <= 2; oz++) {
         const chunk = chunks.loaded.get(chunks.key(pcx + ox, pcz + oz));
-        const terrain = chunk?.getObjectByName('terrain');
-        if (terrain) blockers.push(terrain);
+        if (!chunk) continue;
+        const terrain = chunk.getObjectByName('terrain');
+        if (terrain) blockers.add(terrain);
+        chunk.traverse(object => {
+          if (object === chunk || object === terrain) return;
+          const hasPhysicalMarker = Boolean(
+            object.userData.colliderRadius ||
+            object.userData.collider ||
+            object.userData.resource ||
+            object.userData.interactable
+          );
+          if (hasPhysicalMarker) blockers.add(object);
+        });
       }
     }
-    return blockers;
+    return [...blockers];
   },
   safeZones: [
     { id: 'homestead', label: 'HOMESTEAD', x: HOME_X, z: HOME_Z, radius: 12 },
