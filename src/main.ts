@@ -1559,9 +1559,9 @@ function onLookMove(clientX: number, clientY: number) {
   const sensX = settings.current.sensitivityX;
   const sensY = settings.current.sensitivityY;
   const invertY = settings.current.invertY ? -1 : 1;
-  // Sensitivity is expressed in degrees for a swipe spanning the full viewport.
+  // Sensitivity is degrees per swipe spanning the active look zone (right half on touch, viewport on desktop).
   // Separate pointer IDs let the left thumb move while another finger looks,
-  // aims or shoots on the right without cancelling either gesture.
+  // aims, shoots or taps ADS without cancelling either gesture.
   targetYaw += (dx / lookWidth) * (sensX * Math.PI / 180) * acceleration;
   targetPitch = clamp(
     targetPitch - (dy / lookHeight) * (sensY * Math.PI / 180) * invertY * acceleration,
