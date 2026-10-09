@@ -47,6 +47,7 @@ export interface ZombieSurvivalOptions {
   camera: THREE.PerspectiveCamera;
   getPlayerPosition: () => THREE.Vector3;
   getTerrainHeight: (x: number, z: number) => number;
+  getNightFactor?: () => number;
   isWater: (x: number, z: number) => boolean;
   getWaterDepth: (x: number, z: number) => number;
   canOccupy: (x: number, z: number) => boolean;
@@ -672,13 +673,21 @@ export class ZombieSurvivalSystem {
         dist = Math.hypot(dx, dz);
       }
       const length = Math.max(0.001, dist);
-      if (dist > actor.attackRange * 0.92) {
-        const stride = actor.speed * dt;
+      const nightFactor = clamp(this.options.getNightFactor?.() ?? 0, 0, 1);
+      const effectiveSpeed = actor.speed * (1 + nightFactor * 0.18);
+      if (actor.bossTier === 2 && dist <= 4.1 && this.elapsed - actor.lastAttack >= actor.attackCooldown && this.hasLineOfSight(actor.position, playerPos)) {
+        actor.lastAttack = this.elapsed;
+        this.options.notify('BOSS SLAM · DODGE THE SHOCKWAVE');
+        this.damagePlayer(Math.round(actor.damage * (1.2 + nightFactor * 0.2)));
+        actor.leftArm.rotation.x = -1.9;
+        actor.rightArm.rotation.x = -1.9;
+      } else if (dist > actor.attackRange * 0.92) {
+        const stride = effectiveSpeed * dt;
         this.moveZombie(actor, (dx / length) * stride, (dz / length) * stride);
       } else if (this.hasLineOfSight(actor.position, playerPos)) {
         if (this.elapsed - actor.lastAttack >= actor.attackCooldown) {
           actor.lastAttack = this.elapsed;
-          this.damagePlayer(actor.damage);
+          this.damagePlayer(Math.round(actor.damage * (1 + nightFactor * 0.2)));
           actor.leftArm.rotation.x = -1.5;
           actor.rightArm.rotation.x = -1.5;
         }
@@ -840,7 +849,8 @@ export class ZombieSurvivalSystem {
       if (this.inSafeZone(x, z) || this.options.isWater(x, z) && this.options.getWaterDepth(x, z) > 0.55) continue;
       if (!this.options.canOccupy(x, z)) continue;
       const roll = Math.random();
-      let type: ZombieActor['type'] = this.wave >= 3 && roll > 0.88 ? 'brute' : this.wave >= 2 && roll > 0.60 ? 'runner' : 'walker';
+      const nightFactor = clamp(this.options.getNightFactor?.() ?? 0, 0, 1);
+      let type: ZombieActor['type'] = this.wave >= 3 && roll > 0.88 - nightFactor * 0.08 ? 'brute' : this.wave >= 2 && roll > 0.60 - nightFactor * 0.08 ? 'runner' : 'walker';
       let bossTier: 0 | 1 | 2 = 0;
       if (!this.bossSpawnedThisWave && this.wave >= 5 && this.wave % 10 === 0) {
         type = 'brute'; bossTier = 2; this.bossSpawnedThisWave = true;
