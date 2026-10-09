@@ -1769,19 +1769,20 @@ const HUD_DEFAULTS: Record<string, HudLayoutItem> = {
   reload: { x: 80, y: 81, size: 44, opacity: 0.56 },
   weapon: { x: 52, y: 80, size: 44, opacity: 0.68 },
   use: { x: 69, y: 55, size: 46, opacity: 0.62 },
+  skill: { x: 60, y: 58, size: 46, opacity: 0.78 },
 };
 const HUD_PRESETS: Record<'four' | 'three' | 'thumbs', Record<string, { x: number; y: number }>> = {
   four: {
     shoot: { x: 10, y: 23 }, ads: { x: 88, y: 24 }, jump: { x: 92, y: 72 },
-    slide: { x: 72, y: 72 }, reload: { x: 80, y: 81 }, weapon: { x: 52, y: 80 }, use: { x: 69, y: 55 },
+    slide: { x: 72, y: 72 }, reload: { x: 80, y: 81 }, weapon: { x: 52, y: 80 }, use: { x: 69, y: 55 }, skill: { x: 60, y: 58 },
   },
   three: {
     shoot: { x: 10, y: 25 }, ads: { x: 87, y: 43 }, jump: { x: 91, y: 69 },
-    slide: { x: 76, y: 70 }, reload: { x: 79, y: 82 }, weapon: { x: 52, y: 80 }, use: { x: 69, y: 56 },
+    slide: { x: 76, y: 70 }, reload: { x: 79, y: 82 }, weapon: { x: 52, y: 80 }, use: { x: 69, y: 56 }, skill: { x: 60, y: 58 },
   },
   thumbs: {
     shoot: { x: 87, y: 78 }, ads: { x: 85, y: 56 }, jump: { x: 94, y: 64 },
-    slide: { x: 76, y: 65 }, reload: { x: 75, y: 83 }, weapon: { x: 52, y: 80 }, use: { x: 67, y: 55 },
+    slide: { x: 76, y: 65 }, reload: { x: 75, y: 83 }, weapon: { x: 52, y: 80 }, use: { x: 67, y: 55 }, skill: { x: 60, y: 58 },
   },
 };
 const hudEditorOverlay = document.querySelector('#hudEditorOverlay') as HTMLDivElement;
@@ -2057,6 +2058,7 @@ bindAction(document.querySelector('#punchBtn') as HTMLButtonElement, triggerPunc
 bindAction(document.querySelector('#kickBtn') as HTMLButtonElement, triggerKick);
 bindAction(document.querySelector('#castBtn') as HTMLButtonElement, () => survival?.enabled ? survival.fire() : triggerFireCast());
 bindHoldAction(document.querySelector('#shootBtn') as HTMLButtonElement, 'shoot', () => survival?.enabled && survival.fire());
+bindAction(document.querySelector('#skillBtn') as HTMLButtonElement, () => survival?.enabled && survival.activateSkill());
 const adsButton = document.querySelector('#aimBtn') as HTMLButtonElement;
 bindHoldAction(adsButton, 'aim', () => {
   document.body.classList.add('aim-active');
@@ -2135,6 +2137,7 @@ const survivalZoneStatus = document.querySelector('#survivalZoneStatus') as HTML
 const survivalHealthText = document.querySelector('#survivalHealthText') as HTMLSpanElement | null;
 const survivalHealthBar = document.querySelector('#survivalHealthBar') as HTMLSpanElement | null;
 const survivalStaminaBar = document.querySelector('#survivalStaminaBar') as HTMLSpanElement | null;
+const survivalSkillButton = document.querySelector('#skillBtn') as HTMLButtonElement | null;
 const safeZoneDirection = document.querySelector('#safeZoneDirection') as HTMLDivElement | null;
 const safeZoneArrowIcon = document.querySelector('#safeZoneArrowIcon') as HTMLSpanElement | null;
 const safeZoneArrowLabel = document.querySelector('#safeZoneArrowLabel') as HTMLSpanElement | null;
@@ -3208,6 +3211,12 @@ survival = new ZombieSurvivalSystem({
       survivalHealthBar.style.background = state.health <= 25 ? '#ef4444' : state.health <= 50 ? '#f59e0b' : 'linear-gradient(90deg, #e87942, #f5c26b)';
     }
     if (survivalWeapon) survivalWeapon.textContent = state.weaponLabel;
+    if (survivalSkillButton) {
+      const cooldown = state.skillCooldownSeconds ?? 0;
+      survivalSkillButton.textContent = cooldown > 0 ? `${cooldown}s` : 'PULSE';
+      survivalSkillButton.title = cooldown > 0 ? `Shockwave recharging · ${cooldown}s` : 'Shockwave pulse · 18s cooldown';
+      survivalSkillButton.classList.toggle('recharging', cooldown > 0);
+    }
     if (survivalAmmo) survivalAmmo.textContent = String(state.ammoInMag).padStart(2, '0');
     if (survivalReserve) survivalReserve.textContent = state.reloading ? 'RELOADING' : `/ ${state.ammoReserve}`;
     if (survivalKills) survivalKills.textContent = `KILLS ${state.kills}`;
