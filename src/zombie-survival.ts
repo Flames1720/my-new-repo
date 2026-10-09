@@ -691,7 +691,7 @@ export class ZombieSurvivalSystem {
       if (this.reloadTimer === 0) this.finishReload();
     }
     const definition = WEAPONS[this.weapon];
-    if (firing && definition.automatic && this.fireCooldown <= 0) this.fire();
+    if ((firing || this.fireHeld) && definition.automatic && this.fireCooldown <= 0) this.fire();
 
     this.muzzleTimer = Math.max(0, this.muzzleTimer - dt);
     this.muzzleFlash.visible = this.muzzleTimer > 0 && this.enabled;
