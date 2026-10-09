@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import './style.css';
-import type { Mode, EmoteKind, HomeLevel, ResourceKind, ResourceDef, PlayerProfile, Species, CharacterModelId } from './types';
+import type { Mode, EmoteKind, HomeLevel, ResourceKind, ResourceDef, PlayerProfile, CharacterModelId } from './types';
 import {
   SEED,
   SIZE,
@@ -37,7 +37,6 @@ import { isCharacterModelId, PLAYER_CHARACTER_MODELS, PlayerCharacter } from './
 import { createMagicBurst, disposeMagicEffect, MagicProjectileEffect, type MagicElement } from './magic-effects';
 import { WeatherSystem } from './weather';
 import { buildHome, buildVillage, buildBridge, HOME_UPGRADE_COSTS } from './settlement';
-import { WildlifeSystem, isSharedAnimalAsset, speciesColor, SPECIES_NAME, SPECIES_ICON } from './fauna';
 import { MinimapSystem } from './minimap';
 import { settings } from './settings';
 import { WorldSurvey, type SurveyView } from './survey';
@@ -51,7 +50,6 @@ type Save = {
   camera: { yaw: number; pitch: number; distance: number };
   changes: Record<string, string[]>;
   inventory: Record<string, number>;
-  wildlifeTrust?: Record<string, number>;
   worldTime?: number;
   homeLevel?: HomeLevel;
   voxelEdits?: VoxelEdit[];
@@ -744,15 +742,6 @@ function updateMagicEffects(dt: number) {
     const previous = projectile.object.position.clone();
     const alive = projectile.update(dt);
     const p = projectile.object.position;
-    const animalHit = fauna?.damageAt(p.x, p.y, p.z, 0.75, 18, 'fire') ?? null;
-    if (animalHit) {
-      spawnMagicImpact('fire', p, 0.48);
-      if (!animalHit.killed) spawnBurnEffect(animalHit.root);
-      scene.remove(projectile.object);
-      projectile.dispose();
-      fireProjectiles.splice(i, 1);
-      continue;
-    }
     const terrainImpact = p.y <= terrainHeightAt(p.x, p.z) + 0.12;
     if (!alive || terrainImpact) {
       if (terrainImpact) spawnFireImpact(p);
@@ -800,14 +789,6 @@ function performMelee(kind: 'attack' | 'punch' | 'kick') {
   const target = getAimTarget(true, true);
   if (!player.playAction(kind)) return;
   const damage = kind === 'attack' ? 32 : kind === 'kick' ? 26 : 22;
-  if (target?.userData.animal) {
-    const hit = fauna?.damageAt(target.position.x, target.position.y + 0.9, target.position.z, kind === 'attack' ? 3.2 : 2.65, damage, 'melee');
-    if (hit) {
-      spawnMagicImpact('lightning', target.position.clone().setY(target.position.y + 0.45), 0.28);
-      say(`${kind === 'attack' ? 'Sword slash' : kind === 'kick' ? 'Round kick' : 'Fast punch'} · ${hit.hp}/${hit.hp + damage} HP`);
-      return;
-    }
-  }
   say(kind === 'attack' ? 'Sword slash' : kind === 'kick' ? 'Round kick' : 'Fast punch');
 }
 
@@ -834,13 +815,11 @@ function triggerFireCast() {
   say(target?.userData.animal ? 'Fire bolt · burning target' : 'Fire bolt');
 }
 
-let fauna: WildlifeSystem | null = null;
-
 function disposeWorldObjects(root: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
   root.traverse(o => {
     if (!(o instanceof THREE.Mesh)) return;
-    if (!isSharedAnimalAsset(o.geometry) && !environmentAssets.isSharedGeometry(o.geometry) && !geometries.has(o.geometry)) {
+    if (!environmentAssets.isSharedGeometry(o.geometry) && !geometries.has(o.geometry)) {
       geometries.add(o.geometry);
       o.geometry.dispose();
     }
@@ -851,7 +830,6 @@ function disposeWorldObjects(root: THREE.Object3D) {
         material !== terrainMaterial &&
         material !== waterfallMaterial &&
         material !== springMaterial &&
-        !isSharedAnimalAsset(material) &&
         !environmentAssets.isSharedMaterial(material) &&
         !materials.has(material)
       ) {
@@ -1261,8 +1239,6 @@ class Chunks {
       }
     }
 
-    fauna?.spawnChunk(cx, cz, lod, g);
-
     // Spawn Home in (0,0) chunk
     if (cx === 0 && cz === 0) {
       const isDoorOpen = (this.changes['0,0'] || []).includes('door-open');
@@ -1287,7 +1263,6 @@ class Chunks {
     for (const [k, g] of this.loaded) {
       const [a, b] = k.split(',').map(Number);
       if (Math.abs(a - cx) > radius || Math.abs(b - cz) > radius) {
-        fauna?.removeChunk(k);
         this.releaseChunk(g);
         world.remove(g);
         this.loaded.delete(k);
@@ -1305,7 +1280,6 @@ class Chunks {
         if (!existing) {
           this.build(x, z, lod);
         } else if (existing.userData.lod > lod) {
-          fauna?.removeChunk(key);
           this.releaseChunk(existing);
           world.remove(existing);
           this.loaded.delete(key);
@@ -1331,7 +1305,6 @@ class Chunks {
           if (!this.loaded.has(key)) this.build(x, z, 0);
           else if (this.loaded.get(key)?.userData.lod !== 0) {
             const old = this.loaded.get(key)!;
-            fauna?.removeChunk(key);
             this.releaseChunk(old);
             world.remove(old);
             this.loaded.delete(key);
@@ -1436,7 +1409,6 @@ function saveNow() {
     camera: { yaw: camYaw, pitch: camPitch, distance: camDistance },
     changes: chunks.changes,
     inventory,
-    wildlifeTrust: fauna?.trust ?? save.wildlifeTrust ?? {},
     worldTime,
     homeLevel: chunks.homeLevel,
     voxelEdits: voxelWorld.edits(),
@@ -2306,56 +2278,7 @@ if (playerRoleSelect) {
   });
 }
 
-// Living Ecosystem Sanctuary Census Modal
-const ecoBtn = document.querySelector('#ecoBtn') as HTMLButtonElement | null;
-const ecoOverlay = document.querySelector('#ecoOverlay') as HTMLDivElement | null;
-const ecoClose = document.querySelector('#ecoClose') as HTMLButtonElement | null;
-const ecoCensusList = document.querySelector('#ecoCensusList') as HTMLDivElement | null;
-const ecoTotalCount = document.querySelector('#ecoTotalCount') as HTMLSpanElement | null;
-const ecoExtinctCount = document.querySelector('#ecoExtinctCount') as HTMLSpanElement | null;
-
-function renderEcoCensus() {
-  if (!fauna || !ecoCensusList) return;
-  const census = fauna.speciesCensus();
-  let totalAnimals = 0;
-  let extinctSpecies = 0;
-
-  ecoCensusList.innerHTML = Object.entries(census)
-    .map(([sp, data]) => {
-      const s = sp as Species;
-      totalAnimals += data.total;
-      if (data.total === 0) extinctSpecies++;
-      return `
-        <div class="ecoRow">
-          <div class="ecoRowTitle">
-            <span>${SPECIES_ICON[s]}</span>
-            <span>${SPECIES_NAME[s]}</span>
-          </div>
-          <div class="ecoRowStats">
-            <span>♂ ${data.males}</span>
-            <span>♀ ${data.females}</span>
-            <span>🐣 ${data.babies}</span>
-            <span>Total: <b>${data.total}</b></span>
-            <span class="ecoStatusTag ${data.status.replace(/\s+/g, '-')}">${data.status}</span>
-          </div>
-        </div>
-      `;
-    })
-    .join('');
-
-  if (ecoTotalCount) ecoTotalCount.textContent = `Total Fauna: ${totalAnimals}`;
-  if (ecoExtinctCount) ecoExtinctCount.textContent = extinctSpecies > 0 ? `🚨 ${extinctSpecies} Extinct!` : `🌿 Balance: Healthy`;
-}
-
-if (ecoBtn) {
-  bindAction(ecoBtn, () => {
-    renderEcoCensus();
-    ecoOverlay?.classList.add('show');
-  });
-}
-if (ecoClose) {
-  bindAction(ecoClose, () => ecoOverlay?.classList.remove('show'));
-}
+// Wildlife sanctuary UI is intentionally disabled in zombie survival.
 
 if (outfitSelect) {
   outfitSelect.addEventListener('change', () => {
@@ -2882,25 +2805,6 @@ function renderInventory() {
 }
 renderInventory();
 
-fauna = new WildlifeSystem({
-  heightAt: terrainHeightAt,
-  waterAt,
-  roadAt,
-  nearHome,
-  biomeAt,
-  chunkSize: SIZE,
-  trust: save.wildlifeTrust ?? {},
-  hasFruit: () => Boolean(inventory.Fruit),
-  consumeFruit: () => {
-    inventory.Fruit = Math.max(0, (inventory.Fruit || 0) - 1);
-    renderInventory();
-    saveNow();
-  },
-  onTrustChange: saveNow,
-  notify: say,
-  faunaContainer: actors,
-});
-
 chunks.stream(save.player.x, save.player.z);
 void environmentAssets.preload().then(() => {
   chunks.rebuildAll();
@@ -2982,7 +2886,6 @@ function getAimTarget(force = false, combat = false): THREE.Object3D | null {
   const pp = player.root.position;
   aimObjects.length = 0;
   for (const o of chunks.aimTargets) aimObjects.push(o);
-  fauna?.targetObjects(aimObjects);
 
   if (mode === 'tpp') {
     // Call of Duty Battle Royale style character-centric action volume
@@ -3044,10 +2947,6 @@ function interact() {
   const o = getAimTarget(true);
   if (!o) {
     say('Aim at something within reach');
-    return;
-  }
-  if (o.userData.animal) {
-    fauna?.interact(o);
     return;
   }
   if (o.userData.resource) {
@@ -3330,7 +3229,7 @@ function input() {
 
 function update(dt: number) {
   if (survey.isActive) {
-    // Survey is a frozen world snapshot: no weather, fauna, physics, terrain
+    // Survey is a frozen world snapshot: no weather, physics, terrain
     // streaming, or other live simulation advances while the user inspects it.
     return;
   }
@@ -3562,8 +3461,6 @@ function update(dt: number) {
     say(player.swimming ? 'Swimming · hold Space / RISE to surface; Ctrl / DIVE to submerge.' : 'Back on land.');
   }
 
-  fauna?.update(dt, p, sprinting);
-
   camYaw = angleLerp(camYaw, targetYaw, Math.min(1, dt * 12));
   camPitch = lerp(camPitch, targetPitch, Math.min(1, dt * 12));
   camDistance = lerp(camDistance, targetDistance, Math.min(1, dt * 12));
@@ -3679,24 +3576,12 @@ function update(dt: number) {
   const canInteractWithAimed = !!aimed && !!(aimed.userData.resource || aimed.userData.interactable || aimed.userData.animal);
   document.body.classList.toggle('survival-can-interact', !!survival?.enabled && canInteractWithAimed);
   const combatTarget = getAimTarget(false, true);
-  if (combatTarget?.userData.animal) {
-    combatTarget.getWorldPosition(combatMarkerWorld);
-    combatTargetMarker.position.set(combatMarkerWorld.x, combatMarkerWorld.y + 0.04, combatMarkerWorld.z);
-    combatTargetMarker.visible = true;
-    combatTargetMarker.rotation.z += dt * 2.4;
-  } else {
-    combatTargetMarker.visible = false;
-  }
+  combatTargetMarker.visible = false;
   if (aimed) {
     const r = aimed.userData.resource as { kind: string; hits: number; maxHits: number } | undefined;
-    const animal = aimed.userData.animal as { species: keyof typeof SPECIES_NAME } | undefined;
     const interactable = aimed.userData.interactable as { action: string; label: string } | undefined;
     let label = 'Interact';
-    if (animal) {
-      const combatData = aimed.userData.animal as { hp?: number; maxHp?: number; species: keyof typeof SPECIES_NAME };
-      label = `Pet ${SPECIES_NAME[animal.species]} · HP ${combatData.hp ?? '?'}${inventory.Fruit ? ' · Feed Fruit' : ''}`;
-    }
-    else if (r) label = `Harvest ${r.kind.replace('_', ' ')} (${r.maxHits - r.hits}/${r.maxHits})`;
+    if (r) label = `Harvest ${r.kind.replace('_', ' ')} (${r.maxHits - r.hits}/${r.maxHits})`;
     else if (interactable) label = interactable.label;
     else label = aimed.name.replace('front-door', 'Front Door').replace('tree-', 'Tree ');
 
@@ -3719,10 +3604,9 @@ function update(dt: number) {
   mapAccumulator += dt;
   if (mapAccumulator >= 0.08) {
     mapAccumulator = 0;
-    const markers = fauna?.markers() ?? [];
     const survivalRadar = survival.enabled ? survival.getRadarState() : undefined;
-    minimap.renderMini(p, camYaw, markers, survivalRadar);
-    if (minimap.isOpen()) minimap.renderFull(p, camYaw, markers, survivalRadar);
+    minimap.renderMini(p, camYaw, [], survivalRadar);
+    if (minimap.isOpen()) minimap.renderFull(p, camYaw, [], survivalRadar);
 
     // Distance to Home & Village on HUD
     const dHome = Math.round(Math.hypot(p.x - HOME_X, p.z - HOME_Z));
@@ -3759,7 +3643,6 @@ function update(dt: number) {
     const minute = Math.floor((worldTime - hour) * 60);
     const biome = biomeAt(p.x, p.z);
     status.textContent = `${player.swimming ? 'SWIM' : mode.toUpperCase()} · ${sprinting ? 'RUN' : 'WALK'} · ${biome.toUpperCase()} · ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-    (document.querySelector('#wildlife') as HTMLElement).textContent = fauna?.status(p) ?? 'Wildlife loading…';
   }
 }
 
