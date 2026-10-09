@@ -833,7 +833,7 @@ function triggerFireCast() {
     ? target.position.clone().add(new THREE.Vector3(0, 0.75, 0)).sub(origin).normalize()
     : new THREE.Vector3(Math.sin(player.root.rotation.y), 0, Math.cos(player.root.rotation.y));
   spawnFireProjectile(direction);
-  say(target?.userData.animal ? 'Fire bolt · burning target' : 'Fire bolt');
+  say('Fire bolt');
 }
 
 function disposeWorldObjects(root: THREE.Object3D) {
@@ -2767,7 +2767,7 @@ function takeScreenshot() {
     const a = document.createElement('a');
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     a.href = dataUrl;
-    a.download = `wildlife-screenshot-${ts}.png`;
+    a.download = `island-outbreak-screenshot-${ts}.png`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -3036,7 +3036,7 @@ function getAimTarget(force = false, combat = false): THREE.Object3D | null {
 
     if (bestObj) {
       let o = bestObj;
-      while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable && !o.userData.animal) o = o.parent;
+      while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable) o = o.parent;
       return combat ? (combatAimCache = o) : (aimCache = o);
     }
     return combat ? (combatAimCache = null) : (aimCache = null);
@@ -3048,7 +3048,7 @@ function getAimTarget(force = false, combat = false): THREE.Object3D | null {
   const hit = aimRay.intersectObjects(aimObjects, true, aimHits)[0];
   if (!hit || hit.distance > (combat ? 10 : 3.8)) return combat ? (combatAimCache = null) : (aimCache = null);
   let o = hit.object;
-  while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable && !o.userData.animal) o = o.parent;
+  while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable) o = o.parent;
   return combat ? (combatAimCache = o) : (aimCache = o);
 }
 
@@ -3771,7 +3771,7 @@ function update(dt: number) {
   minimap.recordPosition(p.x, p.z);
 
   const aimed = getAimTarget();
-  const canInteractWithAimed = !!aimed && !!(aimed.userData.resource || aimed.userData.interactable || aimed.userData.animal);
+  const canInteractWithAimed = !!aimed && !!(aimed.userData.resource || aimed.userData.interactable);
   document.body.classList.toggle('survival-can-interact', !!survival?.enabled && canInteractWithAimed);
   const combatTarget = getAimTarget(false, true);
   combatTargetMarker.visible = false;
