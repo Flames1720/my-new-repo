@@ -29,7 +29,7 @@ export const mountainNoiseAt = (x: number, z: number) => {
 };
 
 // --- SOIL, ROCK, STRATA & MOUNTAIN COLOR PALETTE ---
-export const grassColor = new THREE.Color(0x6b9655);
+export const grassColor = new THREE.Color(0x5b6849);
 export const darkSoilColor = new THREE.Color(0x382618); // Rich dark humus topsoil
 export const richLoamSoil = new THREE.Color(0x4a3424); // Loamy fertile soil layer
 export const subsoilClay = new THREE.Color(0x7c492e); // Reddish-brown clay strata layer
@@ -37,13 +37,14 @@ export const deepSandstone = new THREE.Color(0x8f6a4a); // Sedimentary sandstone
 export const shaleBedrock = new THREE.Color(0x2d3035); // Dark slate/shale bedrock
 export const mountainGranite = new THREE.Color(0x727376); // High mountain granite
 export const cliffDarkRock = new THREE.Color(0x3f3e3c);
-export const alpineSnow = new THREE.Color(0xf7f9fc);
-export const forestTintColor = new THREE.Color(0x40623b);
-export const meadowTintColor = new THREE.Color(0x8ea862);
-export const wetlandTintColor = new THREE.Color(0x848352);
+export const alpineSnow = new THREE.Color(0xdfe1df);
+export const forestTintColor = new THREE.Color(0x3d4936);
+export const meadowTintColor = new THREE.Color(0x69714f);
+export const wetlandTintColor = new THREE.Color(0x5c5c45);
+const apocalypseTintColor = new THREE.Color(0x595a50);
 
-export const dryBeachSand = new THREE.Color(0xd6c290);
-export const wetShorelineSand = new THREE.Color(0x8e784f);
+export const dryBeachSand = new THREE.Color(0xa59a75);
+export const wetShorelineSand = new THREE.Color(0x76664f);
 export const submergedPebbles = new THREE.Color(0x484439);
 export const riverbankSand = new THREE.Color(0xb5a77b);
 
@@ -123,6 +124,9 @@ export function terrainColorAt(h: number, x: number, z: number, biome: Biome): T
     else if (biome === 'wetland') c.lerp(wetlandTintColor, 0.30);
   }
 
+  // Muted, dust-stained palette gives the survival branch a ruined-world mood without adding post-processing cost.
+  c.lerp(apocalypseTintColor, 0.14);
+  c.multiplyScalar(0.96);
   return c;
 }
 
