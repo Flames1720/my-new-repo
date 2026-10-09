@@ -262,6 +262,17 @@ export class ZombieSurvivalSystem {
       this.fireHeld = false;
       this.aimActive = false;
       this.setAim(false);
+      for (const trace of this.tracerLines) {
+        this.scene.remove(trace.line);
+        trace.line.geometry.dispose();
+        (trace.line.material as THREE.Material).dispose();
+      }
+      this.tracerLines.length = 0;
+      for (const spark of this.hitSparks) {
+        this.scene.remove(spark.mesh);
+        disposeGroup(spark.mesh);
+      }
+      this.hitSparks.length = 0;
     }
     this.emitStatus();
   }
@@ -482,7 +493,6 @@ export class ZombieSurvivalSystem {
       actor.deathAge += dt;
       actor.root.position.y = Math.max(this.options.getTerrainHeight(actor.position.x, actor.position.z) + 0.08, actor.root.position.y - dt * 0.16);
       actor.root.scale.multiplyScalar(Math.max(0.985, 1 - dt * 0.06));
-      if (actor.deathAge > 6) this.removeZombie(actor);
       return;
     }
 
