@@ -3161,12 +3161,15 @@ survival = new ZombieSurvivalSystem({
     if (survivalAmmo) survivalAmmo.textContent = String(state.ammoInMag).padStart(2, '0');
     if (survivalReserve) survivalReserve.textContent = state.reloading ? 'RELOADING' : `/ ${state.ammoReserve}`;
     if (survivalKills) survivalKills.textContent = `KILLS ${state.kills}`;
-    if (survivalWave) survivalWave.textContent = state.wave ? `WAVE ${state.wave}` : 'SAFE START';
+    if (survivalWave) survivalWave.textContent = state.runComplete ? 'ISLAND SECURED' : state.wave ? `WAVE ${state.wave} / 100` : 'SAFE START';
     if (survivalZombies) survivalZombies.textContent = state.livingZombies ? `${state.livingZombies} INFECTED` : '';
     if (survivalZoneStatus) {
-      survivalZoneStatus.textContent = state.inSafeZone ? `SAFE · ${state.nearestZone}` : `DANGER · ${state.nearestZone} ${Math.round(state.zoneDistance)}m`;
-      survivalZoneStatus.classList.toggle('safe', state.inSafeZone);
-      survivalZoneStatus.classList.toggle('danger', !state.inSafeZone);
+      survivalZoneStatus.textContent = state.zonePhase === 'weakening'
+        ? `WEAKENING · ${state.nearestZone} ${Math.round(state.zoneIntegrity ?? 0)}%`
+        : state.inSafeZone ? `SAFE · ${state.nearestZone}`
+          : state.nearestZone ? `DANGER · ${state.nearestZone} ${Math.round(state.zoneDistance)}m` : 'NO SAFE ZONE · RELOCATING';
+      survivalZoneStatus.classList.toggle('safe', state.inSafeZone && state.zonePhase !== 'weakening');
+      survivalZoneStatus.classList.toggle('danger', !state.inSafeZone || state.zonePhase === 'weakening');
     }
   },
   onDamage: () => {
