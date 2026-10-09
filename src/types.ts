@@ -51,6 +51,7 @@ export interface PlayerProfile {
 export interface SettingsState {
   sensitivityX: number; // Degrees turned across a full look-zone-width swipe; default 180
   sensitivityY: number; // Degrees looked across a full look-zone-height swipe; default 100
+  adsSensitivity: number; // Multiplier applied only while holding aim; 0.25 to 1
   invertY: boolean;
   cameraAcceleration: 'fixed' | 'distance' | 'speed';
   cameraAccelerationStrength: number; // 0 to 2.0
