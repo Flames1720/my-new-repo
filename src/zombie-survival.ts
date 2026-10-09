@@ -39,6 +39,7 @@ export interface SurvivalStatus {
   dead: boolean;
   runComplete?: boolean;
   preparationSeconds?: number;
+  skillCooldownSeconds?: number;
   zonePhase?: SafeZonePhase;
   zoneIntegrity?: number;
   safeZoneX?: number;
@@ -242,6 +243,7 @@ export class ZombieSurvivalSystem {
   private maxZombies: number;
   private killedThisWave = 0;
   private preparationTimer = 0;
+  private skillCooldown = 0;
   private zoneTransitionTimer = 0;
   private nextZoneIndex = 1;
   private bossSpawnedThisWave = false;
@@ -393,6 +395,33 @@ export class ZombieSurvivalSystem {
       this.camera.fov = this.lastFov;
       this.camera.updateProjectionMatrix();
     }
+  }
+
+  activateSkill(): void {
+    if (!this.enabled || this.isDead || this.runComplete) return;
+    if (this.skillCooldown > 0) {
+      this.options.notify(`SHOCKWAVE RECHARGING · ${Math.ceil(this.skillCooldown)}s`);
+      return;
+    }
+    this.skillCooldown = 18;
+    const player = this.options.getPlayerPosition();
+    let affected = 0;
+    for (const actor of this.zombies) {
+      if (actor.dead) continue;
+      const dx = actor.position.x - player.x;
+      const dz = actor.position.z - player.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance > 7.5) continue;
+      affected++;
+      const damage = actor.bossTier === 2 ? 38 : actor.bossTier === 1 ? 55 : actor.type === 'brute' ? 90 : 75;
+      this.damageZombie(actor, damage, false, false, true, 'SHOCKWAVE ELIMINATED AN INFECTED');
+      if (!actor.dead && distance > 0.001) {
+        this.moveZombie(actor, (dx / distance) * 1.4, (dz / distance) * 1.4);
+      }
+    }
+    this.spawnImpact(new THREE.Vector3(player.x, this.options.getTerrainHeight(player.x, player.z) + 0.28, player.z), false);
+    this.options.notify(affected ? `SHOCKWAVE · ${affected} INFECTED HIT` : 'SHOCKWAVE · AREA CLEAR');
+    this.emitStatus();
   }
 
   switchWeapon(id: SurvivalWeaponId): void {
@@ -587,7 +616,7 @@ export class ZombieSurvivalSystem {
     return actor;
   }
 
-  private damageZombie(actor: ZombieActor, amount: number, headshot: boolean, playHitSound = true, quiet = false): void {
+  private damageZombie(actor: ZombieActor, amount: number, headshot: boolean, playHitSound = true, quiet = false, quietDeathLabel = 'SANCTUARY PURGED AN INFECTED'): void {
     if (actor.dead) return;
     actor.hp = Math.max(0, actor.hp - amount);
     actor.flash = 0.12;
@@ -605,7 +634,7 @@ export class ZombieSurvivalSystem {
       actor.root.rotation.z = -Math.PI / 2;
       actor.root.position.y = this.options.getTerrainHeight(actor.position.x, actor.position.z) + 0.25;
       this.dropLoot(actor.position);
-      this.options.notify(quiet ? 'SANCTUARY PURGED AN INFECTED' : headshot ? 'HEADSHOT · INFECTED ELIMINATED' : 'INFECTED ELIMINATED');
+      this.options.notify(quiet ? quietDeathLabel : headshot ? 'HEADSHOT · INFECTED ELIMINATED' : 'INFECTED ELIMINATED');
     }
   }
 
@@ -925,6 +954,7 @@ export class ZombieSurvivalSystem {
       }
     }
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    this.skillCooldown = Math.max(0, this.skillCooldown - dt);
     this.statusTimer += dt;
     this.setAim(aiming);
 
@@ -1050,6 +1080,7 @@ export class ZombieSurvivalSystem {
     this.kills = 0;
     this.wave = 0;
     this.preparationTimer = 0;
+    this.skillCooldown = 0;
     this.runComplete = false;
     this.bossSpawnedThisWave = false;
     this.zoneTransitionTimer = 0;
@@ -1099,6 +1130,7 @@ export class ZombieSurvivalSystem {
       ammoInMag: ammo.mag, ammoReserve: ammo.reserve, kills: this.kills, wave: this.wave,
       livingZombies: living, inSafeZone: this.isPlayerProtected(p.x, p.z), runComplete: this.runComplete,
       preparationSeconds: Math.ceil(this.preparationTimer),
+      skillCooldownSeconds: Math.ceil(this.skillCooldown),
       nearestZone: guideZone?.label ?? 'SAFE ZONE',
       zoneDistance: guideZone ? Math.max(0, distToZone(p.x, p.z, guideZone) - guideZone.radius) : 0,
       reloading: this.reloadTimer > 0, dead: this.isDead,
