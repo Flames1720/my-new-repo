@@ -63,11 +63,11 @@ const angleLerp = (a: number, b: number, t: number) => a + Math.atan2(Math.sin(b
 
 // --- RESOURCE DEFINITIONS ---
 const RESOURCE_DEFS: Record<ResourceKind, ResourceDef> = {
-  oak: { family: 'tree', hitsToFell: 3, regrowSeconds: 180, colliderRadius: 0.72, yieldItem: 'Wood', yieldQty: [2, 4], trunkColor: 0x694b35, crownColor: 0x3d7148 },
-  ancient_oak: { family: 'tree', hitsToFell: 6, regrowSeconds: 320, colliderRadius: 1.45, yieldItem: 'Wood', yieldQty: [6, 12], bonusItem: 'Fruit', bonusQty: [2, 5], trunkColor: 0x513824, crownColor: 0x2e5c38 },
-  pine: { family: 'tree', hitsToFell: 2, regrowSeconds: 140, colliderRadius: 0.6, yieldItem: 'Pine Wood', yieldQty: [1, 3], trunkColor: 0x5b4330, crownColor: 0x2e5c3e },
-  fruit: { family: 'tree', hitsToFell: 4, regrowSeconds: 220, colliderRadius: 0.72, yieldItem: 'Wood', yieldQty: [1, 3], bonusItem: 'Fruit', bonusQty: [2, 5], trunkColor: 0x6b4a32, crownColor: 0x4a7a3f, fruitColor: 0xcc4433 },
-  palm: { family: 'tree', hitsToFell: 3, regrowSeconds: 200, colliderRadius: 0.55, yieldItem: 'Palm Wood', yieldQty: [1, 2], trunkColor: 0x8a6a3f, crownColor: 0x4f8a3d },
+  oak: { family: 'tree', hitsToFell: 3, regrowSeconds: 180, colliderRadius: 0.72, yieldItem: 'Wood', yieldQty: [2, 4], trunkColor: 0x625b48, crownColor: 0x505744 },
+  ancient_oak: { family: 'tree', hitsToFell: 6, regrowSeconds: 320, colliderRadius: 1.45, yieldItem: 'Wood', yieldQty: [6, 12], bonusItem: 'Fruit', bonusQty: [2, 5], trunkColor: 0x4c473b, crownColor: 0x41493b },
+  pine: { family: 'tree', hitsToFell: 2, regrowSeconds: 140, colliderRadius: 0.6, yieldItem: 'Pine Wood', yieldQty: [1, 3], trunkColor: 0x514b40, crownColor: 0x3f493c },
+  fruit: { family: 'tree', hitsToFell: 4, regrowSeconds: 220, colliderRadius: 0.72, yieldItem: 'Wood', yieldQty: [1, 3], bonusItem: 'Fruit', bonusQty: [2, 5], trunkColor: 0x625744, crownColor: 0x545b43, fruitColor: 0x8c4338 },
+  palm: { family: 'tree', hitsToFell: 3, regrowSeconds: 200, colliderRadius: 0.55, yieldItem: 'Palm Wood', yieldQty: [1, 2], trunkColor: 0x74664d, crownColor: 0x545c43 },
   rock: { family: 'rock', hitsToFell: 3, regrowSeconds: Infinity, colliderRadius: 0.55, yieldItem: 'Stone', yieldQty: [2, 4], rockColor: 0x8c8f93 },
   boulder: { family: 'rock', hitsToFell: 6, regrowSeconds: Infinity, colliderRadius: 0.95, yieldItem: 'Stone', yieldQty: [5, 9], bonusItem: 'Ore', bonusQty: [1, 2], rockColor: 0x6f7378 },
 };
@@ -95,9 +95,30 @@ function pickTreeKind(cx: number, cz: number, i: number, tx: number, tz: number)
   return 'oak';
 }
 
+const ruinedTreeMaterials = new WeakSet<THREE.Material>();
+const ruinedFoliageTint = new THREE.Color(0x565b48);
+const ruinedBarkTint = new THREE.Color(0x655a4a);
+
+function tintTreeForOutbreak(root: THREE.Group): void {
+  root.traverse(object => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      if (ruinedTreeMaterials.has(material)) continue;
+      const color = (material as THREE.MeshStandardMaterial).color;
+      if (color instanceof THREE.Color) {
+        if (color.g > color.r * 1.08 && color.g > color.b * 1.04) color.lerp(ruinedFoliageTint, 0.58);
+        else if (color.r > color.g && color.g > color.b) color.lerp(ruinedBarkTint, 0.22);
+      }
+      ruinedTreeMaterials.add(material);
+    }
+  });
+}
+
 function buildTree(kind: ResourceKind, lod: number): THREE.Group {
   const assetTree = environmentAssets.createTree(kind, lod);
   if (assetTree) {
+    tintTreeForOutbreak(assetTree);
     const def = RESOURCE_DEFS[kind];
     if (kind === 'fruit') {
       const fruitMat = new THREE.MeshStandardMaterial({ color: def.fruitColor ?? 0xcc4433, roughness: 0.6 });
