@@ -10,6 +10,8 @@ class SoundEngine {
   private ambientGain: GainNode | null = null;
   private heartbeatNode: OscillatorNode | null = null;
   private heartbeatGain: GainNode | null = null;
+  private ambientNode: OscillatorNode | null = null;
+  private ambientEnabled = false;
   private isMuted: boolean = false;
   private initialized: boolean = false;
 
@@ -37,10 +39,25 @@ class SoundEngine {
       this.ambientGain.gain.setValueAtTime(0.35, this.ctx.currentTime);
       this.ambientGain.connect(this.masterGain);
 
-      this.startAmbientDrone();
+      if (this.ambientEnabled) this.startAmbientDrone();
       this.initialized = true;
     } catch {
       // AudioContext not allowed or not supported yet
+    }
+  }
+
+  public setAmbientEnabled(enabled: boolean): void {
+    this.ambientEnabled = enabled;
+    if (!this.ctx) return;
+    if (enabled) this.startAmbientDrone();
+    else if (this.ambientNode) {
+      try {
+        this.ambientNode.stop();
+        this.ambientNode.disconnect();
+      } catch {
+        // An oscillator that has already stopped needs no extra cleanup.
+      }
+      this.ambientNode = null;
     }
   }
 
@@ -353,9 +370,10 @@ class SoundEngine {
   }
 
   private startAmbientDrone() {
-    if (!this.ctx || !this.ambientGain) return;
+    if (!this.ctx || !this.ambientGain || !this.ambientEnabled || this.ambientNode) return;
     // Low atmospheric rumble and eerie wind
     const osc = this.ctx.createOscillator();
+    this.ambientNode = osc;
     osc.type = 'sine';
     osc.frequency.setValueAtTime(45, this.ctx.currentTime);
 
