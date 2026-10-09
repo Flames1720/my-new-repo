@@ -1247,7 +1247,9 @@ export function geologicalBasinDepressionAt(x: number, z: number): number {
   // instead of ending in a vertical square-world wall.
   const radial = Math.hypot(x, z);
   const coastT = clamp((radial - 242) / 78, 0, 1);
-  const shelf = coastT * coastT * (3 - 2 * coastT) * 5.8;
+  // Deeper outer shelf creates a continuous ocean moat around the finite playable island.
+  // The interior stays untouched; shoreline ramps down gradually instead of ending in a wall.
+  const shelf = coastT * coastT * (3 - 2 * coastT) * 9.0;
 
   return depression + shelf;
 }
