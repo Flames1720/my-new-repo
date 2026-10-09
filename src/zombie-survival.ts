@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { clamp } from './terrain';
 import { createWeaponRig, type SurvivalWeaponId, type WeaponRig, SURVIVAL_WEAPON_REGISTRY } from './survival-weapons';
 import { survivalSound } from './survival-audio';
 export type { SurvivalWeaponId } from './survival-weapons';
