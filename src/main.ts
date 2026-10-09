@@ -2092,6 +2092,10 @@ const sensYSlider = document.querySelector('#sensYSlider') as HTMLInputElement;
 const sensXVal = document.querySelector('#sensXVal') as HTMLSpanElement;
 const sensYVal = document.querySelector('#sensYVal') as HTMLSpanElement;
 const invertYCheck = document.querySelector('#invertYCheck') as HTMLInputElement;
+const camAccelSelect = document.querySelector('#camAccelSelect') as HTMLSelectElement;
+const camAccelStrengthSlider = document.querySelector('#camAccelStrengthSlider') as HTMLInputElement;
+const camAccelStrengthVal = document.querySelector('#camAccelStrengthVal') as HTMLSpanElement;
+const hudCustomizeBtn = document.querySelector('#hudCustomizeBtn') as HTMLButtonElement;
 const weatherSelect = document.querySelector('#weatherSelect') as HTMLSelectElement;
 const graphicsSelect = document.querySelector('#graphicsSelect') as HTMLSelectElement;
 const outfitSelect = document.querySelector('#outfitSelect') as HTMLSelectElement | null;
@@ -2128,9 +2132,12 @@ function openSettings(open: boolean) {
   if (open) {
     sensXSlider.value = String(settings.current.sensitivityX);
     sensYSlider.value = String(settings.current.sensitivityY);
-    sensXVal.textContent = `${settings.current.sensitivityX.toFixed(1)}x`;
-    sensYVal.textContent = `${settings.current.sensitivityY.toFixed(1)}x`;
+    sensXVal.textContent = `${Math.round(settings.current.sensitivityX)}°`;
+    sensYVal.textContent = `${Math.round(settings.current.sensitivityY)}°`;
     invertYCheck.checked = settings.current.invertY;
+    camAccelSelect.value = settings.current.cameraAcceleration;
+    camAccelStrengthSlider.value = String(settings.current.cameraAccelerationStrength);
+    camAccelStrengthVal.textContent = `${settings.current.cameraAccelerationStrength.toFixed(1)}×`;
     weatherSelect.value = settings.current.weatherMode;
     graphicsSelect.value = settings.current.graphics;
     if (outfitSelect && settings.current.characterOutfit) {
@@ -2153,6 +2160,7 @@ function openSettings(open: boolean) {
 }
 bindAction(settingsBtn, () => openSettings(true));
 bindAction(settingsClose, () => openSettings(false));
+bindAction(hudCustomizeBtn, () => setHudEditMode(true));
 
 if (playerGenderSelect) {
   playerGenderSelect.addEventListener('change', () => {
@@ -2266,15 +2274,23 @@ if (lodSelect) {
 sensXSlider.addEventListener('input', () => {
   const v = parseFloat(sensXSlider.value);
   settings.update({ sensitivityX: v });
-  sensXVal.textContent = `${v.toFixed(1)}x`;
+  sensXVal.textContent = `${Math.round(v)}°`;
 });
 sensYSlider.addEventListener('input', () => {
   const v = parseFloat(sensYSlider.value);
   settings.update({ sensitivityY: v });
-  sensYVal.textContent = `${v.toFixed(1)}x`;
+  sensYVal.textContent = `${Math.round(v)}°`;
 });
 invertYCheck.addEventListener('change', () => {
   settings.update({ invertY: invertYCheck.checked });
+});
+camAccelSelect.addEventListener('change', () => {
+  settings.update({ cameraAcceleration: camAccelSelect.value as 'fixed' | 'distance' | 'speed' });
+});
+camAccelStrengthSlider.addEventListener('input', () => {
+  const v = parseFloat(camAccelStrengthSlider.value);
+  settings.update({ cameraAccelerationStrength: v });
+  camAccelStrengthVal.textContent = `${v.toFixed(1)}×`;
 });
 weatherSelect.addEventListener('change', () => {
   settings.update({ weatherMode: weatherSelect.value as any });
