@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#10151b" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <title>World Prototype — Zombie Survival</title>
-    <meta name="description" content="First-person open-world zombie survival prototype with procedural terrain, weapons, loot, and safe zones." />
-    <meta property="og:title" content="World Prototype — Zombie Survival" />
+    <title>Island Outbreak · Zombie Survival</title>
+    <meta name="description" content="Survive 100 waves on a ruined island. Fight evolving infected, hold safe zones, and build your loadout." />
+    <meta property="og:title" content="Island Outbreak · Zombie Survival" />
     <meta property="og:description" content="First-person open-world zombie survival prototype with procedural terrain, weapons, loot, and safe zones." />
   </head>
   <body>
@@ -21,7 +21,6 @@
         <button id="photoBtn" aria-label="Photo Mode (clean screenshot)" title="Photo Mode (P)">📷</button>
         <button id="surveyBtn" aria-label="Open World Survey" title="World Survey">🗺️</button>
         <button id="survivalBtn" aria-label="Toggle Zombie Survival Mode" title="Zombie Survival · Z">🧟</button>
-        <button id="ecoBtn" aria-label="Ecosystem sanctuary & field guide" title="Wildlife Sanctuary">🐾</button>
         <button id="settingsBtn" aria-label="Open settings" title="Settings">⚙️</button>
         <button id="fullscreenBtn" aria-label="Toggle fullscreen" title="Fullscreen">⛶</button>
       </div>
@@ -50,8 +49,6 @@
         </div>
       </section>
 
-      <!-- Nearby Wildlife & Waypoint Context -->
-      <div id="wildlife" aria-live="polite">Wildlife loading…</div>
       <div id="waypointBadge"></div>
 
       <!-- Modern Bottom Hotbar Inventory -->
@@ -94,7 +91,6 @@
         <span>● Hostile</span>
         <span>● You (Arrow)</span>
         <span>— Trail (Where you came from)</span>
-        <span>▲ Wildlife</span>
         <span>★ Waypoint (Tap anywhere to set)</span>
       </div>
     </div>
@@ -276,24 +272,6 @@
           <button id="hudSaveBtn" type="button">Save & close</button>
         </div>
       </section>
-    </div>
-
-    <!-- Living Ecosystem Sanctuary Census Modal -->
-    <div id="ecoOverlay">
-      <div class="ecoCard">
-        <div class="ecoHeader">
-          <h3>LIVING ECOSYSTEM SANCTUARY & CENSUS</h3>
-          <button id="ecoClose">✕</button>
-        </div>
-        <div class="ecoBody">
-          <p class="ecoIntro">Real-time persistent population tracking. Animals reproduce through mating and raise their young. Protect vulnerable species from extinction!</p>
-          <div id="ecoCensusList"></div>
-          <div class="ecoSummary">
-            <span id="ecoTotalCount">Total Fauna: 0</span>
-            <span id="ecoExtinctCount">Status: Balanced</span>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- Home Carpenter Upgrade Modal Overlay -->
