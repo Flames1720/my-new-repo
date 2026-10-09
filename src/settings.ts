@@ -3,8 +3,8 @@ import type { SettingsState } from './types';
 const SETTINGS_KEY = 'world-wildlife-settings-v1';
 
 export const defaultSettings: SettingsState = {
-  sensitivityX: 360,
-  sensitivityY: 150,
+  sensitivityX: 180,
+  sensitivityY: 100,
   invertY: false,
   cameraAcceleration: 'fixed',
   cameraAccelerationStrength: 0.65,
