@@ -1424,3 +1424,170 @@ body.survival-mode #minimapContainer:active,body.survival-mode #survivalHud:acti
 @media (orientation:portrait) and (pointer:coarse){body.survival-mode #survivalHud{left:calc(12px + env(safe-area-inset-left));bottom:calc(124px + env(safe-area-inset-bottom));width:min(300px,68vw)}body.survival-mode .actions{right:calc(8px + env(safe-area-inset-right));bottom:calc(8px + env(safe-area-inset-bottom))}body.survival-mode #interactBtn{right:calc(145px + env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom))}}
 body.survival-mode #controls{display:none!important}
 
+/* --- CUSTOMIZABLE, MULTI-TOUCH SURVIVAL HUD --- */
+#leftMoveZone {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  z-index: 1;
+  pointer-events: auto;
+  touch-action: none;
+}
+#stick {
+  pointer-events: none;
+  opacity: 0;
+  left: 0;
+  top: 0;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  transition: opacity .08s;
+  z-index: 20;
+}
+#stick.active { opacity: 1; }
+#lookZone {
+  left: 50%;
+  right: 0;
+  top: calc(164px + env(safe-area-inset-top));
+  bottom: 0;
+  z-index: 5;
+  touch-action: none;
+}
+body.survival-mode #touch .actions {
+  position: static !important;
+  display: contents !important;
+}
+body.survival-mode #touch .actions button[data-hud-id] {
+  position: absolute !important;
+  left: var(--hud-x, 50%) !important;
+  top: var(--hud-y, 50%) !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%);
+  width: var(--hud-size, 48px) !important;
+  height: var(--hud-size, 48px) !important;
+  min-width: 30px;
+  min-height: 30px;
+  margin: 0 !important;
+  padding: 0 3px;
+  opacity: var(--hud-opacity, .68);
+  z-index: 40;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+body.survival-mode #touch .actions button[data-hud-id]:active {
+  transform: translate(-50%, -50%) scale(.94);
+}
+body.aim-active #aimBtn {
+  border-color: rgba(125, 211, 252, .95) !important;
+  box-shadow: 0 0 16px rgba(56, 189, 248, .48), inset 0 0 0 2px rgba(255,255,255,.17);
+}
+body.hud-edit-mode #leftMoveZone,
+body.hud-edit-mode #lookZone { pointer-events: none !important; }
+body.hud-edit-mode #touch .actions button[data-hud-id] {
+  display: grid !important;
+  outline: 1px dashed rgba(255,255,255,.88);
+  outline-offset: 2px;
+  cursor: move;
+}
+body.hud-edit-mode #touch .actions button[data-hud-id].hud-selected {
+  outline: 2px solid #7dd3fc;
+  box-shadow: 0 0 0 5px rgba(56,189,248,.22), 0 0 18px rgba(56,189,248,.55);
+  z-index: 90;
+}
+body.hud-edit-mode #interactBtn { display: grid !important; }
+body.hud-edit-mode #hud { pointer-events: none; }
+#hudEditorOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: none;
+  pointer-events: none;
+  touch-action: none;
+}
+#hudEditorOverlay.show { display: block; }
+#hudEditorPanel {
+  position: absolute;
+  left: 50%;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(330px, 92vw);
+  max-height: min(47vh, 360px);
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,.28);
+  border-radius: 13px;
+  color: #f8fafc;
+  background: rgba(9,17,25,.88);
+  box-shadow: 0 6px 24px rgba(0,0,0,.45);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  pointer-events: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+.hudEditorHeader, .hudEditorFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.hudEditorHeader strong { font-size: 11px; letter-spacing: .9px; }
+.hudEditorHeader button, .hudEditorFooter button {
+  border: 1px solid rgba(255,255,255,.26);
+  border-radius: 8px;
+  background: rgba(255,255,255,.10);
+  color: #fff;
+  padding: 6px 10px;
+  min-height: 30px;
+  font-size: 10px;
+  font-weight: 800;
+}
+#hudEditorPanel p {
+  margin: 6px 0 9px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: #cbd5e1;
+}
+.hudEditorLabel {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 7px;
+  color: #e2e8f0;
+  font-size: 10px;
+}
+.hudEditorLabel input[type="range"] { grid-column: 1 / -1; width: 100%; margin: 0; }
+.hudEditorLabel select {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid #ffffff2b;
+  border-radius: 7px;
+  background: #101923;
+  color: #fff;
+  font-size: 10px;
+}
+.hudEditorFooter { margin-top: 9px; }
+#hudResetBtn { background: rgba(255,255,255,.06); }
+#hudSaveBtn { background: rgba(22,101,52,.72); border-color: rgba(134,239,172,.6); }
+.settingsActionBtn {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(125,211,252,.48);
+  border-radius: 10px;
+  color: #f0f9ff;
+  background: rgba(14,116,144,.25);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: .3px;
+}
+@media (max-width: 640px) {
+  #hudEditorPanel { width: min(310px, 94vw); max-height: 42vh; padding: 8px 10px; }
+  .hudEditorLabel { margin-top: 5px; }
+}
+
