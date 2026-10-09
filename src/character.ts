@@ -4,6 +4,7 @@ import type { CharacterModelId, EmoteKind, Gender } from './types';
 import { clamp, lerp } from './terrain';
 
 export type CharacterOutfitKind = 'explorer' | 'ranger' | 'scout' | 'arctic' | 'lagos';
+export type CharacterActionKind = 'attack' | 'cast' | 'hit' | 'death';
 
 export const OUTFIT_PALETTES: Record<
   CharacterOutfitKind,
@@ -140,6 +141,7 @@ export class PlayerCharacter {
   private modelRequestVersion = 0;
   private currentModelId: CharacterModelId = 'quaternius-adventurer';
   private modelAnimation = '';
+  private activeActionKind: CharacterActionKind | null = null;
   private locomotionState: 'idle' | 'walk' | 'run' | 'backward' | 'strafe-left' | 'strafe-right' | 'airborne' | 'swim' | 'jump' | 'fall' | 'crouch' | 'gather' | 'climb' | 'turn' | 'emote' = 'idle';
   private wasAirborne = false;
   private landingTime = 0;
@@ -382,6 +384,7 @@ export class PlayerCharacter {
     this.modelMixer = null;
     this.modelActions.clear();
     this.activeModelAction = null;
+    this.activeActionKind = null;
     this.modelBaseScale = 1;
     this.modelReady = false;
     this.modelLoading = false;
@@ -507,6 +510,13 @@ export class PlayerCharacter {
         aliasFromClip('gather', [/gather/, /harvest/, /chop/, /mine/, /interact/, /working/]);
         aliasFromClip('climb', [/climb/]);
         aliasFromClip('turn', [/turn left/, /turn right/, /turn in place/]);
+        aliasFromClip('attack', [/sword[_ -]?slash/, /punch[_ -]?(?:left|right)/, /kick[_ -]?(?:left|right)/, /attack/]);
+        aliasFromClip('hit', [/hit[_ -]?recieve/, /hit[_ -]?receive/, /hit reaction/, /damage/]);
+        aliasFromClip('death', [/death/, /die/]);
+        // No bundled asset currently has a spell-specific clip. Interact is a
+        // deliberate, documented fallback until a compatible casting library
+        // is piloted; callers can still pair this action with a procedural VFX.
+        aliasFromClip('cast', [/cast/, /spell/, /magic/, /channel/, /interact/]);
 
         // The user-supplied Mixamo file contains one clip named "mixamo.com";
         // the source filename identifies it as a walking cycle.
@@ -689,6 +699,45 @@ export class PlayerCharacter {
     return null;
   }
 
+  /** Return whether this loaded model has a usable action or documented fallback. */
+  hasAction(kind: CharacterActionKind): boolean {
+    return Boolean(this.findModelAction(kind));
+  }
+
+  /**
+   * Play one non-looping action and hold locomotion until it finishes.
+   * This is intentionally an animation-only API: hitboxes, damage and cooldowns
+   * remain the responsibility of the future combat layer.
+   */
+  playAction(kind: CharacterActionKind, fade = 0.08): boolean {
+    if (!this.modelReady || !this.modelMixer) return false;
+    const next = this.findModelAction(kind);
+    if (!next) return false;
+
+    next.reset();
+    next.enabled = true;
+    next.paused = false;
+    next.setEffectiveWeight(1);
+    next.setEffectiveTimeScale(kind === 'death' ? 0.92 : 1);
+    next.setLoop(THREE.LoopOnce, 1);
+    next.clampWhenFinished = true;
+    next.play();
+    if (this.activeModelAction && this.activeModelAction !== next) {
+      this.activeModelAction.crossFadeTo(next, fade, false);
+    }
+    this.activeModelAction = next;
+    this.activeActionKind = kind;
+    this.modelAnimation = kind;
+    return true;
+  }
+
+  private cancelAction() {
+    if (!this.activeActionKind) return;
+    this.activeModelAction?.stop();
+    this.activeModelAction = null;
+    this.activeActionKind = null;
+  }
+
   private playModelAnimation(name: 'idle' | 'walk' | 'run' | 'backward' | 'strafe-left' | 'strafe-right' | 'jump' | 'fall' | 'swim' | 'crouch' | 'gather' | 'climb' | 'turn' | 'emote', fade = 0.14) {
     if (!this.modelReady || !this.modelMixer) return;
 
@@ -781,6 +830,16 @@ export class PlayerCharacter {
     movementIntent: 'forward' | 'backward' | 'strafe-left' | 'strafe-right' = 'forward'
   ) {
     if (!this.modelReady || !this.modelRoot) return;
+
+    if (this.activeActionKind) {
+      if (swimming || !onGround) {
+        this.cancelAction();
+      } else {
+        this.modelRoot.rotation.x = lerp(this.modelRoot.rotation.x, 0, Math.min(1, dt * 8));
+        this.modelRoot.rotation.z = lerp(this.modelRoot.rotation.z, 0, Math.min(1, dt * 8));
+        return;
+      }
+    }
 
     if (swimming) {
       this.playModelAnimation('swim', 0.22);
@@ -907,6 +966,12 @@ export class PlayerCharacter {
 
     this.updateProductionAnimation(moving, sprinting, swimming, turnRate, dt, onGround, speed, velocityY, movementIntent);
     this.modelMixer?.update(Math.min(dt, 0.05));
+
+    if (this.activeActionKind && this.activeModelAction && !this.activeModelAction.isRunning()) {
+      this.activeModelAction.stop();
+      this.activeModelAction = null;
+      this.activeActionKind = null;
+    }
 
     if (swimming && !this.findModelAction('swim') && !this.findModelAction('swimming')) {
       this.applyProductionSwimPose(t, dt);
