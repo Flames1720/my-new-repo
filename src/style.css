@@ -755,6 +755,16 @@ select {
   background: #1b2836;
 }
 
+#attackBtn {
+  border-color: #fbbf2466;
+  background: #4a2b16cc;
+}
+
+#castBtn {
+  border-color: #fb6b3b88;
+  background: #5b241dcc;
+}
+
 #diveBtn {
   display: none;
 }

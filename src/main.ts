@@ -34,6 +34,7 @@ import {
   lerp,
 } from './terrain';
 import { isCharacterModelId, PLAYER_CHARACTER_MODELS, PlayerCharacter } from './character';
+import { createMagicBurst, disposeMagicEffect, MagicProjectileEffect } from './magic-effects';
 import { WeatherSystem } from './weather';
 import { buildHome, buildVillage, buildBridge, HOME_UPGRADE_COSTS } from './settlement';
 import { WildlifeSystem, isSharedAnimalAsset, speciesColor, SPECIES_NAME, SPECIES_ICON } from './fauna';
@@ -673,6 +674,82 @@ if (settings.current.characterModel !== initialCharacterModel) {
 }
 const player = new PlayerCharacter(LOW_POWER_MODE, initialCharacterModel);
 actors.add(player.root);
+
+type ImpactEffect = { object: THREE.Group; age: number; lifetime: number };
+const fireProjectiles: MagicProjectileEffect[] = [];
+const impactEffects: ImpactEffect[] = [];
+
+function setEffectOpacity(root: THREE.Object3D, opacity: number) {
+  root.traverse(object => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      material.transparent = true;
+      material.opacity = opacity;
+    }
+  });
+}
+
+function spawnFireProjectile() {
+  const origin = player.root.position.clone();
+  const direction = new THREE.Vector3(Math.sin(player.root.rotation.y), 0, Math.cos(player.root.rotation.y));
+  origin.y += player.swimming ? 0.35 : 1.15;
+  origin.addScaledVector(direction, 0.65);
+  const projectile = new MagicProjectileEffect('fire', origin, direction, 9, 1.15);
+  fireProjectiles.push(projectile);
+  scene.add(projectile.object);
+}
+
+function spawnFireImpact(position: THREE.Vector3) {
+  const object = createMagicBurst('fire', 0.42);
+  object.position.copy(position);
+  impactEffects.push({ object, age: 0, lifetime: 0.42 });
+  scene.add(object);
+}
+
+function updateMagicEffects(dt: number) {
+  for (let i = fireProjectiles.length - 1; i >= 0; i--) {
+    const projectile = fireProjectiles[i];
+    const previous = projectile.object.position.clone();
+    const alive = projectile.update(dt);
+    const p = projectile.object.position;
+    const terrainImpact = p.y <= terrainHeightAt(p.x, p.z) + 0.12;
+    if (!alive || terrainImpact) {
+      if (terrainImpact) spawnFireImpact(p);
+      scene.remove(projectile.object);
+      projectile.dispose();
+      fireProjectiles.splice(i, 1);
+    } else if (waterAt(p.x, p.z) && p.y <= waterSurfaceAt(p.x, p.z) + 0.1) {
+      spawnFireImpact(previous);
+      scene.remove(projectile.object);
+      projectile.dispose();
+      fireProjectiles.splice(i, 1);
+    }
+  }
+
+  for (let i = impactEffects.length - 1; i >= 0; i--) {
+    const effect = impactEffects[i];
+    effect.age += dt;
+    const progress = clamp(effect.age / effect.lifetime, 0, 1);
+    effect.object.scale.setScalar(0.55 + progress * 1.65);
+    setEffectOpacity(effect.object, 0.9 * (1 - progress));
+    if (progress >= 1) {
+      scene.remove(effect.object);
+      disposeMagicEffect(effect.object);
+      impactEffects.splice(i, 1);
+    }
+  }
+}
+
+function triggerSwordAttack() {
+  if (player.playAction('attack')) say('Sword slash · animation only');
+}
+
+function triggerFireCast() {
+  if (!player.playAction('cast')) return;
+  spawnFireProjectile();
+  say('Fire bolt · visual prototype only');
+}
 
 let fauna: WildlifeSystem | null = null;
 
@@ -1316,6 +1393,8 @@ addEventListener('keydown', e => {
   if (key === 'f') mode = 'fpp';
   if (key === 'c') mode = 'tpp';
   if (!e.repeat && key === 'e') interact();
+  if (!e.repeat && key === 'q') triggerSwordAttack();
+  if (!e.repeat && key === 'r') triggerFireCast();
   if (!e.repeat && key === 'b') toggleEmoteBar();
   if (!e.repeat && key === 'p') togglePhotoMode();
 });
@@ -1537,6 +1616,8 @@ function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void) {
 
 // Touch buttons
 bindAction(document.querySelector('#modeBtn') as HTMLButtonElement, () => (mode = mode === 'tpp' ? 'fpp' : 'tpp'));
+bindAction(document.querySelector('#attackBtn') as HTMLButtonElement, triggerSwordAttack);
+bindAction(document.querySelector('#castBtn') as HTMLButtonElement, triggerFireCast);
 bindHoldAction(document.querySelector('#jumpBtn') as HTMLButtonElement, ' ', jump);
 bindHoldAction(document.querySelector('#diveBtn') as HTMLButtonElement, 'control');
 bindAction(document.querySelector('#runBtn') as HTMLButtonElement, () => (sprintToggle = !sprintToggle));
@@ -2519,6 +2600,7 @@ function update(dt: number) {
   }
   if (terrainShader) terrainShader.uniforms.uTime.value += dt;
   updateSplash(dt);
+  updateMagicEffects(dt);
 
   // High-mountain cloud deck altitude & gentle atmospheric drift
   cloudDeckMesh.position.y = weatherEffects.cloudBaseAltitude;
