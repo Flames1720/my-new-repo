@@ -11,6 +11,11 @@ export interface SafeZoneDefinition {
   radius: number;
 }
 
+export interface SurvivalRadarState {
+  safeZones: Array<{ id: string; label: string; x: number; z: number; radius: number }>;
+  zombies: Array<{ x: number; z: number; type: 'walker' | 'runner' | 'brute' }>;
+}
+
 export interface SurvivalStatus {
   enabled: boolean;
   health: number;
@@ -761,11 +766,9 @@ export class ZombieSurvivalSystem {
       const weaponBase = base.clone();
       weaponBase.y += Math.sin(this.elapsed * 7) * (this.aimActive ? 0.001 : 0.003);
       weaponBase.z += Math.cos(this.elapsed * 8) * (this.aimActive ? 0.002 : 0.005);
-      const recoil = WEAPONS[this.weapon].recoilKick;
       weaponBase.z += Math.max(0, activeRig.root.position.z - base.z) * Math.exp(-dt * WEAPONS[this.weapon].recoilRecovery);
       activeRig.root.position.lerp(weaponBase, Math.min(1, dt * 12));
       activeRig.root.rotation.x += ((this.aimActive ? activeRig.adsRot.x : activeRig.baseRot.x) - activeRig.root.rotation.x) * Math.min(1, dt * 8);
-      void recoil;
     }
     this.updateZones();
 
@@ -864,6 +867,15 @@ export class ZombieSurvivalSystem {
     this.emitStatus();
   }
 
+  getRadarState(): SurvivalRadarState {
+    return {
+      safeZones: this.zones.map(({ id, label, x, z, radius }) => ({ id, label, x, z, radius })),
+      zombies: this.zombies
+        .filter(actor => !actor.dead)
+        .map(actor => ({ x: actor.position.x, z: actor.position.z, type: actor.type })),
+    };
+  }
+
   private status(): SurvivalStatus {
     const p = this.options.getPlayerPosition();
     const nearest = this.nearestZone(p.x, p.z);
@@ -874,7 +886,8 @@ export class ZombieSurvivalSystem {
       weapon: this.weapon, weaponLabel: WEAPONS[this.weapon].label,
       ammoInMag: ammo.mag, ammoReserve: ammo.reserve, kills: this.kills, wave: this.wave,
       livingZombies: living, inSafeZone: this.inSafeZone(p.x, p.z),
-      nearestZone: nearest?.label ?? 'SAFE ZONE', zoneDistance: nearest ? distToZone(p.x, p.z, nearest) : 0,
+      nearestZone: nearest?.label ?? 'SAFE ZONE',
+      zoneDistance: nearest ? Math.max(0, distToZone(p.x, p.z, nearest) - nearest.radius) : 0,
       reloading: this.reloadTimer > 0, dead: this.isDead,
     };
   }
