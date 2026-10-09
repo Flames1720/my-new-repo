@@ -1600,3 +1600,7 @@ body.hud-edit-mode #hud { pointer-events: none; }
 #hudEditorPanel.collapsed { width: min(220px, 70vw); max-height: none; padding: 8px 10px; }
 .hudEditorHeaderActions { margin-left: auto; }
 .hudEditorHeaderActions button { min-width: 30px; }
+
+/* Slide is a survival-only action; normal exploration keeps its existing controls. */
+#slideBtn { display: none !important; }
+body.survival-mode #slideBtn { display: grid !important; }
