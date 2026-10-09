@@ -254,6 +254,8 @@ export class ZombieSurvivalSystem {
     if (this.enabled === enabled) return;
     this.enabled = enabled;
     this.zones.forEach(zone => (zone.root.visible = enabled));
+    this.zombies.forEach(actor => (actor.root.visible = enabled));
+    this.loot.forEach(drop => (drop.root.visible = enabled));
     this.weaponRoot.visible = enabled;
     this.muzzleLight.visible = enabled;
     if (!enabled) {
@@ -309,6 +311,8 @@ export class ZombieSurvivalSystem {
     this.options.onStatus(this.status());
     this.intersections.length = 0;
 
+    this.camera.updateMatrixWorld(true);
+    this.scene.updateMatrixWorld(true);
     const blockers = this.options.getSightBlockers();
     const targets = this.zombies.filter(z => !z.dead).map(z => z.root);
     const rayObjects = [...blockers, ...targets];
@@ -835,7 +839,6 @@ export class ZombieSurvivalSystem {
     this.camera.remove(this.weaponRoot);
     this.camera.remove(this.muzzleLight);
     disposeGroup(this.weaponRoot);
-    this.muzzleLight.dispose();
   }
 }
 
