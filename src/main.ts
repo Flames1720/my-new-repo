@@ -1463,6 +1463,7 @@ function isInteractiveTarget(target: EventTarget | null) {
 addEventListener('keydown', e => {
   const key = e.key.toLowerCase();
   if (isInteractiveTarget(e.target)) return;
+  if (survival?.enabled) survival.activateAudio();
   keyboardKeys.add(key);
   syncKeyState(key);
   if (key === ' ' || key.startsWith('arrow')) e.preventDefault();
@@ -2708,6 +2709,7 @@ function setSurvivalEnabled(enabled: boolean) {
   if (enabled) {
     if (!survival.enabled) modeBeforeSurvival = mode;
     survival.setEnabled(true);
+    survival.setAmbientEnabled(true);
     mode = 'fpp';
     document.body.classList.add('survival-mode');
     if (survivalBtn) {
@@ -2801,6 +2803,12 @@ survival = new ZombieSurvivalSystem({
 });
 
 setSurvivalEnabled(true);
+
+// Pointer/touch interaction is the browser-safe point to unlock procedural Web Audio.
+// Capture phase makes this work for the joystick and HUD buttons as well as the canvas.
+window.addEventListener('pointerdown', () => {
+  if (survival?.enabled) survival.activateAudio();
+}, { capture: true, passive: true });
 
 function moveWithCollisions(dx: number, dz: number) {
   const p = player.root.position;
