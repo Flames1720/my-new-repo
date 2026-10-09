@@ -63,6 +63,28 @@
       <div id="controls">WASD: Move · Shift: Sprint · Q: Sword · Z: Punch · X: Kick · R: Fire · C/F: TPP/FPP</div>
     </div>
 
+    <div id="survivalLobby" class="show" role="dialog" aria-modal="true" aria-labelledby="lobbyTitle">
+      <div class="survivalLobbyCard">
+        <div class="lobbyEyebrow">ISLAND OUTBREAK · SURVIVAL PROTOCOL</div>
+        <h1 id="lobbyTitle">SURVIVE THE OUTBREAK</h1>
+        <p class="lobbyDescription">One island. No rescue. Survive up to 100 escalating waves, hold the sanctuary, and move when its defenses collapse.</p>
+        <div class="lobbyLoadout">
+          <label for="lobbyWeaponSelect">STARTING WEAPON</label>
+          <select id="lobbyWeaponSelect">
+            <option value="pistol">Pistol · reliable sidearm</option>
+            <option value="shotgun">Shotgun · close-range power</option>
+            <option value="rifle">Rifle · sustained fire</option>
+          </select>
+          <p>Move with the left control. Drag the open right side to look. Hold ADS to aim; shoot, jump, reload and switch weapons on separate fingers.</p>
+        </div>
+        <div class="lobbyRunInfo">
+          <span>100 WAVES</span><span>SAFE ZONE RELOCATION</span><span>MINI-BOSSES · BOSSES</span>
+        </div>
+        <p id="lobbyLastRun" class="lobbyLastRun">No completed runs yet.</p>
+        <button id="startRunBtn" type="button">START RUN <span>→</span></button>
+      </div>
+    </div>
+
     <div id="survivalDeathOverlay" role="dialog" aria-modal="true" aria-labelledby="survivalDeathTitle">
       <div class="survivalDeathCard">
         <div class="survivalDeathEyebrow">SIGNAL LOST</div>
