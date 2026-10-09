@@ -1525,7 +1525,8 @@ function onLookMove(clientX: number, clientY: number) {
 
   // Slightly calmer touch look speed makes small thumb drags more controllable.
   const touchLookScale = IS_TOUCH_DEVICE ? 0.82 : 1;
-  targetYaw -= dx * 0.007 * sensX * touchLookScale;
+  // Dragging right should look right, matching familiar FPS touch controls.
+  targetYaw += dx * 0.007 * sensX * touchLookScale;
   targetPitch = clamp(targetPitch - dy * 0.0055 * sensY * invertY * touchLookScale, -1.2, 0.95);
 }
 
