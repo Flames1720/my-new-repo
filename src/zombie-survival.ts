@@ -156,6 +156,18 @@ function makeMesh(geometry: THREE.BufferGeometry, material: THREE.Material, name
   return mesh;
 }
 
+function setRigFlashOpacity(rig: WeaponRig, opacity: number): void {
+  rig.muzzleFlash.traverse(object => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      if (material instanceof THREE.MeshBasicMaterial && material.transparent) {
+        material.opacity = opacity;
+      }
+    }
+  });
+}
+
 function disposeGroup(root: THREE.Object3D): void {
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
@@ -190,6 +202,7 @@ export class ZombieSurvivalSystem {
   private readonly tracerLines: Array<{ line: THREE.Line; age: number }> = [];
   private readonly hitSparks: Array<{ mesh: THREE.Mesh; age: number }> = [];
   private readonly weaponRigs = new Map<SurvivalWeaponId, WeaponRig>();
+  private readonly slideBaseZ = new Map<SurvivalWeaponId, number>();
   private ammo: Record<SurvivalWeaponId, { mag: number; reserve: number }> = {
     pistol: { mag: 15, reserve: WEAPONS.pistol.reserveStart },
     shotgun: { mag: 8, reserve: WEAPONS.shotgun.reserveStart },
@@ -279,6 +292,8 @@ export class ZombieSurvivalSystem {
       const rig = createWeaponRig(id);
       rig.root.name = `survival-${id}-rig`;
       this.weaponRigs.set(id, rig);
+      if (rig.slideOrPump) this.slideBaseZ.set(id, rig.slideOrPump.position.z);
+      setRigFlashOpacity(rig, 0);
     }
   }
 
@@ -338,6 +353,7 @@ export class ZombieSurvivalSystem {
       rig.root.rotation.copy(rig.baseRot);
       rig.muzzleFlash.visible = false;
       rig.muzzleLight.intensity = 0;
+      setRigFlashOpacity(rig, 0);
     }
     this.reloadTimer = 0;
     this.fireCooldown = 0;
@@ -361,6 +377,7 @@ export class ZombieSurvivalSystem {
     const activeRig = this.weaponRigs.get(this.weapon);
     if (activeRig) {
       activeRig.muzzleFlash.visible = true;
+      setRigFlashOpacity(activeRig, 0.95);
       activeRig.muzzleLight.intensity = this.options.lowPowerMode ? 0.8 : 1.5;
     }
     this.kickWeapon();
@@ -756,6 +773,7 @@ export class ZombieSurvivalSystem {
       const active = this.enabled && id === this.weapon;
       rig.root.visible = active;
       rig.muzzleFlash.visible = active && this.muzzleTimer > 0;
+      setRigFlashOpacity(rig, active ? Math.min(0.95, 0.95 * (this.muzzleTimer / 0.065)) : 0);
       rig.muzzleLight.intensity = active && this.muzzleTimer > 0
         ? (this.options.lowPowerMode ? 0.8 : 1.5) * (this.muzzleTimer / 0.065)
         : 0;
@@ -769,6 +787,14 @@ export class ZombieSurvivalSystem {
       weaponBase.z += Math.max(0, activeRig.root.position.z - base.z) * Math.exp(-dt * WEAPONS[this.weapon].recoilRecovery);
       activeRig.root.position.lerp(weaponBase, Math.min(1, dt * 12));
       activeRig.root.rotation.x += ((this.aimActive ? activeRig.adsRot.x : activeRig.baseRot.x) - activeRig.root.rotation.x) * Math.min(1, dt * 8);
+      if (activeRig.slideOrPump) {
+        const baseZ = this.slideBaseZ.get(this.weapon) ?? activeRig.slideOrPump.position.z;
+        const reloadDuration = WEAPONS[this.weapon].reloadTime;
+        const reloadProgress = this.reloadTimer > 0 ? 1 - this.reloadTimer / reloadDuration : 1;
+        const travel = this.weapon === 'shotgun' ? 0.11 : 0.035;
+        const reloadOffset = this.reloadTimer > 0 ? Math.sin(reloadProgress * Math.PI) * travel : 0;
+        activeRig.slideOrPump.position.z = baseZ + reloadOffset;
+      }
     }
     this.updateZones();
 
