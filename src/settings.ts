@@ -3,9 +3,11 @@ import type { SettingsState } from './types';
 const SETTINGS_KEY = 'world-wildlife-settings-v1';
 
 export const defaultSettings: SettingsState = {
-  sensitivityX: 1.0,
-  sensitivityY: 1.0,
+  sensitivityX: 360,
+  sensitivityY: 150,
   invertY: false,
+  cameraAcceleration: 'fixed',
+  cameraAccelerationStrength: 0.65,
   graphics: 'high',
   weatherMode: 'dynamic',
   chunkRadius: 6,
@@ -29,6 +31,20 @@ class SettingsManager {
       if (raw) {
         const parsed = JSON.parse(raw);
         this.current = { ...defaultSettings, ...parsed };
+        // Migrate older multiplier-based camera settings into degree-based values.
+        if (typeof parsed.sensitivityX !== 'number' || parsed.sensitivityX <= 3) {
+          this.current.sensitivityX = defaultSettings.sensitivityX;
+        }
+        if (typeof parsed.sensitivityY !== 'number' || parsed.sensitivityY <= 3) {
+          this.current.sensitivityY = defaultSettings.sensitivityY;
+        }
+        if (!['fixed', 'distance', 'speed'].includes(this.current.cameraAcceleration)) {
+          this.current.cameraAcceleration = defaultSettings.cameraAcceleration;
+        }
+        if (!Number.isFinite(this.current.cameraAccelerationStrength)) {
+          this.current.cameraAccelerationStrength = defaultSettings.cameraAccelerationStrength;
+        }
+        this.current.cameraAccelerationStrength = Math.max(0, Math.min(2, this.current.cameraAccelerationStrength));
       }
     } catch {
       this.current = { ...defaultSettings };
