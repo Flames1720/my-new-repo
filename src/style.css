@@ -80,7 +80,7 @@ canvas {
   z-index: 300;
 }
 
-#settingsBtn, #fullscreenBtn, #ecoBtn, #photoBtn, #surveyBtn {
+#settingsBtn, #fullscreenBtn, #ecoBtn, #photoBtn, #surveyBtn, #survivalBtn {
   width: 48px;
   height: 48px;
   border: 1.5px solid #ffffff3a;
@@ -100,7 +100,7 @@ canvas {
   user-select: none;
   -webkit-user-select: none;
 }
-#settingsBtn:hover, #fullscreenBtn:hover, #ecoBtn:hover, #photoBtn:hover, #surveyBtn:hover {
+#settingsBtn:hover, #fullscreenBtn:hover, #ecoBtn:hover, #photoBtn:hover, #surveyBtn:hover, #survivalBtn:hover {
   border-color: #38bdf8;
   background: #1a2938;
 }
@@ -108,7 +108,7 @@ canvas {
   border-color: #f59e0b;
   box-shadow: 0 0 16px #f59e0b55;
 }
-#settingsBtn:active, #fullscreenBtn:active, #ecoBtn:active, #photoBtn:active, #surveyBtn:active {
+#settingsBtn:active, #fullscreenBtn:active, #ecoBtn:active, #photoBtn:active, #surveyBtn:active, #survivalBtn:active {
   transform: scale(0.90);
   background: #23384c;
 }
