@@ -1789,6 +1789,7 @@ const survivalWave = document.querySelector('#survivalWave') as HTMLSpanElement 
 const survivalZombies = document.querySelector('#survivalZombies') as HTMLSpanElement | null;
 const survivalDeathOverlay = document.querySelector('#survivalDeathOverlay') as HTMLDivElement | null;
 const survivalRestartBtn = document.querySelector('#survivalRestartBtn') as HTMLButtonElement | null;
+const survivalCycleWeapon = document.querySelector('#survivalCycleWeapon') as HTMLButtonElement | null;
 const surveyBtn = document.querySelector('#surveyBtn') as HTMLButtonElement | null;
 const surveyOverlay = document.querySelector('#surveyOverlay') as HTMLDivElement | null;
 const surveyCloseBtn = document.querySelector('#surveyCloseBtn') as HTMLButtonElement | null;
@@ -1800,6 +1801,11 @@ const surveyStatus = document.querySelector('#surveyStatus') as HTMLSpanElement 
 const minimapHomeDist = document.querySelector('#minimapHomeDist') as HTMLSpanElement;
 
 if (survivalBtn) bindAction(survivalBtn, () => setSurvivalEnabled(!survival.enabled));
+if (survivalCycleWeapon) bindAction(survivalCycleWeapon, () => {
+  const order: Array<'pistol' | 'shotgun' | 'rifle'> = ['pistol', 'shotgun', 'rifle'];
+  const index = order.indexOf(survival.weapon);
+  survival.switchWeapon(order[(index + 1) % order.length]);
+});
 if (survivalRestartBtn) bindAction(survivalRestartBtn, () => {
   survival.restart();
   survivalDeathOverlay?.classList.remove('show');
