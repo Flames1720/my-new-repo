@@ -1692,13 +1692,20 @@ lookZone.addEventListener('lostpointercapture', endLook);
 
 function bindAction(el: HTMLElement, fn: () => void) {
   const stopPointerEvent = (e: Event) => e.stopPropagation();
-  el.addEventListener('pointerdown', stopPointerEvent);
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Activate on touch-down so a four-finger player can trigger reload, weapon swap
+    // or a skill while another finger keeps aiming, moving or firing.
+    if (!document.body.classList.contains('hud-edit-mode')) fn();
+  });
   el.addEventListener('pointerup', stopPointerEvent);
   el.addEventListener('pointercancel', stopPointerEvent);
   el.addEventListener('click', e => {
     e.preventDefault();
     e.stopPropagation();
-    fn();
+    // Keep keyboard/switch-device activation; pointer taps already fired on pointerdown.
+    if ((e as MouseEvent).detail === 0 && !document.body.classList.contains('hud-edit-mode')) fn();
   });
 }
 
