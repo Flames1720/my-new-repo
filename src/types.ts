@@ -49,8 +49,8 @@ export interface PlayerProfile {
 }
 
 export interface SettingsState {
-  sensitivityX: number; // Degrees turned across a full-screen-width swipe; default 360
-  sensitivityY: number; // Degrees looked across a full-screen-height swipe; default 150
+  sensitivityX: number; // Degrees turned across a full look-zone-width swipe; default 180
+  sensitivityY: number; // Degrees looked across a full look-zone-height swipe; default 100
   invertY: boolean;
   cameraAcceleration: 'fixed' | 'distance' | 'speed';
   cameraAccelerationStrength: number; // 0 to 2.0
