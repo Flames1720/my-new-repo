@@ -16,6 +16,11 @@ import {
 import type { AnimalMarker, BreadcrumbPoint, Waypoint } from './types';
 import { speciesColor } from './fauna';
 
+export interface SurvivalRadarData {
+  safeZones: Array<{ id: string; label: string; x: number; z: number; radius: number }>;
+  zombies: Array<{ x: number; z: number; type: 'walker' | 'runner' | 'brute' }>;
+}
+
 function getMapTileColor(wx: number, wz: number): string {
   if (roadAt(wx, wz)) return '#525861';
 
@@ -144,7 +149,7 @@ export class MinimapSystem {
   }
 
   // --- RENDER LIVE CODM-STYLE RADAR MINI-MAP ---
-  renderMini(playerPos: THREE.Vector3, camYaw: number, animals: AnimalMarker[]): void {
+  renderMini(playerPos: THREE.Vector3, camYaw: number, animals: AnimalMarker[], survival?: SurvivalRadarData): void {
     const c = this.miniCanvas;
     if (!c || c.clientWidth < 12 || c.clientHeight < 12) return;
 
@@ -215,6 +220,26 @@ export class MinimapSystem {
       }
     }
 
+    // Safe-zone rings are overlaid on the existing generated world map, not on a replacement map.
+    if (survival) {
+      for (const zone of survival.safeZones) {
+        const point = toRadar(zone.x, zone.z);
+        const zonePx = zone.radius * scale;
+        if (Math.hypot(point.x - cx, point.y - cy) > radius + zonePx) continue;
+        ctx.fillStyle = 'rgba(52, 211, 153, 0.075)';
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, Math.max(1, zonePx), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(74, 222, 128, 0.95)';
+        ctx.lineWidth = 1.35;
+        ctx.setLineDash([3, 2]);
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, Math.max(1, zonePx), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
     // --- DRAW DISPLACEMENT TRAILS (BREADCRUMBS) ---
     if (this.trail.length > 1) {
       ctx.beginPath();
@@ -280,6 +305,22 @@ export class MinimapSystem {
       }
     }
 
+    // Nearby hostile contacts from the live survival simulation.
+    if (survival) {
+      for (const zombie of survival.zombies) {
+        if (Math.hypot(zombie.x - playerPos.x, zombie.z - playerPos.z) > viewRange) continue;
+        const point = toRadar(zombie.x, zombie.z);
+        if (Math.hypot(point.x - cx, point.y - cy) > radius - 6) continue;
+        ctx.fillStyle = zombie.type === 'brute' ? '#f973b7' : zombie.type === 'runner' ? '#fb923c' : '#ff4d57';
+        ctx.strokeStyle = '#260b0d';
+        ctx.lineWidth = 1.25;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, zombie.type === 'brute' ? 4 : 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
     // Radar Concentric Distance Rings
     ctx.strokeStyle = '#ffffff20';
     ctx.lineWidth = 1;
@@ -325,7 +366,7 @@ export class MinimapSystem {
   }
 
   // --- RENDER FULL WORLD MAP ---
-  renderFull(playerPos: THREE.Vector3, camYaw: number, animals: AnimalMarker[]): void {
+  renderFull(playerPos: THREE.Vector3, camYaw: number, animals: AnimalMarker[], survival?: SurvivalRadarData): void {
     if (!this.isFullOpen) return;
 
     const c = this.fullCanvas;
@@ -358,6 +399,34 @@ export class MinimapSystem {
 
         ctx.fillStyle = getMapTileColor(wx, wz);
         ctx.fillRect(sx, sy, Math.ceil(cell) + 0.5, Math.ceil(cell) + 0.5);
+      }
+    }
+
+    // Safe-zone coverage and hostile locations share the exact same world coordinates as the simulation.
+    if (survival) {
+      for (const zone of survival.safeZones) {
+        const zx = mapOriginX + (zone.x / SIZE + WORLD_RADIUS + 0.5) * cell;
+        const zy = mapOriginY + (zone.z / SIZE + WORLD_RADIUS + 0.5) * cell;
+        const radiusPx = Math.max(2.5, zone.radius / SIZE * cell);
+        ctx.fillStyle = 'rgba(52, 211, 153, 0.10)';
+        ctx.beginPath();
+        ctx.arc(zx, zy, radiusPx, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#4ade80';
+        ctx.lineWidth = Math.max(1, cell * 0.08);
+        ctx.setLineDash([Math.max(2, cell * 0.2), Math.max(1.5, cell * 0.12)]);
+        ctx.beginPath();
+        ctx.arc(zx, zy, radiusPx, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      for (const zombie of survival.zombies) {
+        const zx = mapOriginX + (zombie.x / SIZE + WORLD_RADIUS + 0.5) * cell;
+        const zy = mapOriginY + (zombie.z / SIZE + WORLD_RADIUS + 0.5) * cell;
+        ctx.fillStyle = zombie.type === 'brute' ? '#f973b7' : zombie.type === 'runner' ? '#fb923c' : '#ff4d57';
+        ctx.beginPath();
+        ctx.arc(zx, zy, Math.max(2.4, cell * 0.23), 0, Math.PI * 2);
+        ctx.fill();
       }
     }
 
