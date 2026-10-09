@@ -1479,6 +1479,7 @@ addEventListener('keydown', e => {
   if (key === ' ' || key.startsWith('arrow')) e.preventDefault();
   if (key === 'f') mode = 'fpp';
   if (key === 'c' && !survival?.enabled) mode = 'tpp';
+  if (!e.repeat && key === 'c' && survival?.enabled) triggerSlide();
   if (!e.repeat && key === 'e') interact();
   if (!e.repeat && key === 'q' && !survival?.enabled) triggerSwordAttack();
   if (!e.repeat && key === 'z') setSurvivalEnabled(!survival.enabled);
@@ -1758,21 +1759,22 @@ const HUD_DEFAULTS: Record<string, HudLayoutItem> = {
   shoot: { x: 10, y: 23, size: 66, opacity: 0.68 },
   ads: { x: 88, y: 24, size: 48, opacity: 0.62 },
   jump: { x: 92, y: 72, size: 46, opacity: 0.56 },
+  slide: { x: 72, y: 72, size: 46, opacity: 0.58 },
   reload: { x: 80, y: 81, size: 44, opacity: 0.56 },
   use: { x: 69, y: 55, size: 46, opacity: 0.62 },
 };
 const HUD_PRESETS: Record<'four' | 'three' | 'thumbs', Record<string, { x: number; y: number }>> = {
   four: {
     shoot: { x: 10, y: 23 }, ads: { x: 88, y: 24 }, jump: { x: 92, y: 72 },
-    reload: { x: 80, y: 81 }, use: { x: 69, y: 55 },
+    slide: { x: 72, y: 72 }, reload: { x: 80, y: 81 }, use: { x: 69, y: 55 },
   },
   three: {
     shoot: { x: 10, y: 25 }, ads: { x: 87, y: 43 }, jump: { x: 91, y: 69 },
-    reload: { x: 79, y: 82 }, use: { x: 69, y: 56 },
+    slide: { x: 76, y: 70 }, reload: { x: 79, y: 82 }, use: { x: 69, y: 56 },
   },
   thumbs: {
     shoot: { x: 87, y: 78 }, ads: { x: 85, y: 56 }, jump: { x: 94, y: 64 },
-    reload: { x: 75, y: 83 }, use: { x: 67, y: 55 },
+    slide: { x: 76, y: 65 }, reload: { x: 75, y: 83 }, use: { x: 67, y: 55 },
   },
 };
 const hudEditorOverlay = document.querySelector('#hudEditorOverlay') as HTMLDivElement;
@@ -1983,6 +1985,7 @@ bindAction(adsButton, () => {
 });
 bindAction(document.querySelector('#reloadBtn') as HTMLButtonElement, () => survival?.enabled && survival.reload());
 bindHoldAction(document.querySelector('#jumpBtn') as HTMLButtonElement, ' ', jump);
+bindAction(document.querySelector('#slideBtn') as HTMLButtonElement, triggerSlide);
 bindHoldAction(document.querySelector('#diveBtn') as HTMLButtonElement, 'control');
 bindAction(document.querySelector('#runBtn') as HTMLButtonElement, () => (sprintToggle = !sprintToggle));
 bindAction(document.querySelector('#interactBtn') as HTMLButtonElement, interact);
@@ -2702,6 +2705,9 @@ window.addEventListener('keydown', e => {
 });
 
 let promptTimer = 0, sprintToggle = false, mapAccumulator = 0, uiAccumulator = 0;
+const SLIDE_DURATION = 0.68;
+let slideTimer = 0, slideCooldown = 0;
+let slideDirection = { x: 0, z: 1 };
 
 function say(t: string) {
   prompt.textContent = t;
@@ -2722,10 +2728,49 @@ function jump() {
     return;
   }
   if (player.onGround) {
+    // Jumping out of a slide preserves its momentum, as in familiar mobile shooters.
+    if (slideTimer > 0) {
+      slideTimer = 0;
+      player.velocity.x *= 1.12;
+      player.velocity.z *= 1.12;
+    }
     player.velocity.y = JUMP_FORCE;
     player.onGround = false;
     player.playJump();
   }
+}
+
+function triggerSlide() {
+  if (!survival?.enabled || survival.isDead || player.swimming || !player.onGround || slideCooldown > 0) return;
+  const stickSprint = joyActive && Math.hypot(joy.x, joy.y) >= 0.78;
+  const sprinting = keys.has('shift') || sprintToggle || stickSprint;
+  const currentSpeed = Math.hypot(player.velocity.x, player.velocity.z);
+  if (!sprinting && currentSpeed < 5.2) {
+    say('SPRINT TO SLIDE');
+    return;
+  }
+
+  const iv = input();
+  let dx = -Math.cos(camYaw) * iv.x - Math.sin(camYaw) * iv.y;
+  let dz = Math.sin(camYaw) * iv.x - Math.cos(camYaw) * iv.y;
+  let length = Math.hypot(dx, dz);
+  if (length < 0.08) {
+    dx = player.velocity.x;
+    dz = player.velocity.z;
+    length = Math.hypot(dx, dz);
+  }
+  if (length < 0.08) {
+    dx = Math.sin(player.root.rotation.y);
+    dz = Math.cos(player.root.rotation.y);
+    length = 1;
+  }
+  slideDirection = { x: dx / length, z: dz / length };
+  const launchSpeed = Math.max(6.8, currentSpeed);
+  player.velocity.x = slideDirection.x * launchSpeed;
+  player.velocity.z = slideDirection.z * launchSpeed;
+  slideTimer = SLIDE_DURATION;
+  slideCooldown = 1.12;
+  say('SLIDE');
 }
 
 function addItem(item: string, qty: number) {
@@ -3198,6 +3243,8 @@ function update(dt: number) {
   }
   aimTimer = Math.max(0, aimTimer - dt);
   combatAimTimer = Math.max(0, combatAimTimer - dt);
+  slideTimer = Math.max(0, slideTimer - dt);
+  slideCooldown = Math.max(0, slideCooldown - dt);
 
   // Time cycle: 24h cycle
   worldTime = (worldTime + dt * 0.04) % 24;
@@ -3262,7 +3309,13 @@ function update(dt: number) {
     slopeSpeedMultiplier *= 0.72; // Shallow water wading resistance
   }
 
-  if (hasInput) {
+  if (slideTimer > 0 && !player.swimming) {
+    const progress = clamp(slideTimer / SLIDE_DURATION, 0, 1);
+    const slideSpeed = 6.8 * (0.32 + progress * 0.68);
+    const response = 1 - Math.exp(-dt * 3.4);
+    player.velocity.x = lerp(player.velocity.x, slideDirection.x * slideSpeed, response);
+    player.velocity.z = lerp(player.velocity.z, slideDirection.z * slideSpeed, response);
+  } else if (hasInput) {
     const desired = Math.atan2(dir.x, dir.z);
     const speed = player.swimming
       ? (sprinting ? 2.5 : 1.6)
@@ -3485,7 +3538,7 @@ function update(dt: number) {
     camera.lookAt(lookTarget);
   } else {
     const eye = cameraEye.copy(p);
-    eye.y += player.swimming ? 0.22 : 1.55;
+    eye.y += slideTimer > 0 ? 0.93 : player.swimming ? 0.22 : 1.55;
     camera.position.lerp(eye, Math.min(1, dt * 18));
     const look = cameraLook.copy(eye);
     look.x += Math.sin(camYaw) * Math.cos(camPitch) * 8;
