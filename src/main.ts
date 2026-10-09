@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import './style.css';
+import './ui-modern.css';
 import type { Mode, EmoteKind, HomeLevel, ResourceKind, ResourceDef, PlayerProfile, Species, CharacterModelId } from './types';
 import {
   SEED,
