@@ -997,6 +997,9 @@ function shoreWeight(grid: HydrologyGrid, gx: number, gz: number): number {
 // Pure hydrology lookup. Must never call terrainHeightAt(): the carve depends
 // on it, and waterDepthAt depends on the carved terrain.
 function waterColumnAt(x: number, z: number): WaterColumn | null {
+  // Guaranteed outer ocean ring: this keeps the finite play space an island even
+  // where the procedural mountain field would otherwise rise above sea level.
+  if (Math.hypot(x, z) >= 248) return { surface: WATER_LEVEL, depth: WATER_LEVEL - 0.2, shore: 1, ocean: true };
   if (nearHome(x, z) || nearVillage(x, z)) return null;
 
   const grid = hydrologyGrid();
@@ -1007,18 +1010,8 @@ function waterColumnAt(x: number, z: number): WaterColumn | null {
     return { surface: WATER_LEVEL, depth: 0, shore: 1, ocean: true };
   }
 
-  // Nearest-cell classification stays authoritative (no leakage across dry
-  // ridges); only scalar fields are interpolated inside the classified body.
-  if (grid.lakeMask[cell.i]) {
-    const surface = Math.max(WATER_LEVEL, bilinear(grid.filledElevation, gx, gz));
-    const depth = bilinearWeighted(grid.waterDepth, grid.waterPresence, gx, gz);
-    return {
-      surface,
-      depth: Math.min(Math.max(0, depth), Math.max(0, surface - 0.2)),
-      shore: shoreWeight(grid, gx, gz),
-      ocean: false,
-    };
-  }
+  // Large inland lakes are disabled in zombie survival; keep narrow rivers/streams.
+  if (grid.lakeMask[cell.i]) return null;
 
   if (grid.channelStrength[cell.i] > 0.02 && grid.waterPresence[cell.i] > 0.001) {
     const surface = bilinearWeighted(grid.waterSurface, grid.waterPresence, gx, gz);
@@ -1247,9 +1240,9 @@ export function geologicalBasinDepressionAt(x: number, z: number): number {
   // instead of ending in a vertical square-world wall.
   const radial = Math.hypot(x, z);
   const coastT = clamp((radial - 242) / 78, 0, 1);
-  // Deeper outer shelf creates a continuous ocean moat around the finite playable island.
-  // The interior stays untouched; shoreline ramps down gradually instead of ending in a wall.
-  const shelf = coastT * coastT * (3 - 2 * coastT) * 9.0;
+  // A gentle broad shelf starts the coastline; the survival island's final ocean band
+  // is lowered in terrainBaseHeightAt so high edge ridges cannot break the water ring.
+  const shelf = coastT * coastT * (3 - 2 * coastT) * 5.8;
 
   return depression + shelf;
 }
@@ -1280,6 +1273,11 @@ function terrainBaseHeightAt(x: number, z: number): number {
     ground = ground + (VILLAGE_BASE_HEIGHT - ground) * (t * t * (3 - 2 * t) * 0.7);
   }
 
+  // Lower the outer terrain band toward sea level so the ocean meets the land
+  // as a coastline, rather than appearing as an invisible boundary around cliffs.
+  const edgeT = clamp((Math.hypot(x, z) - 208) / 40, 0, 1);
+  const edgeBlend = edgeT * edgeT * (3 - 2 * edgeT);
+  ground = Math.max(0.2, ground - edgeBlend * 36);
   return Math.max(0.2, ground);
 }
 
