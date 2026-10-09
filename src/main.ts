@@ -657,29 +657,51 @@ function updateSky(dt: number, rainDim: number, lightningFlash: number) {
 }
 
 // --- SCATTERED HIGH CLOUDS ---
-// Separated overlapping puffs replace the opaque-looking world-sized sheet.
+// Keep the same scattered cloud silhouettes, but instance their shared geometry/material
+// into one draw call instead of submitting forty-plus transparent meshes every frame.
 const cloudDeckGroup = new THREE.Group();
 cloudDeckGroup.name = 'scattered-sky-clouds';
 const cloudDeckMat = new THREE.MeshBasicMaterial({
   color: 0xf4f8fc, transparent: true, opacity: 0.20, depthWrite: false, fog: false,
 });
 const cloudPuffGeo = new THREE.SphereGeometry(1, LOW_POWER_MODE ? 7 : 10, LOW_POWER_MODE ? 5 : 7);
+const cloudPuffInstances = new THREE.InstancedMesh(cloudPuffGeo, cloudDeckMat, 11 * 5);
+cloudPuffInstances.name = 'scattered-cloud-puff-instances';
+const cloudPuffTransform = new THREE.Object3D();
+let cloudPuffIndex = 0;
 for (let i = 0; i < 11; i++) {
-  const cluster = new THREE.Group();
   const angle = i * 2.399963;
   const radius = 125 + ((i * 71) % 245);
-  cluster.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
-  cluster.rotation.y = angle * 0.7;
+  const clusterRotation = angle * 0.7;
+  const clusterCos = Math.cos(clusterRotation);
+  const clusterSin = Math.sin(clusterRotation);
+  const clusterX = Math.cos(angle) * radius;
+  const clusterZ = Math.sin(angle) * radius;
   for (let p = 0, count = 3 + (i % 3); p < count; p++) {
-    const puff = new THREE.Mesh(cloudPuffGeo, cloudDeckMat);
     const spread = p === 0 ? 0 : 9 + ((i * 7 + p * 11) % 15);
     const a = p * 2.4 + i * 0.53;
-    puff.position.set(Math.cos(a) * spread, (p % 2) * 1.8, Math.sin(a) * spread);
-    puff.scale.set(13 + ((i * 5 + p * 7) % 19), 4.5 + ((i + p * 3) % 5), 8 + ((i * 3 + p * 9) % 13));
-    cluster.add(puff);
+    const localX = Math.cos(a) * spread;
+    const localZ = Math.sin(a) * spread;
+    // Bake each cluster's former parent rotation into its instance position.
+    cloudPuffTransform.position.set(
+      clusterX + clusterCos * localX + clusterSin * localZ,
+      (p % 2) * 1.8,
+      clusterZ - clusterSin * localX + clusterCos * localZ,
+    );
+    cloudPuffTransform.rotation.set(0, 0, 0);
+    cloudPuffTransform.scale.set(
+      13 + ((i * 5 + p * 7) % 19),
+      4.5 + ((i + p * 3) % 5),
+      8 + ((i * 3 + p * 9) % 13),
+    );
+    cloudPuffTransform.updateMatrix();
+    cloudPuffInstances.setMatrixAt(cloudPuffIndex++, cloudPuffTransform.matrix);
   }
-  cloudDeckGroup.add(cluster);
 }
+cloudPuffInstances.count = cloudPuffIndex;
+cloudPuffInstances.instanceMatrix.needsUpdate = true;
+cloudPuffInstances.computeBoundingSphere();
+cloudDeckGroup.add(cloudPuffInstances);
 scene.add(cloudDeckGroup);
 
 const world = new THREE.Group(), actors = new THREE.Group();
