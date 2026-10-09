@@ -484,14 +484,30 @@ export class ZombieSurvivalSystem {
     const scale = type === 'brute' ? 1.28 : type === 'runner' ? 0.9 : 1;
     const maxHp = type === 'brute' ? 230 : type === 'runner' ? 64 : 90;
     const speed = type === 'brute' ? 1.65 : type === 'runner' ? 4.45 : 2.35;
-    const flesh = new THREE.MeshStandardMaterial({ color: type === 'runner' ? 0x715045 : type === 'brute' ? 0x343b32 : 0x536b4d, roughness: 0.9, flatShading: true });
-    const clothing = new THREE.MeshStandardMaterial({ color: type === 'brute' ? 0x333338 : type === 'runner' ? 0x4b2526 : 0x303d46, roughness: 0.92, flatShading: true });
+    // Brighter, distinct palettes keep infected readable against grass, trees and roads.
+    const flesh = new THREE.MeshStandardMaterial({
+      color: type === 'runner' ? 0xc27b58 : type === 'brute' ? 0x777b70 : 0x8ebd70,
+      roughness: 0.86, flatShading: true,
+      emissive: type === 'runner' ? 0x351006 : type === 'brute' ? 0x151c0b : 0x142a08,
+      emissiveIntensity: 0.24,
+    });
+    const clothing = new THREE.MeshStandardMaterial({
+      color: type === 'brute' ? 0x514b5b : type === 'runner' ? 0x9b3826 : 0x354d63,
+      roughness: 0.9, flatShading: true,
+      emissive: type === 'runner' ? 0x2e0802 : 0x080b10,
+      emissiveIntensity: 0.18,
+    });
     const root = new THREE.Group();
     root.name = `zombie-${this.nextZombieId}`;
     root.scale.setScalar(scale);
     const torso = makeMesh(new THREE.BoxGeometry(0.47, 0.74, 0.29), clothing, 'zombie-torso');
     torso.position.set(0, 1.13, 0);
     root.add(torso);
+    // High-contrast chest strip gives each silhouette a readable focal point.
+    const warningMat = new THREE.MeshBasicMaterial({ color: type === 'brute' ? 0xf1c453 : type === 'runner' ? 0xff6a35 : 0xd9e8b1 });
+    const chestMark = makeMesh(new THREE.BoxGeometry(0.34, 0.095, 0.018), warningMat, 'zombie-chest-mark');
+    chestMark.position.set(0, 1.22, 0.158);
+    root.add(chestMark);
 
     const head = makeMesh(new THREE.IcosahedronGeometry(0.22, 1), flesh, 'zombie-head');
     head.scale.set(0.88, 1.08, 0.86);
