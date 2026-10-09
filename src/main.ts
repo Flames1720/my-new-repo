@@ -2135,6 +2135,10 @@ const survivalZoneStatus = document.querySelector('#survivalZoneStatus') as HTML
 const survivalHealthText = document.querySelector('#survivalHealthText') as HTMLSpanElement | null;
 const survivalHealthBar = document.querySelector('#survivalHealthBar') as HTMLSpanElement | null;
 const survivalStaminaBar = document.querySelector('#survivalStaminaBar') as HTMLSpanElement | null;
+const safeZoneDirection = document.querySelector('#safeZoneDirection') as HTMLDivElement | null;
+const safeZoneArrowIcon = document.querySelector('#safeZoneArrowIcon') as HTMLSpanElement | null;
+const safeZoneArrowLabel = document.querySelector('#safeZoneArrowLabel') as HTMLSpanElement | null;
+const safeZoneArrowDistance = document.querySelector('#safeZoneArrowDistance') as HTMLElement | null;
 const survivalWeapon = document.querySelector('#survivalWeapon') as HTMLSpanElement | null;
 const survivalAmmo = document.querySelector('#survivalAmmo') as HTMLSpanElement | null;
 const survivalReserve = document.querySelector('#survivalReserve') as HTMLSpanElement | null;
@@ -3214,6 +3218,19 @@ survival = new ZombieSurvivalSystem({
       survivalLobby?.classList.add('show');
       document.body.classList.add('survival-mode');
       survival.setEnabled(false);
+    }
+    if (safeZoneDirection) {
+      const hasTarget = Number.isFinite(state.safeZoneX) && Number.isFinite(state.safeZoneZ);
+      safeZoneDirection.classList.toggle('show', hasTarget && (!state.inSafeZone || state.zonePhase === 'weakening'));
+      if (hasTarget && safeZoneArrowIcon) {
+        const dx = (state.safeZoneX as number) - player.root.position.x;
+        const dz = (state.safeZoneZ as number) - player.root.position.z;
+        const bearing = Math.atan2(dx, dz);
+        const relative = Math.atan2(Math.sin(bearing - camYaw), Math.cos(bearing - camYaw));
+        safeZoneArrowIcon.style.transform = `rotate(${relative * 180 / Math.PI}deg)`;
+        if (safeZoneArrowDistance) safeZoneArrowDistance.textContent = `${Math.round(Math.hypot(dx, dz))}m`;
+      }
+      if (safeZoneArrowLabel) safeZoneArrowLabel.textContent = state.zonePhase === 'weakening' ? 'SANCTUARY FAILING' : state.nearestZone.startsWith('NEXT') ? 'NEXT SANCTUARY' : 'SAFE ZONE';
     }
     if (survivalZoneStatus) {
       survivalZoneStatus.textContent = state.zonePhase === 'weakening'
