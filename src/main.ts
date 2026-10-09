@@ -1431,7 +1431,6 @@ let survival: ZombieSurvivalSystem;
 const keyboardKeys = new Set<string>();
 const pointerKeys = new Map<string, Set<number>>();
 let hudEditMode = false;
-let adsToggleOn = false;
 
 function syncKeyState(key: string) {
   if (keyboardKeys.has(key) || (pointerKeys.get(key)?.size ?? 0) > 0) keys.add(key);
@@ -1702,7 +1701,7 @@ function bindAction(el: HTMLElement, fn: () => void) {
   });
 }
 
-function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void) {
+function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void, onRelease?: () => void) {
   const heldPointers = new Set<number>();
   const down = (e: PointerEvent) => {
     e.preventDefault();
@@ -1723,6 +1722,7 @@ function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void) {
     keyPointers?.delete(e.pointerId);
     if (!keyPointers?.size) pointerKeys.delete(key);
     syncKeyState(key);
+    if (!keys.has(key)) onRelease?.();
   };
   el.addEventListener('pointerdown', down);
   el.addEventListener('pointerup', up);
@@ -2029,12 +2029,12 @@ bindAction(document.querySelector('#kickBtn') as HTMLButtonElement, triggerKick)
 bindAction(document.querySelector('#castBtn') as HTMLButtonElement, () => survival?.enabled ? survival.fire() : triggerFireCast());
 bindHoldAction(document.querySelector('#shootBtn') as HTMLButtonElement, 'shoot', () => survival?.enabled && survival.fire());
 const adsButton = document.querySelector('#aimBtn') as HTMLButtonElement;
-bindAction(adsButton, () => {
-  adsToggleOn = !adsToggleOn;
-  document.body.classList.toggle('aim-active', adsToggleOn);
-  adsButton.setAttribute('aria-pressed', String(adsToggleOn));
-  adsButton.title = adsToggleOn ? 'ADS enabled · tap to return to hip-fire' : 'Toggle aim down sights';
-  say(adsToggleOn ? 'AIM DOWN SIGHTS' : 'HIP-FIRE');
+bindHoldAction(adsButton, 'aim', () => {
+  document.body.classList.add('aim-active');
+  adsButton.setAttribute('aria-pressed', 'true');
+}, () => {
+  document.body.classList.remove('aim-active');
+  adsButton.setAttribute('aria-pressed', 'false');
 });
 bindAction(document.querySelector('#reloadBtn') as HTMLButtonElement, () => survival?.enabled && survival.reload());
 bindHoldAction(document.querySelector('#jumpBtn') as HTMLButtonElement, ' ', jump);
@@ -3051,7 +3051,6 @@ function setSurvivalEnabled(enabled: boolean) {
     target.style.display = 'grid';
   } else {
     survival.setEnabled(false);
-    adsToggleOn = false;
     document.body.classList.remove('aim-active');
     mode = modeBeforeSurvival;
     document.body.classList.remove('survival-mode', 'survival-damaged');
@@ -3178,7 +3177,6 @@ survival = new ZombieSurvivalSystem({
     keys.clear();
     keyboardKeys.clear();
     pointerKeys.clear();
-    adsToggleOn = false;
     document.body.classList.remove('aim-active');
     survivalDeathOverlay?.classList.add('show');
     if (document.pointerLockElement) document.exitPointerLock();
@@ -3567,7 +3565,7 @@ function update(dt: number) {
   if (isPhotoMode) updatePhotoBadges();
 
   // Shooter simulation runs after the existing camera is positioned, so its hitscan uses the actual FPP view.
-  survival.update(dt, keys.has('shoot'), keys.has('aim') || adsToggleOn);
+  survival.update(dt, keys.has('shoot'), keys.has('aim'));
 
   // Record breadcrumb displacement trail
   minimap.recordPosition(p.x, p.z);
