@@ -3096,6 +3096,7 @@ survival = new ZombieSurvivalSystem({
   camera,
   getPlayerPosition: () => player.root.position,
   getTerrainHeight: terrainHeightAt,
+  getNightFactor: () => (1 - Math.cos(((worldTime - 12) / 12) * Math.PI)) / 2,
   isWater: waterAt,
   getWaterDepth: waterDepthAt,
   canOccupy: (x, z) => canOccupy(x, z),
