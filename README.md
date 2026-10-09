@@ -1,6 +1,17 @@
-# Virtual Family Core — Wildlife World
+# Open World Zombie Survival — Prototype
 
-A single-player survival-world prototype built with Three.js. The game uses a seeded, traversable plane with procedural biomes, terrain, roads, a home, harvestable resources, and wildlife. The visual direction is an original low-poly adventure style: readable, approachable forms with a few blocky-survival cues, without copying Minecraft assets.
+A single-player first-person zombie-survival shooter built on the existing Three.js world. The procedural terrain, rivers, roads, homestead, settlement, collision and world map remain the foundation; survival mode adds firearms, hostile infected, loot, safe zones and a landscape FPS HUD. The world stays lightweight and mobile-first rather than replacing the environment with a separate flat shooter arena.
+
+## Zombie survival gameplay
+
+- **First-person survival mode:** enabled by default; toggle it with the 🧟 button or `Z`. Returning to exploration mode restores the prior camera mode.
+- **Mobile controls:** use the left virtual stick to move and drag the right side to look. `SHOOT` fires, hold `AIM` to aim down sights, `RELOAD` reloads, and the ↻ control cycles between the pistol, shotgun and rifle. `RUN`, `JUMP`, and `USE` continue using the world controls.
+- **Desktop controls:** `WASD` moves, mouse look turns, left mouse fires, right mouse aims, `R` reloads, `1`/`2`/`3` switch weapons, and `Z` toggles survival mode.
+- **World-aware encounters:** hostiles spawn on leaving the safe homestead or settlement. They use the current world's ground-height, water and occupancy callbacks instead of a second map.
+- **Safe zones:** the homestead and settlement have visible green boundaries. Player damage is suppressed inside them, nearby infected retreat, and spawn points avoid the sanctuary. The tactical minimap and full map show those boundaries and live hostile positions.
+- **Combat loop:** ammo magazines and reserve ammunition, weapon-specific fire cadence and spread, hitscan hit detection, headshot multipliers, recoil, muzzle flashes, reload motion, impacts, zombie damage/death, ammo drops and medkits.
+- **Scope:** this is a local single-player prototype. Multiplayer, persistent survival inventory, imported animated zombie models and device-level gameplay verification are not claimed as finished.
+- **Integration notes:** see [`docs/ZOMBIE_SURVIVAL_INTEGRATION.md`](docs/ZOMBIE_SURVIVAL_INTEGRATION.md) for the scene boundaries and known limitations.
 
 ## Character and water
 
