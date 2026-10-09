@@ -37,6 +37,7 @@ export interface SurvivalStatus {
   reloading: boolean;
   dead: boolean;
   runComplete?: boolean;
+  preparationSeconds?: number;
   zonePhase?: SafeZonePhase;
   zoneIntegrity?: number;
 }
@@ -194,7 +195,7 @@ function disposeGroup(root: THREE.Object3D): void {
 }
 
 export class ZombieSurvivalSystem {
-  public enabled = true;
+  public enabled = false;
   public isDead = false;
   public health = 100;
   public maxHealth = 100;
@@ -236,6 +237,7 @@ export class ZombieSurvivalSystem {
   private nextZombieId = 1;
   private maxZombies: number;
   private killedThisWave = 0;
+  private preparationTimer = 0;
   private zoneTransitionTimer = 0;
   private nextZoneIndex = 1;
   private bossSpawnedThisWave = false;
@@ -250,7 +252,7 @@ export class ZombieSurvivalSystem {
     for (const def of options.safeZones) {
       const root = this.createSafeZone(def);
       const active = this.zones.length === 0;
-      root.visible = active;
+      root.visible = active && this.enabled;
       this.scene.add(root);
       this.zones.push({ ...def, root, active, age: 0, integrity: 100, phase: 'stable' });
     }
@@ -258,11 +260,10 @@ export class ZombieSurvivalSystem {
     this.createWeaponRigs();
     for (const [id, rig] of this.weaponRigs) {
       this.camera.add(rig.root);
-      rig.root.visible = id === this.weapon;
+      rig.root.visible = this.enabled && id === this.weapon;
       rig.muzzleFlash.visible = false;
       rig.muzzleLight.intensity = 0;
     }
-    this.setEnabled(true);
     this.emitStatus();
   }
 
@@ -359,6 +360,16 @@ export class ZombieSurvivalSystem {
     survivalSound.setAmbientEnabled(enabled);
   }
 
+  beginPreparation(seconds = 12): void {
+    this.preparationTimer = Math.max(0, seconds);
+    this.hasEnteredHostileArea = false;
+    this.wave = 0;
+    this.waveQueue = 0;
+    this.spawnTimer = 0;
+    this.options.notify(`PREPARE · FIRST WAVE IN ${Math.ceil(this.preparationTimer)}s`);
+    this.emitStatus();
+  }
+
   setSurvivalAudioHealth(healthRatio: number): void {
     survivalSound.updateHeartbeat(this.enabled ? Math.max(0, Math.min(1, healthRatio)) : 1);
   }
@@ -381,7 +392,7 @@ export class ZombieSurvivalSystem {
   }
 
   switchWeapon(id: SurvivalWeaponId): void {
-    if (!this.enabled || this.isDead) return;
+    if (this.isDead) return;
     this.weapon = id;
     for (const [weaponId, rig] of this.weaponRigs) {
       rig.root.visible = this.enabled && weaponId === id;
@@ -888,6 +899,16 @@ export class ZombieSurvivalSystem {
   update(dt: number, firing = false, aiming = false): void {
     if (!this.enabled || this.runComplete) return;
     this.elapsed += dt;
+    if (this.preparationTimer > 0) {
+      this.preparationTimer = Math.max(0, this.preparationTimer - dt);
+      if (this.preparationTimer === 0 && !this.hasEnteredHostileArea) {
+        this.wave = 1;
+        this.waveQueue = 4;
+        this.spawnTimer = 0.6;
+        this.hasEnteredHostileArea = true;
+        this.options.notify('PREPARATION COMPLETE · WAVE 1 READY');
+      }
+    }
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     this.statusTimer += dt;
     this.setAim(aiming);
@@ -1013,6 +1034,7 @@ export class ZombieSurvivalSystem {
     this.health = this.maxHealth;
     this.kills = 0;
     this.wave = 0;
+    this.preparationTimer = 0;
     this.runComplete = false;
     this.bossSpawnedThisWave = false;
     this.zoneTransitionTimer = 0;
@@ -1038,7 +1060,12 @@ export class ZombieSurvivalSystem {
 
   getRadarState(): SurvivalRadarState {
     return {
-      safeZones: this.zones.filter(zone => zone.active && zone.phase !== 'collapsed').map(({ id, label, x, z, radius }) => ({ id, label, x, z, radius })),
+      safeZones: (() => {
+        const active = this.zones.filter(zone => zone.active && zone.phase !== 'collapsed');
+        if (active.length || this.zoneTransitionTimer <= 0 || !this.zones.length) return active.map(({ id, label, x, z, radius }) => ({ id, label, x, z, radius }));
+        const next = this.zones[this.nextZoneIndex % this.zones.length];
+        return [{ id: next.id, label: `NEXT · ${next.label}`, x: next.x, z: next.z, radius: next.radius }];
+      })(),
       zombies: this.zombies
         .filter(actor => !actor.dead)
         .map(actor => ({ x: actor.position.x, z: actor.position.z, type: actor.type })),
@@ -1055,6 +1082,7 @@ export class ZombieSurvivalSystem {
       weapon: this.weapon, weaponLabel: WEAPONS[this.weapon].label,
       ammoInMag: ammo.mag, ammoReserve: ammo.reserve, kills: this.kills, wave: this.wave,
       livingZombies: living, inSafeZone: this.isPlayerProtected(p.x, p.z), runComplete: this.runComplete,
+      preparationSeconds: Math.ceil(this.preparationTimer),
       nearestZone: nearest?.label ?? 'SAFE ZONE',
       zoneDistance: nearest ? Math.max(0, distToZone(p.x, p.z, nearest) - nearest.radius) : 0,
       reloading: this.reloadTimer > 0, dead: this.isDead,
