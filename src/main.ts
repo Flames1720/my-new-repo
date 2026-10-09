@@ -688,7 +688,7 @@ for (let i = 0; i < 11; i++) {
       (p % 2) * 1.8,
       clusterZ - clusterSin * localX + clusterCos * localZ,
     );
-    cloudPuffTransform.rotation.set(0, 0, 0);
+    cloudPuffTransform.rotation.set(0, clusterRotation, 0);
     cloudPuffTransform.scale.set(
       13 + ((i * 5 + p * 7) % 19),
       4.5 + ((i + p * 3) % 5),
