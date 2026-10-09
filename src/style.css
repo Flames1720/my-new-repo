@@ -1550,3 +1550,30 @@ body.survival-damaged #survivalHealthBar { background: #ef4444; }
   body.survival-mode #shootBtn { width: 60px; height: 60px; }
   body.survival-mode #aimBtn, body.survival-mode #reloadBtn { width: 46px; height: 46px; }
 }
+
+/* Small touch-safe weapon cycler inside an otherwise non-interactive HUD panel */
+.survivalWeaponLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+#survivalWeapon { margin-top: 0; }
+#survivalCycleWeapon {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 24px;
+  flex: 0 0 auto;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(203, 213, 225, .34);
+  background: rgba(148, 163, 184, .12);
+  color: #e2e8f0;
+  font-size: 17px;
+  line-height: 1;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+#survivalCycleWeapon:active { background: rgba(74, 222, 128, .28); }
+body.survival-mode #controls { display: none !important; }
