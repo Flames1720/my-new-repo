@@ -4357,13 +4357,15 @@ function loop() {
   // timings and raw frame interval are kept complete so rare stalls remain visible.
   diagnosticMeasureFrame = diagnosticFrameWindow.frames % 4 === 0;
 
-  const simulationStartedAt = performance.now();
+  // Keep the diagnostic probe cheap: only time these phases on the same 1-in-4
+  // frames used by the detailed subphase probes. Raw frame intervals still cover every frame.
+  const simulationStartedAt = diagnosticMeasureFrame ? performance.now() : 0;
   update(dt);
-  recordDiagnosticCost('simulation', performance.now() - simulationStartedAt);
+  if (diagnosticMeasureFrame) recordDiagnosticCost('simulation', performance.now() - simulationStartedAt);
 
-  const renderStartedAt = performance.now();
+  const renderStartedAt = diagnosticMeasureFrame ? performance.now() : 0;
   renderer.render(scene, camera);
-  recordDiagnosticCost('render', performance.now() - renderStartedAt);
+  if (diagnosticMeasureFrame) recordDiagnosticCost('render', performance.now() - renderStartedAt);
 
   if (diagnosticMeasureFrame) {
     const diagnosticsNow = performance.now();

@@ -851,7 +851,7 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 
 **Next-test instrumentation:**
 - Captures raw frame intervals, simulation and render wall time, survival-update and aim-query timings, chunk-stream cost, draw calls, triangles, geometry/texture counts, loaded chunks, aim targets, camera blockers, and survival actor/effect counts.
-- Core simulation/render timings run in the existing animation loop. More detailed subphase timing runs every fourth frame. No second animation loop was introduced.
+- Raw frame intervals are tracked each frame; simulation, render, and detailed subphase durations are timed only every fourth frame. No second animation loop was introduced, keeping probe overhead low.
 - Capture ends after 120 seconds of active gameplay. Logs are kept to 32 records and written to local storage every third 5-second sample, plus on errors/visibility changes.
 
 **Verification status:** Changes committed to the feature branch; CI and Vercel preview results to be checked after the push. Physical-device performance comparison is pending.
