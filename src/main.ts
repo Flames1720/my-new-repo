@@ -2162,6 +2162,7 @@ const leaveSurvivalBtn = document.querySelector('#leaveSurvivalBtn') as HTMLButt
 let survivalPaused = false;
 const survivalLobby = document.querySelector('#survivalLobby') as HTMLDivElement | null;
 const lobbyWeaponSelect = document.querySelector('#lobbyWeaponSelect') as HTMLSelectElement | null;
+const lobbyWeaponCards = document.querySelector('#lobbyWeaponCards') as HTMLDivElement | null;
 const lobbyLastRun = document.querySelector('#lobbyLastRun') as HTMLParagraphElement | null;
 const lobbyProgressionSummary = document.querySelector('#lobbyProgressionSummary') as HTMLDivElement | null;
 const upgradeHealthBtn = document.querySelector('#upgradeHealthBtn') as HTMLButtonElement | null;
@@ -2220,6 +2221,25 @@ function purchaseSurvivalUpgrade(key: UpgradeKey): void {
   say(`${key.toUpperCase()} UPGRADED · PERMANENT`);
 }
 updateLobbyProgressionUi();
+function syncLobbyWeaponCards(): void {
+  lobbyWeaponCards?.querySelectorAll<HTMLButtonElement>('[data-lobby-weapon]').forEach(button => {
+    const selected = button.dataset.lobbyWeapon === lobbyWeaponSelect?.value;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-checked', String(selected));
+    const mark = button.querySelector('.weaponCardSelect');
+    if (mark) mark.textContent = selected ? '●' : '○';
+  });
+}
+if (lobbyWeaponCards && lobbyWeaponSelect) {
+  lobbyWeaponCards.querySelectorAll<HTMLButtonElement>('[data-lobby-weapon]').forEach(button => {
+    bindAction(button, () => {
+      lobbyWeaponSelect.value = button.dataset.lobbyWeapon || 'pistol';
+      syncLobbyWeaponCards();
+    });
+  });
+  lobbyWeaponSelect.addEventListener('change', syncLobbyWeaponCards);
+  syncLobbyWeaponCards();
+}
 const survivalCycleWeapon = document.querySelector('#survivalCycleWeapon') as HTMLButtonElement | null;
 const surveyBtn = document.querySelector('#surveyBtn') as HTMLButtonElement | null;
 const surveyOverlay = document.querySelector('#surveyOverlay') as HTMLDivElement | null;
@@ -2531,33 +2551,75 @@ bindAction(upgradeBtn, () => {
   say(`🎉 Home upgraded to ${HOME_UPGRADE_COSTS[nextLevel].title}!`);
 });
 
-// Simple fullscreen control: visible in normal mode, hidden while fullscreen,
-// and restored automatically when the browser exits fullscreen.
+// Survival only opens after a user gesture enters native fullscreen in landscape.
+// Browser chrome cannot be hidden by script without this explicit fullscreen API.
 const fullscreenBtn = document.querySelector('#fullscreenBtn') as HTMLButtonElement | null;
+const displayModeGate = document.querySelector('#displayModeGate') as HTMLDivElement | null;
+const enterGameDisplayMode = document.querySelector('#enterGameDisplayMode') as HTMLButtonElement | null;
+const displayModeTitle = document.querySelector('#displayModeTitle') as HTMLHeadingElement | null;
+const displayModeMessage = document.querySelector('.displayModeFullscreenHint') as HTMLParagraphElement | null;
+let displayGatePausedRun = false;
 
-function syncFullscreenButton() {
-  const isFullscreen = !!document.fullscreenElement;
-  document.body.classList.toggle('native-fullscreen', isFullscreen);
-  if (fullscreenBtn) fullscreenBtn.hidden = isFullscreen;
+function isLandscapeDisplay(): boolean {
+  return matchMedia('(orientation: landscape)').matches || innerWidth >= innerHeight;
 }
 
-async function toggleFullscreen() {
+function syncDisplayMode(): void {
+  const fullscreen = !!document.fullscreenElement;
+  const ready = fullscreen && isLandscapeDisplay();
+  document.body.classList.toggle('native-fullscreen', fullscreen);
+  document.body.classList.toggle('display-mode-ready', ready);
+  for (const layer of Array.from(document.body.children)) {
+    if (layer.id !== 'displayModeGate' && layer instanceof HTMLElement) layer.inert = !ready;
+  }
+  if (fullscreenBtn) fullscreenBtn.hidden = fullscreen;
+
+  if (!ready && survival?.enabled && !survivalPaused) {
+    survivalPaused = true;
+    displayGatePausedRun = true;
+    releaseSurvivalInputs();
+    document.body.classList.add('survival-paused');
+  } else if (ready && displayGatePausedRun) {
+    // Re-entering the display mode never silently resumes a live run.
+    survivalPaused = true;
+    survivalPauseOverlay?.classList.add('show');
+    document.body.classList.add('survival-paused');
+    displayGatePausedRun = false;
+  }
+
+  if (displayModeTitle) displayModeTitle.textContent = isLandscapeDisplay() ? 'FULLSCREEN REQUIRED' : 'LANDSCAPE REQUIRED';
+  if (displayModeMessage) displayModeMessage.textContent = isLandscapeDisplay()
+    ? 'Enter fullscreen to open the island. The run stays paused if fullscreen is exited.'
+    : 'Rotate your phone to landscape to continue.';
+  if (enterGameDisplayMode) enterGameDisplayMode.disabled = !isLandscapeDisplay();
+}
+
+async function enterRequiredDisplayMode(): Promise<void> {
+  if (!isLandscapeDisplay()) {
+    syncDisplayMode();
+    return;
+  }
   try {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-    } else if (document.documentElement.requestFullscreen) {
+    if (!document.fullscreenElement) {
+      if (!document.documentElement.requestFullscreen) throw new Error('Fullscreen is not supported in this browser.');
       await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
-    } else {
-      say('Fullscreen is not supported in this browser.');
+    }
+    try { await (screen.orientation as unknown as { lock?: (orientation: string) => Promise<void> }).lock?.('landscape'); } catch { /* Keep the gate until the device is actually landscape. */ }
+    syncDisplayMode();
+    if (!document.fullscreenElement && displayModeMessage) {
+      displayModeMessage.textContent = 'Fullscreen was blocked. Use a browser that supports fullscreen, then try again.';
     }
   } catch {
-    say('Fullscreen could not be enabled. Try opening the game in your browser.');
+    if (displayModeMessage) displayModeMessage.textContent = 'Fullscreen could not start. Try opening this game in a supported browser.';
   }
 }
 
-if (fullscreenBtn) bindAction(fullscreenBtn, toggleFullscreen);
-document.addEventListener('fullscreenchange', syncFullscreenButton);
-syncFullscreenButton();
+if (enterGameDisplayMode) bindAction(enterGameDisplayMode, enterRequiredDisplayMode);
+if (fullscreenBtn) bindAction(fullscreenBtn, enterRequiredDisplayMode);
+document.addEventListener('fullscreenchange', syncDisplayMode);
+addEventListener('orientationchange', syncDisplayMode);
+addEventListener('resize', syncDisplayMode);
+syncDisplayMode();
 
 // --- WORLD SURVEY: AUTHORITATIVE TOPOLOGY + HYDROLOGY DIAGNOSTICS ---
 let surveyWasFog: THREE.Scene['fog'] = gameplayFog;
@@ -3164,6 +3226,7 @@ function canOccupy(x: number, z: number) {
 let modeBeforeSurvival: Mode = mode;
 
 function setSurvivalEnabled(enabled: boolean) {
+  if (enabled && !document.body.classList.contains('display-mode-ready')) return;
   if (enabled) {
     if (!survival.enabled) modeBeforeSurvival = mode;
     survival.setEnabled(true);
@@ -3283,6 +3346,13 @@ survival = new ZombieSurvivalSystem({
     saveNow();
   },
   notify: message => { if (message) say(message); },
+  onShot: hit => {
+    document.body.classList.remove('survival-fired', 'survival-hit');
+    void document.body.offsetWidth;
+    document.body.classList.add('survival-fired');
+    if (hit) document.body.classList.add('survival-hit');
+    window.setTimeout(() => document.body.classList.remove('survival-fired', 'survival-hit'), hit ? 190 : 130);
+  },
   onStatus: (state: SurvivalStatus) => {
     let metaChanged = false;
     const newKills = Math.max(0, state.kills - lastMetaKills);
@@ -3399,6 +3469,7 @@ function releaseSurvivalInputs() {
 }
 
 function beginSurvivalRun(selectedWeapon: SurvivalWeaponId) {
+  if (!document.body.classList.contains('display-mode-ready')) return;
   survivalPaused = false;
   survivalPauseOverlay?.classList.remove('show');
   document.body.classList.remove('survival-paused');
@@ -3932,6 +4003,12 @@ function loop() {
   const dt = Math.min(clock.getDelta(), 0.05);
 
   if (document.hidden) {
+    lobbyHasRendered = false;
+    lobbyRenderAccumulator = 0;
+    return;
+  }
+
+  if (!document.body.classList.contains('display-mode-ready')) {
     lobbyHasRendered = false;
     lobbyRenderAccumulator = 0;
     return;

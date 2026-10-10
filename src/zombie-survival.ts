@@ -61,6 +61,7 @@ export interface ZombieSurvivalOptions {
   respawnPlayer: () => void;
   notify: (message: string) => void;
   onStatus: (status: SurvivalStatus) => void;
+  onShot?: (hit: boolean) => void;
   onDamage: () => void;
   onDeath: () => void;
 }
@@ -285,6 +286,41 @@ export class ZombieSurvivalSystem {
     field.rotation.x = -Math.PI / 2;
     field.position.y = 0.065;
     root.add(field);
+
+    // An energy perimeter and low dome make the sanctuary readable from afar.
+    const wall = makeMesh(
+      new THREE.CylinderGeometry(def.radius, def.radius, 5.2, 64, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x36f89a, transparent: true, opacity: 0.075, depthWrite: false, side: THREE.DoubleSide }),
+      'safe-zone-energy-wall'
+    );
+    wall.position.y = 2.6;
+    root.add(wall);
+    const dome = makeMesh(
+      new THREE.SphereGeometry(def.radius, 32, 14, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x62ffb0, transparent: true, opacity: 0.035, depthWrite: false, side: THREE.DoubleSide }),
+      'safe-zone-energy-dome'
+    );
+    dome.scale.y = 0.58;
+    root.add(dome);
+
+    // Bright rings sweep upward; perimeter nodes drift around the field edge.
+    for (let i = 0; i < 3; i++) {
+      const band = makeMesh(
+        new THREE.TorusGeometry(def.radius, 0.045, 5, 72),
+        new THREE.MeshBasicMaterial({ color: 0x8dffc6, transparent: true, opacity: 0.82, depthWrite: false }),
+        `safe-zone-wave-${i}`
+      );
+      band.rotation.x = Math.PI / 2;
+      band.position.y = 0.45 + i * 1.9;
+      root.add(band);
+    }
+    const nodeGeometry = new THREE.SphereGeometry(0.11, 7, 5);
+    const nodeMaterial = new THREE.MeshBasicMaterial({ color: 0xc0ffda });
+    for (let i = 0; i < 12; i++) {
+      const node = makeMesh(nodeGeometry, nodeMaterial, `safe-zone-node-${i}`);
+      node.userData.barrierPhase = i / 12 * Math.PI * 2;
+      root.add(node);
+    }
 
     const ring = makeMesh(
       new THREE.TorusGeometry(def.radius, 0.075, 5, 64),
@@ -511,6 +547,7 @@ export class ZombieSurvivalSystem {
       }
       this.spawnTracer(muzzle, end);
     }
+    this.options.onShot?.(registeredHit);
     if (!registeredHit) this.options.notify(currentAmmo.mag === 0 ? 'Magazine empty · reload' : '');
     this.emitStatus();
   }
@@ -936,14 +973,45 @@ export class ZombieSurvivalSystem {
       zone.root.visible = this.enabled && zone.active && zone.phase !== 'collapsed';
       const field = zone.root.getObjectByName('safe-zone-field') as THREE.Mesh | null;
       const ring = zone.root.getObjectByName('safe-zone-boundary') as THREE.Mesh | null;
+      const wall = zone.root.getObjectByName('safe-zone-energy-wall') as THREE.Mesh | null;
+      const dome = zone.root.getObjectByName('safe-zone-energy-dome') as THREE.Mesh | null;
       const progress = zone.phase === 'weakening' ? 1 - zone.integrity / 100 : 0;
+      const pulse = 0.5 + 0.5 * Math.sin(this.elapsed * 2.6 + zone.x * 0.17 + zone.z * 0.11);
+      const barrierColor = zone.phase === 'weakening' ? 0xff8c45 : 0x36f89a;
       if (field?.material instanceof THREE.MeshBasicMaterial) {
         field.material.color.setHex(zone.phase === 'weakening' ? 0xffa047 : 0x20c878);
-        field.material.opacity = zone.phase === 'weakening' ? 0.06 + progress * 0.06 : 0.055;
+        field.material.opacity = (zone.phase === 'weakening' ? 0.055 + progress * 0.07 : 0.035) + pulse * 0.025;
       }
       if (ring?.material instanceof THREE.MeshStandardMaterial) {
         ring.material.color.setHex(zone.phase === 'weakening' ? 0xff6933 : 0x41f59a);
         ring.material.emissive.setHex(zone.phase === 'weakening' ? 0x9c2410 : 0x087a43);
+        ring.material.emissiveIntensity = 0.9 + pulse * 1.3;
+        ring.scale.setScalar(1 + pulse * 0.004);
+      }
+      if (wall?.material instanceof THREE.MeshBasicMaterial) {
+        wall.material.color.setHex(barrierColor);
+        wall.material.opacity = (zone.phase === 'weakening' ? 0.055 + progress * 0.055 : 0.055) + pulse * 0.045;
+      }
+      if (dome?.material instanceof THREE.MeshBasicMaterial) {
+        dome.material.color.setHex(barrierColor);
+        dome.material.opacity = 0.018 + pulse * (zone.phase === 'weakening' ? 0.055 : 0.027);
+        dome.scale.y = 0.52 + pulse * 0.08;
+      }
+      for (let i = 0; i < 3; i++) {
+        const band = zone.root.getObjectByName(`safe-zone-wave-${i}`) as THREE.Mesh | null;
+        if (!band) continue;
+        band.position.y = 0.35 + ((this.elapsed * 0.72 + i * 1.78) % 5.15);
+        if (band.material instanceof THREE.MeshBasicMaterial) {
+          band.material.color.setHex(barrierColor);
+          band.material.opacity = 0.42 + pulse * 0.48;
+        }
+      }
+      for (let i = 0; i < 12; i++) {
+        const node = zone.root.getObjectByName(`safe-zone-node-${i}`) as THREE.Mesh | null;
+        if (!node) continue;
+        const angle = (node.userData.barrierPhase as number) + this.elapsed * (zone.phase === 'weakening' ? 0.56 : 0.27);
+        node.position.set(Math.cos(angle) * (zone.radius - 0.12), 0.45 + (i % 4) * 1.28 + Math.sin(this.elapsed * 2.4 + i) * 0.18, Math.sin(angle) * (zone.radius - 0.12));
+        if (node.material instanceof THREE.MeshBasicMaterial) node.material.color.setHex(zone.phase === 'weakening' ? 0xffc095 : 0xc0ffda);
       }
     }
   }

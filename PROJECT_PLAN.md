@@ -215,3 +215,9 @@ Read ARCHITECTURE.md for protected decisions and AGENT_CHANGELOG.md for the chro
 - Diagnostic filters are reversible: tapping the active TERRAIN or HYDROLOGY control returns to WORLD, with an explicit WORLD button also present.
 - Survey mode hides the 920m distant-horizon terrain mesh so no second procedural world appears outside the finite world boundary.
 
+
+### Zombie-survival display-mode and lobby polish — 2026-10-10
+- Scope: `feature/zombie-survival-world-v2`; use native landscape fullscreen as a mandatory entry gate, pause/re-gate if fullscreen/orientation is lost, and make the survival lobby feel like an outbreak deployment screen rather than a centered explanatory card.
+- Implemented: animated rotating-phone onboarding; accessible/inert background while gated; loadout cards wired to the existing starting-weapon select; full-stage lobby composition with an animated infected silhouette; pulsing sanctuary dome, rising green energy bands and moving perimeter lights (amber while weakening); brief shot flash and a distinct registered-hit reticle tint.
+- Verification: TypeScript and Vite production build pass; browser smoke test entered fullscreen, selected the shotgun, and started a real survival run. Browser preview is not a substitute for physical Android/iOS testing; verify orientation lock, comfort/reach, active-view barrier readability and performance on devices.
+- Animation backlog is recorded in README: hit-stagger/knockback and boss slam telegraph-impact, sanctuary collapse/relocation set-piece, pickup pull-in, and richer weapon hand/shell handling.

@@ -4,14 +4,24 @@ A single-player first-person zombie-survival shooter built on the existing Three
 
 ## Zombie survival gameplay
 
-- **First-person survival mode:** enabled by default; toggle it with the 🧟 button or `Z`. Returning to exploration mode restores the prior camera mode.
+- **Survival entry:** the game opens only after the player enters fullscreen in landscape. Exiting fullscreen brings the gate back; an active run pauses rather than continuing behind browser chrome.
+- **Deployment lobby:** full-screen field-operations staging screen with a selectable loadout, compact persistent-upgrade controls, and a slowly moving infected silhouette in the background.
 - **Mobile controls:** use the left virtual stick to move and drag the right side to look. `SHOOT` fires, hold `AIM` to aim down sights, `RELOAD` reloads, and the ↻ control cycles between the pistol, shotgun and rifle. `RUN`, `JUMP`, and `USE` continue using the world controls.
 - **Desktop controls:** `WASD` moves, mouse look turns, left mouse fires, right mouse aims, `R` reloads, `1`/`2`/`3` switch weapons, and `Z` toggles survival mode.
 - **World-aware encounters:** hostiles spawn on leaving the safe homestead or settlement. They use the current world's ground-height, water and occupancy callbacks instead of a second map.
-- **Safe zones:** the homestead and settlement have visible green boundaries. Player damage is suppressed inside them, nearby infected retreat, and spawn points avoid the sanctuary. The tactical minimap and full map show those boundaries and live hostile positions.
-- **Combat loop:** ammo magazines and reserve ammunition, weapon-specific fire cadence and spread, hitscan hit detection, headshot multipliers, recoil, muzzle flashes, reload motion, impacts, zombie damage/death, ammo drops and medkits. Fire at Will's procedural Web Audio effects provide weapon reports, reload clicks, hit confirmations, zombie noises, pickups and low-health heartbeat without downloading sound files.
+- **Safe zones:** the homestead and settlement have animated green forcefields with a pulsing dome, ascending energy bands and moving perimeter lights; the effect warns amber while a zone weakens. Player damage is suppressed inside them, nearby infected retreat, and spawn points avoid the sanctuary. The tactical minimap and full map show boundaries and live hostile positions.
+- **Combat loop:** ammo magazines and reserve ammunition, weapon-specific cadence and spread, hitscan hit detection, headshot multipliers, weapon recoil, muzzle flashes, reload motion, hit/miss screen feedback, impacts, zombie damage/death, ammo drops and medkits. Fire at Will's procedural Web Audio effects provide weapon reports, reload clicks, hit confirmations, zombie noises, pickups and low-health heartbeat without downloading sound files.
 - **Scope:** this is a local single-player prototype. Multiplayer, persistent survival inventory, imported animated zombie models and device-level gameplay verification are not claimed as finished.
 - **Integration notes:** see [`docs/ZOMBIE_SURVIVAL_INTEGRATION.md`](docs/ZOMBIE_SURVIVAL_INTEGRATION.md) for the scene boundaries and known limitations.
+
+## Animation follow-ups
+
+The current branch already has procedural infected walk/attack motion, hit flashes, death shrink/fade, floating/rotating loot, weapon recoil/reload/muzzle flash, and day/night/world-life motion. The highest-value remaining animation work is:
+
+1. Give hits distinct stagger/knockback reactions and make boss slams telegraph, impact, and send a visible shockwave rather than snapping directly into the attack pose.
+2. Give wave start/end, sanctuary collapse/relocation, death, and successful wave-100 completion more authored transitions; safe-zone weakening is animated, but its final break and relocation are not yet a large set piece.
+3. Add a small pickup collection effect (pull-in/snap plus HUD confirmation); loot currently floats and rotates before proximity collection.
+4. Add richer first-person weapon handling—shell ejection, hand motion and weapon-specific recovery—on top of the existing rig recoil, reload, flash and new reticle feedback.
 
 ## Character and water
 

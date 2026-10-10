@@ -641,6 +641,235 @@ body.display-mode-ready #displayModeGate { display: none; }
 }
 
 
-/* Fullscreen is an optional one-tap action, never a blocking entry screen. */
-#displayModeGate { display: none !important; }
+/* Entry is deliberately gated: the playable scene only opens in landscape fullscreen. */
+#displayModeGate {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  color: #edf3eb;
+  background: radial-gradient(ellipse at 50% 45%, rgba(37, 74, 61, .3), transparent 48%), linear-gradient(135deg, #07100f, #121817 52%, #080d10);
+}
+body.display-mode-ready #displayModeGate { display: none !important; }
+.displayModeCard {
+  width: min(520px, 100%);
+  padding: clamp(25px, 5vw, 48px);
+  border: 1px solid rgba(149, 198, 161, .22);
+  border-radius: 4px 22px 4px 22px;
+  background: linear-gradient(145deg, rgba(17, 29, 27, .92), rgba(7, 14, 15, .96));
+  box-shadow: 0 35px 110px #000b, inset 0 1px rgba(255,255,255,.045);
+  text-align: center;
+}
+.displayModeEyebrow { color: #83bd95; font-size: 9px; font-weight: 900; letter-spacing: .24em; }
+.displayModeCard h1 { color: #f3f2e9; font-size: clamp(28px, 5vw, 42px); letter-spacing: -.055em; }
+.displayModeCard p { max-width: 34ch; margin: 0 auto 20px; color: #a7b7af; font-size: 12px; line-height: 1.65; }
+.displayModeFootnote { margin-top: 18px; color: #697a72; font-size: 8px; letter-spacing: .22em; }
+#enterGameDisplayMode {
+  min-height: 52px;
+  min-width: min(250px, 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 25px;
+  margin-top: 8px;
+  padding: 0 18px;
+  border: 1px solid rgba(135, 220, 160, .6);
+  border-radius: 3px 12px 3px 12px;
+  background: linear-gradient(100deg, #1d7548, #194d3a);
+  color: #effff1;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .16em;
+  box-shadow: 0 8px 30px rgba(27, 121, 72, .23);
+  touch-action: manipulation;
+}
+#enterGameDisplayMode:disabled { opacity: .4; cursor: not-allowed; }
+.displayModeLandscapeHint { display: none; color: #d3e7d7 !important; font-size: 10px !important; letter-spacing: .12em; text-transform: uppercase; }
+.displayModeFullscreenHint { display: block; }
+.rotatePhoneAnimation { display: none; position: relative; width: 150px; height: 126px; margin: 8px auto 16px; align-items: center; justify-content: center; }
+.rotatePhoneDevice { position: relative; width: 58px; height: 100px; border: 3px solid #a8d7b0; border-radius: 12px; background: #111820; box-shadow: 0 0 28px rgba(93, 218, 131, .2), inset 0 0 0 2px rgba(255,255,255,.05); }
+.rotatePhoneSpeaker { position: absolute; top: 5px; left: 50%; width: 15px; height: 3px; border-radius: 9px; background: #70b883; transform: translateX(-50%); }
+.rotatePhoneScreen { position: absolute; inset: 13px 5px; border-radius: 4px; background: linear-gradient(145deg, rgba(77,140,94,.65), rgba(19,52,42,.94) 52%, rgba(131,79,42,.8)); }
+.rotatePhoneScreen::after { content: ""; position: absolute; left: 15%; right: 15%; bottom: 15%; height: 2px; background: rgba(195,255,205,.8); box-shadow: 0 -8px 0 rgba(195,255,205,.3); }
+.rotatePhoneHome { position: absolute; bottom: 4px; left: 50%; width: 5px; height: 5px; border: 1px solid #70b883; border-radius: 50%; transform: translateX(-50%); }
+.rotatePhoneArrow { position: absolute; right: -22px; top: -13px; color: #b1e4b9; font-size: 28px; line-height: 1; }
+@keyframes rotatePhoneToLandscape { 0%, 12% { transform: rotate(0deg) scale(1); } 45%, 68% { transform: rotate(90deg) scale(.92); } 88%, 100% { transform: rotate(0deg) scale(1); } }
+@keyframes rotateArrowPulse { 0%, 100% { opacity: .45; transform: rotate(-20deg) scale(.9); } 50% { opacity: 1; transform: rotate(25deg) scale(1.08); } }
+@media (orientation: portrait) {
+  .rotatePhoneAnimation { display: flex; }
+  .rotatePhoneDevice { animation: rotatePhoneToLandscape 2.8s ease-in-out infinite; transform-origin: center; }
+  .rotatePhoneArrow { animation: rotateArrowPulse 1.4s ease-in-out infinite; }
+  .displayModeLandscapeHint { display: block; }
+  .displayModeFullscreenHint, #enterGameDisplayMode, .displayModeFootnote { display: none !important; }
+}
 body.native-fullscreen #fullscreenBtn { display: none !important; }
+
+/* Island Outbreak lobby: full-screen command stage, not a centered settings card. */
+#survivalLobby {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: none;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+  padding: max(18px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  color: #f0f0e7;
+  background: linear-gradient(90deg, rgba(4,10,10,.94) 0%, rgba(5,11,11,.82) 48%, rgba(6,10,10,.94) 100%);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+#survivalLobby.show { display: flex; }
+.survivalLobbyCard {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0 clamp(3px, 3vw, 44px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.survivalLobbyCard::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -4%;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 20% 55%, rgba(44,115,73,.19), transparent 34%), radial-gradient(ellipse at 76% 40%, rgba(176,95,48,.12), transparent 38%), linear-gradient(90deg, transparent 49.8%, rgba(199,218,197,.07) 50%, transparent 50.2%);
+  animation: lobbyAtmosphere 8s ease-in-out infinite alternate;
+}
+.survivalLobbyCard::after {
+  content: "FIELD DEPLOYMENT  /  ISLAND-07";
+  position: absolute;
+  top: 17px;
+  right: 0;
+  color: rgba(218,230,216,.34);
+  font: 850 8px/1 system-ui, sans-serif;
+  letter-spacing: .19em;
+}
+@keyframes lobbyAtmosphere { from { opacity: .65; transform: translateX(-1%); } to { opacity: 1; transform: translateX(1%); } }
+.lobbyTopline, .lobbyFooter { display: flex; align-items: center; justify-content: space-between; flex: 0 0 auto; }
+.lobbyTopline { height: 58px; border-bottom: 1px solid rgba(208,224,207,.13); }
+.lobbyMark { display: flex; align-items: center; gap: 10px; color: #f3f4eb; font-size: 9px; font-weight: 950; letter-spacing: .18em; }
+.lobbyMarkGlyph { display: grid; place-items: center; width: 31px; height: 31px; border: 1px solid rgba(144,215,162,.55); color: #a7e2b1; font-size: 11px; letter-spacing: -.05em; transform: rotate(-3deg); }
+.lobbyMark small { display: block; margin-top: 4px; color: #779080; font-size: 7px; letter-spacing: .21em; }
+.lobbySignal { display: flex; align-items: center; gap: 7px; color: #8e9e95; font-size: 8px; font-weight: 850; letter-spacing: .15em; }
+.lobbySignal i, .lobbyObjectiveDot { width: 6px; height: 6px; border-radius: 50%; background: #72e690; box-shadow: 0 0 12px #5de680; animation: signalPulse 1.6s ease-in-out infinite; }
+.lobbySignal strong { color: #a4efb4; }
+@keyframes signalPulse { 50% { opacity: .42; box-shadow: 0 0 3px #5de680; } }
+.lobbyTopline, .lobbyStage, .lobbyFooter { position: relative; z-index: 1; }
+.lobbyStalker { position: absolute; z-index: 0; top: 11%; bottom: 3%; right: 34%; width: clamp(190px, 25vw, 380px); display: flex; align-items: flex-end; justify-content: center; opacity: .62; pointer-events: none; mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 78%, transparent 100%); }
+.lobbyStalker svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 26px rgba(89,132,91,.13)); }
+.stalkerMain { transform-origin: 52% 72%; animation: infectedSway 4.8s ease-in-out infinite; }
+.stalkerHead { transform-origin: 55% 92%; animation: infectedHead 3.4s ease-in-out infinite; }
+.stalkerLeftArm { transform-origin: 132px 169px; animation: infectedLeftReach 3.6s ease-in-out infinite; }
+.stalkerRightArm { transform-origin: 239px 168px; animation: infectedRightReach 4.1s ease-in-out infinite; }
+.stalkerFar { animation: distantHorde 7s ease-in-out infinite alternate; }
+.stalkerEyes { fill: #f0a06a; filter: drop-shadow(0 0 5px rgba(245,105,64,.8)); animation: eyeFlicker 3.8s steps(1,end) infinite; }
+@keyframes infectedSway { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-7px) rotate(1deg); } }
+@keyframes infectedHead { 0%,100% { transform: rotate(0deg); } 38% { transform: rotate(-4deg); } 72% { transform: rotate(2deg); } }
+@keyframes infectedLeftReach { 0%,100% { transform: rotate(-1deg); } 48% { transform: rotate(5deg); } }
+@keyframes infectedRightReach { 0%,100% { transform: rotate(2deg); } 52% { transform: rotate(-5deg); } }
+@keyframes distantHorde { from { opacity: .28; transform: translateX(-7px); } to { opacity: .55; transform: translateX(8px); } }
+@keyframes eyeFlicker { 0%, 39%, 44%, 100% { opacity: .78; } 41%, 43% { opacity: .12; } }
+.lobbyStage { min-height: 0; flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1.06fr) minmax(300px, .82fr); align-items: center; gap: clamp(26px, 6vw, 100px); padding: clamp(14px, 4vh, 38px) 0; }
+.lobbyHero { position: relative; padding-left: clamp(0px, 1.6vw, 24px); animation: lobbyRise .65s cubic-bezier(.2,.7,.2,1) both; }
+@keyframes lobbyRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+.lobbyEyebrow { margin: 0 0 16px; color: #9bb6a2; font-size: 9px; font-weight: 900; letter-spacing: .19em; }
+.lobbyEyebrow span { color: #d59e5b; }
+.survivalLobbyCard h1 { max-width: 11ch; margin: 0; color: #f2f0e4; font-size: clamp(58px, 10vw, 138px); font-weight: 1000; letter-spacing: -.085em; line-height: .77; text-wrap: balance; text-shadow: 0 14px 60px rgba(0,0,0,.26); }
+.survivalLobbyCard h1 em { color: #d4a365; font-style: normal; }
+.survivalLobbyCard h1::after { content: none; }
+.lobbyTagline { margin: clamp(16px, 3vh, 30px) 0 0; color: #aab7ae; font-size: clamp(12px, 1.35vw, 16px); line-height: 1.55; letter-spacing: .02em; }
+.lobbyTagline strong { color: #e5eee4; font-weight: 700; }
+.lobbyQuickStats { display: flex; gap: clamp(20px, 4vw, 52px); margin-top: clamp(20px, 4vh, 40px); }
+.lobbyQuickStats div { display: flex; flex-direction: column; gap: 4px; padding-left: 10px; border-left: 1px solid rgba(199,219,196,.32); }
+.lobbyQuickStats strong { color: #e6e9dc; font-size: 18px; line-height: 1; }
+.lobbyQuickStats span { color: #788a80; font-size: 7px; font-weight: 900; letter-spacing: .16em; }
+.lobbyLastRun { min-height: 12px; margin: 20px 0 0; color: #c6975b; font-size: 8px; font-weight: 850; letter-spacing: .13em; }
+.lobbyDeploy { width: 100%; max-width: 470px; justify-self: end; padding-left: clamp(18px, 3vw, 42px); border-left: 1px solid rgba(192,215,191,.17); animation: lobbyRise .75s .08s cubic-bezier(.2,.7,.2,1) both; }
+.lobbySectionHead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px; margin-bottom: 12px; color: #d9dfd4; font-size: 9px; font-weight: 950; letter-spacing: .16em; }
+.lobbySectionHead small { color: #7f9387; font-size: 7px; letter-spacing: .14em; }
+.lobbyWeaponCards { display: grid; gap: 6px; }
+.lobbyWeaponPick { width: 100%; min-height: 54px; display: grid; grid-template-columns: 44px 1fr 14px; align-items: center; gap: 11px; padding: 6px 10px; border: 1px solid rgba(198,220,197,.13); border-left: 2px solid transparent; border-radius: 2px; background: rgba(14,24,22,.55); color: #aebbb0; text-align: left; cursor: pointer; transition: border-color .18s, background .18s, transform .18s; }
+.lobbyWeaponPick:hover { background: rgba(40,67,50,.48); }
+.lobbyWeaponPick.active { border-color: rgba(145,214,155,.48); border-left-color: #8fdaa0; background: linear-gradient(90deg, rgba(57,115,69,.32), rgba(15,26,21,.82)); color: #eef4e8; transform: translateX(3px); }
+.weaponCardIcon { display: grid; place-items: center; width: 40px; height: 38px; border: 1px solid rgba(218,228,211,.15); color: #dbd4bf; font-size: 10px; font-weight: 950; letter-spacing: -.04em; }
+.shotgunIcon { color: #e6b979; }.rifleIcon { color: #95cea1; }
+.weaponCardCopy strong { display: block; font-size: 9px; font-weight: 950; letter-spacing: .1em; }
+.weaponCardCopy small { display: block; margin-top: 4px; color: #819188; font-size: 7px; letter-spacing: .13em; }
+.weaponCardSelect { color: #76877b; font-size: 11px; }
+.lobbyWeaponPick.active .weaponCardSelect { color: #a1e6a9; }
+#lobbyWeaponSelect { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.lobbyProgression { margin: 18px 0 0; padding: 13px 0 0; border: 0; border-top: 1px solid rgba(199,219,196,.15); border-radius: 0; background: transparent; }
+#lobbyProgressionSummary { color: #d6e2d0; font-size: 8px; font-weight: 900; letter-spacing: .08em; }
+.lobbyUpgradeGrid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px; }
+.lobbyUpgradeGrid button { min-height: 38px; padding: 5px 7px; border: 1px solid rgba(199,219,196,.17); border-radius: 2px; background: rgba(14,24,22,.55); color: #d3dfd1; font-size: 8px; font-weight: 900; line-height: 1.3; transition: background .16s, border-color .16s, transform .16s; }
+.lobbyUpgradeGrid button:hover:not(:disabled) { border-color: rgba(150,218,159,.6); background: rgba(56,102,63,.35); }
+.lobbyUpgradeGrid button:active:not(:disabled) { transform: translateY(1px); }
+.lobbyUpgradeGrid button:disabled { opacity: .36; }
+.lobbyFooter { min-height: 72px; gap: 15px; border-top: 1px solid rgba(208,224,207,.13); }
+.lobbyObjective { display: flex; align-items: center; gap: 10px; color: #7f9286; font-size: 7px; font-weight: 900; letter-spacing: .17em; }
+.lobbyObjectiveDot { flex: 0 0 auto; }
+.lobbyObjective strong { display: block; margin-top: 4px; color: #d3e3d2; font-size: 9px; letter-spacing: .1em; }
+#startRunBtn { width: clamp(170px, 24vw, 270px); min-height: 49px; display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 0 17px; border: 1px solid #dcb36d; border-radius: 2px 12px 2px 12px; background: linear-gradient(100deg, #996039, #6d4027); color: #fff4df; box-shadow: 0 8px 25px rgba(95,55,28,.22); font-size: 10px; font-weight: 950; letter-spacing: .2em; transition: filter .16s, transform .16s, box-shadow .16s; }
+#startRunBtn:hover { filter: brightness(1.18); box-shadow: 0 10px 32px rgba(140,86,43,.34); }
+#startRunBtn:active { transform: translateY(1px) scale(.99); }
+#startRunBtn b { color: #f4d7a0; font-size: 20px; font-weight: 500; }
+
+/* Combat feedback: a visible recoil beat and a distinct registered-hit confirmation. */
+#hud::after { content: ""; position: fixed; inset: 0; z-index: 180; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at 52% 57%, transparent 52%, rgba(255,201,128,.17) 100%); }
+body.survival-fired #hud::after { animation: muzzleScreenKick .13s ease-out; }
+@keyframes muzzleScreenKick { 0% { opacity: .8; } 100% { opacity: 0; } }
+body.survival-fired #target { animation: reticleKick .13s ease-out; }
+body.survival-hit #target { color: #a6ffc0 !important; filter: drop-shadow(0 0 7px rgba(109,255,153,.9)); }
+body.survival-hit #target::before, body.survival-hit #target::after { background: #9bffb7 !important; }
+@keyframes reticleKick { 0% { transform: translate(-50%,-50%) scale(1.8); } 100% { transform: translate(-50%,-50%) scale(1); } }
+
+@media (max-width: 720px) {
+  #survivalLobby { padding-left: max(15px, env(safe-area-inset-left)); padding-right: max(15px, env(safe-area-inset-right)); }
+  .lobbyStalker { right: 29%; width: clamp(170px, 25vw, 245px); opacity: .46; }
+  .lobbyStage { grid-template-columns: minmax(0, .9fr) minmax(250px, 1fr); gap: 18px; }
+  .survivalLobbyCard h1 { font-size: clamp(48px, 10vw, 76px); }
+  .lobbyDeploy { padding-left: 16px; }
+  .lobbyWeaponPick { min-height: 46px; grid-template-columns: 34px 1fr 12px; gap: 8px; padding: 4px 7px; }
+  .weaponCardIcon { width: 32px; height: 32px; }
+}
+@media (max-height: 460px) and (orientation: landscape) {
+  #survivalLobby { padding-top: max(7px, env(safe-area-inset-top)); padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+  .lobbyTopline { height: 39px; }
+  .lobbyStage { gap: 16px; padding: 8px 0; }
+  .lobbyEyebrow { margin-bottom: 9px; font-size: 7px; }
+  .survivalLobbyCard h1 { font-size: clamp(44px, 9vh, 74px); }
+  .lobbyTagline { margin-top: 10px; font-size: 11px; }
+  .lobbyQuickStats { margin-top: 13px; }
+  .lobbyLastRun { margin-top: 8px; }
+  .lobbyDeploy { padding-left: 16px; }
+  .lobbyStalker { top: 10%; right: 29%; bottom: 0; width: clamp(150px, 19vw, 245px); }
+  .lobbyWeaponPick { min-height: 40px; }
+  .lobbyProgression { margin-top: 9px; padding-top: 8px; }
+  .lobbyUpgradeGrid button { min-height: 30px; }
+  .lobbyFooter { min-height: 48px; }
+  #startRunBtn { min-height: 39px; }
+}
+@media (max-width: 560px) and (orientation: landscape) {
+  .lobbyStage { grid-template-columns: minmax(0, .8fr) minmax(225px, 1fr); gap: 12px; }
+  .lobbyDeploy { padding-left: 10px; }
+  .lobbySignal { font-size: 7px; }
+  .lobbyQuickStats { gap: 13px; }
+  .lobbyObjective { font-size: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rotatePhoneDevice, .rotatePhoneArrow, .lobbySignal i, .lobbyObjectiveDot, .survivalLobbyCard::before,
+  .stalkerMain, .stalkerHead, .stalkerLeftArm, .stalkerRightArm, .stalkerFar, .stalkerEyes { animation: none !important; }
+  .lobbyHero, .lobbyDeploy { animation: none !important; }
+}

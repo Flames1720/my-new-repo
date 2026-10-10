@@ -732,3 +732,20 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 
 **Next agent:** Open the preview on the user's Android device and verify the fullscreen control first. Then tackle one reproducible gameplay issue at a time, run build/typecheck and inspect the deployment before reporting success.
 
+
+## 2026-10-10 07:52 +01:00 — landscape/fullscreen-gated outbreak lobby and animation polish
+
+**Scope:** `feature/zombie-survival-world-v2` in `Flames1720/my-new-repo`. This entry supersedes the 07:34 handoff's optional-fullscreen direction: user explicitly wants the game gated until landscape fullscreen.
+
+**Implemented in the working tree:**
+- `index.html`: reworked the display-mode onboarding copy; replaced the card-and-paragraph lobby with a field-deployment layout, three accessible weapon choices, concise mission stats/upgrades, and a hand-authored animated infected SVG in the background. The four-infected opening wave replaces a misleading infinity indicator.
+- `src/main.ts`: require native Fullscreen API plus landscape before showing the game; attempt orientation lock after the user gesture; show an explanatory fallback when the API fails; use `inert` for every background body layer behind the modal; pause/re-gate on fullscreen/orientation loss; stop rendering before readiness; guard run entry; connect lobby cards to the existing weapon setting; add fire and hit-confirmation screen-state callbacks.
+- `src/ui-modern.css`: full-screen deployment-stage styling, reduced-motion fallbacks, orientation animation, zombie idle/reach/eye-glow motion, and shot-edge/reticle feedback.
+- `src/zombie-survival.ts`: add a translucent perimeter wall and dome, three traveling energy bands and orbiting perimeter nodes, all pulsing green and shifting toward amber during safe-zone weakening; expose shot hit/miss feedback.
+- `README.md`, `docs/ZOMBIE_SURVIVAL_INTEGRATION.md`, and `PROJECT_PLAN.md`: update capabilities, known limitations and animation follow-ups.
+
+**Verification:** `npm run build` (TypeScript + Vite production build) passed; `git diff --check` passed. Local browser smoke test confirmed native fullscreen gate entry, lobby weapon selection (shotgun), and start-of-run transition with the selected weapon. Physical-device orientation behavior and the field's exterior readability remain unverified.
+
+**Animation opportunities found while reviewing this branch:** zombies already have procedural locomotion/arm swings, hit flashes and shrink/fade deaths; loot already floats and rotates; weapon rigs already recoil/reload/flash. The largest remaining gaps are authored boss wind-up/impact/shockwave; stronger sanctuary final collapse/relocation; pickup collection pull-in; distinct hit-stagger/knockback; and richer shell/hand weapon handling. See README's Animation follow-ups section.
+
+**Review note:** Keep this work on the requested feature branch; do not merge to `main`. Preserve PR #8 as the review path. Physical Android/iOS QA is still required.

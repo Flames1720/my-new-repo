@@ -38,7 +38,7 @@ Key integrations:
 
 ## Encounter and safe-zone rules
 
-The default spawn is on the homestead side of the map and falls inside its safe radius. The homestead and settlement zones are shown on the ground and the existing minimap/full map. Players take no zombie damage inside a safe zone. Zombies try to leave zone boundaries and are not intentionally spawned inside one. Leaving a safe zone activates an initial small encounter wave; further waves are paced after the previous wave clears. Active enemy count is capped lower in low-power mode.
+The default spawn is on the homestead side of the map and falls inside its safe radius. Survival opens through a mandatory landscape/fullscreen entry gate; loss of fullscreen reopens the gate and pauses an active run. The lobby is an immersive deployment screen with loadout selection and an animated infected silhouette. The homestead and settlement now use pulsing forcefield domes, rising energy bands and moving perimeter lights; weakening shifts the effect toward amber. These are also shown on the ground and existing minimap/full map. Players take no zombie damage inside a safe zone. Zombies try to leave zone boundaries and are not intentionally spawned inside one. Leaving a safe zone activates an initial small encounter wave; further waves are paced after the previous wave clears. Active enemy count is capped lower in low-power mode.
 
 ## Asset reuse
 
@@ -54,4 +54,7 @@ The default spawn is on the homestead side of the map and falls inside its safe 
 - Ammo and medkits are collected automatically by proximity. A dedicated loot/interact UI is not implemented yet.
 - Zombies use procedural walk/attack/death motion, not a sourced animation rig. Pathfinding is local obstacle-aware movement, not navmesh pathfinding.
 - The minimap displays active simulated hostiles, so it is currently a tactical radar rather than an in-world visibility-only radar.
-- The HUD and static page are deployed to a Vercel preview, but real on-device interaction still needs checking for button reach, camera sensitivity, collision edge cases, hit registration, memory use and performance.
+- Fire confirmation now adds a brief screen-edge recoil flash and a distinct crosshair hit tint on top of the weapon rig's existing recoil/muzzle/reload motion.
+- The infected use procedural locomotion, timed arm swings, hit flashes and a shrink/fade death; this is not a sourced animation rig. Boss attacks currently lack a full wind-up/impact/shockwave sequence, and safe-zone final collapse/relocation still deserves a stronger event animation.
+- Loot already floats and rotates but disappears on proximity pickup without a pull-in/collection burst. Wave/death/victory transitions and richer shell/hand weapon handling are additional animation opportunities.
+- The UI and scene build, and the browser preview was exercised through fullscreen entry, loadout selection and run start. Physical phone/tablet behavior and the exterior view of the forcefield still need device verification, including button reach, orientation-lock support, collision edge cases, hit registration, memory use and performance.
