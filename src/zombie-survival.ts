@@ -449,15 +449,14 @@ export class ZombieSurvivalSystem {
     this.fireHeld = held;
   }
 
-  setAim(aiming: boolean): void {
+  setAim(aiming: boolean, dt = 1 / 60): void {
     this.aimActive = aiming && this.enabled && !this.isDead;
     const wantedFov = this.aimActive ? 47 : this.lastFov;
-    if (Math.abs(this.camera.fov - wantedFov) > 0.15) {
-      this.camera.fov += (wantedFov - this.camera.fov) * 0.24;
-      this.camera.updateProjectionMatrix();
-    }
-    if (!this.aimActive && this.camera.fov !== this.lastFov && !this.enabled) {
-      this.camera.fov = this.lastFov;
+    // Frame-rate-independent, rapid ADS response; no long exponential tail.
+    const blend = Math.min(1, 1 - Math.exp(-Math.max(0, dt) * 38));
+    const nextFov = this.camera.fov + (wantedFov - this.camera.fov) * blend;
+    if (Math.abs(nextFov - this.camera.fov) > 0.005 || Math.abs(wantedFov - this.camera.fov) > 0.005) {
+      this.camera.fov = Math.abs(wantedFov - nextFov) < 0.05 ? wantedFov : nextFov;
       this.camera.updateProjectionMatrix();
     }
   }
@@ -537,7 +536,11 @@ export class ZombieSurvivalSystem {
     const blockers = this.options.getSightBlockers();
     const targets = this.zombies.filter(z => !z.dead).map(z => z.root);
     const rayObjects = [...blockers, ...targets];
-    const totalSpread = definition.spread * (this.aimActive ? 0.42 : 1);
+    // Aimed single-projectile weapons fire through the crosshair. Keep hip-fire
+    // inaccuracy and centred shotgun pellet spread as intentional weapon behavior.
+    const totalSpread = this.aimActive && definition.pellets === 1
+      ? 0
+      : definition.spread * (this.aimActive ? 0.42 : 1);
     const muzzle = new THREE.Vector3();
     activeRig?.muzzleFlash.getWorldPosition(muzzle);
     if (!activeRig) this.camera.getWorldPosition(muzzle);
@@ -566,7 +569,10 @@ export class ZombieSurvivalSystem {
           this.spawnImpact(hit.point, false);
         }
       }
-      this.spawnTracer(muzzle, end);
+      // When aiming, the camera ray is authoritative. A muzzle-origin line
+      // produces false sideways motion near the reticle (parallax).
+      // Hip-fire retains the visible muzzle trail as an effect.
+      this.spawnTracer(this.aimActive ? this.raycaster.ray.origin : muzzle, end);
     }
     this.options.onShot?.(registeredHit);
     if (!registeredHit) this.options.notify(currentAmmo.mag === 0 ? 'Magazine empty · reload' : '');
@@ -1059,7 +1065,7 @@ export class ZombieSurvivalSystem {
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     this.skillCooldown = Math.max(0, this.skillCooldown - dt);
     this.statusTimer += dt;
-    this.setAim(aiming);
+    this.setAim(aiming, dt);
 
     if (this.reloadTimer > 0) {
       this.reloadTimer = Math.max(0, this.reloadTimer - dt);
