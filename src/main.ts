@@ -3701,7 +3701,7 @@ survival = new ZombieSurvivalSystem({
         const dz = (state.safeZoneZ as number) - player.root.position.z;
         const bearing = Math.atan2(dx, dz);
         const relative = Math.atan2(Math.sin(bearing - camYaw), Math.cos(bearing - camYaw));
-        safeZoneArrowIcon.style.transform = `rotate(${relative * 180 / Math.PI}deg)`;
+        safeZoneArrowIcon.style.transform = `rotate(${relative * 180 / Math.PI - 90}deg)`;
         if (safeZoneArrowDistance) safeZoneArrowDistance.textContent = `${Math.round(Math.hypot(dx, dz))}m`;
       }
       if (safeZoneArrowLabel) safeZoneArrowLabel.textContent = state.zonePhase === 'weakening' ? 'SANCTUARY FAILING' : state.nearestZone.startsWith('NEXT') ? 'NEXT SANCTUARY' : 'SAFE ZONE';
