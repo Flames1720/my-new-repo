@@ -1457,6 +1457,7 @@ let survival: ZombieSurvivalSystem;
 const keyboardKeys = new Set<string>();
 const pointerKeys = new Map<string, Set<number>>();
 let hudEditMode = false;
+let hudLayoutSnapshot: string | null = null;
 
 function syncKeyState(key: string) {
   if (keyboardKeys.has(key) || (pointerKeys.get(key)?.size ?? 0) > 0) keys.add(key);
@@ -1723,7 +1724,7 @@ function bindAction(el: HTMLElement, fn: () => void) {
     e.stopPropagation();
     // Activate on touch-down so a four-finger player can trigger reload, weapon swap
     // or a skill while another finger keeps aiming, moving or firing.
-    if (!document.body.classList.contains('hud-edit-mode')) fn();
+    if (!document.body.classList.contains('hud-edit-mode') || el.closest('#hudEditorPanel')) fn();
   });
   el.addEventListener('pointerup', stopPointerEvent);
   el.addEventListener('pointercancel', stopPointerEvent);
@@ -1731,7 +1732,7 @@ function bindAction(el: HTMLElement, fn: () => void) {
     e.preventDefault();
     e.stopPropagation();
     // Keep keyboard/switch-device activation; pointer taps already fired on pointerdown.
-    if ((e as MouseEvent).detail === 0 && !document.body.classList.contains('hud-edit-mode')) fn();
+    if ((e as MouseEvent).detail === 0 && (!document.body.classList.contains('hud-edit-mode') || el.closest('#hudEditorPanel'))) fn();
   });
 }
 
@@ -1879,6 +1880,9 @@ function applyHudPreset(preset: 'four' | 'three' | 'thumbs') {
   saveHudLayout();
 }
 function setHudEditMode(active: boolean) {
+  if (active && !hudEditMode) {
+    try { hudLayoutSnapshot = localStorage.getItem(HUD_LAYOUT_KEY); } catch { hudLayoutSnapshot = null; }
+  }
   hudEditMode = active;
   document.body.classList.toggle('hud-edit-mode', active);
   hudEditorOverlay.classList.toggle('show', active);
@@ -1895,7 +1899,19 @@ function setHudEditMode(active: boolean) {
     selectedHudItem?.classList.remove('hud-selected');
     selectedHudItem = null;
     saveHudLayout();
+    hudLayoutSnapshot = null;
   }
+}
+function cancelHudEditMode() {
+  try {
+    if (hudLayoutSnapshot === null) localStorage.removeItem(HUD_LAYOUT_KEY);
+    else localStorage.setItem(HUD_LAYOUT_KEY, hudLayoutSnapshot);
+  } catch {}
+  hudLayout = Object.fromEntries(Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }]));
+  loadHudLayout();
+  hudTouchButtons.forEach(applyHudItem);
+  hudLayoutSnapshot = null;
+  setHudEditMode(false);
 }
 loadHudLayout();
 
@@ -2041,8 +2057,9 @@ bindAction(hudEditorMinimize, () => {
   hudEditorMinimize.textContent = collapsed ? '+' : '−';
   hudEditorMinimize.setAttribute('aria-label', collapsed ? 'Expand HUD editor' : 'Collapse HUD editor');
 });
-bindAction(document.querySelector('#hudEditorClose') as HTMLButtonElement, () => setHudEditMode(false));
+bindAction(document.querySelector('#hudEditorClose') as HTMLButtonElement, cancelHudEditMode);
 bindAction(document.querySelector('#hudSaveBtn') as HTMLButtonElement, () => setHudEditMode(false));
+bindAction(document.querySelector('#hudCancelBtn') as HTMLButtonElement, cancelHudEditMode);
 bindAction(document.querySelector('#hudResetBtn') as HTMLButtonElement, () => {
   hudLayout = Object.fromEntries(Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }]));
   hudTouchButtons.forEach(applyHudItem);
@@ -2263,6 +2280,7 @@ function saveSurvivalMeta(): void {
 }
 
 const wildcardCooldowns: Partial<Record<WildcardId, number>> = {};
+const flippedWildcardCards = new Set<WildcardId>();
 let wildcardButtons: HTMLButtonElement[] = [];
 let reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 function formatRunTime(seconds: number): string { return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`; }
@@ -2289,12 +2307,14 @@ function renderWildcards(): void {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = `wildcardCard${equipped ? ' equipped' : ''}${unlocked ? '' : ' locked'}`;
+      button.classList.toggle('flipped', flippedWildcardCards.has(card.id));
       button.style.setProperty('--wildcard-accent', card.accent);
       button.disabled = !unlocked;
       button.setAttribute('aria-pressed', String(equipped));
       button.innerHTML = `<span class="wildcardFace wildcardFront"><span class="wildcardArt wildcardArt-${card.id}" aria-hidden="true"><b>${unlocked ? card.short.slice(0, 3) : '×'}</b><i></i><em></em></span><strong>${card.label}</strong><small>${unlocked ? card.description : 'Unlock through progression'}</small><i>${equipped ? 'EQUIPPED' : unlocked ? 'TAP TO INSPECT' : 'LOCKED'}</i></span><span class="wildcardFace wildcardBack"><span class="wildcardBackEyebrow">FIELD CARD · ${unlocked ? 'READY TO REVIEW' : 'SEALED'}</span><strong>${card.label}</strong><small>${unlocked ? card.description : 'Reach a higher level to unlock this card.'}</small><span class="wildcardBackRule"></span><i>${equipped ? 'TAP AGAIN TO REMOVE' : unlocked ? 'TAP AGAIN TO EQUIP' : 'LOCKED'}</i></span>`;
       if (unlocked) button.addEventListener('click', () => {
-        if (!button.classList.contains('flipped')) { button.classList.add('flipped'); return; }
+        if (!button.classList.contains('flipped')) { button.classList.add('flipped'); flippedWildcardCards.add(card.id); return; }
+        flippedWildcardCards.delete(card.id);
         if (equipped) survivalMeta.equippedWildcards = survivalMeta.equippedWildcards.filter(value => value !== card.id);
         else if (survivalMeta.equippedWildcards.length < slots) survivalMeta.equippedWildcards = [...survivalMeta.equippedWildcards, card.id];
         else { say(`UNLOCKED SLOTS FULL · ${slots} MAX`); return; }
@@ -2761,23 +2781,28 @@ function syncDisplayMode(): void {
   if (displayModeMessage) displayModeMessage.textContent = isLandscapeDisplay()
     ? 'Enter fullscreen to open the island. The run stays paused if fullscreen is exited.'
     : 'Rotate your phone to landscape to continue.';
-  if (enterGameDisplayMode) enterGameDisplayMode.disabled = !isLandscapeDisplay();
+  if (enterGameDisplayMode) enterGameDisplayMode.disabled = false;
 }
 
 async function enterRequiredDisplayMode(): Promise<void> {
-  if (!isLandscapeDisplay()) {
-    syncDisplayMode();
-    return;
-  }
   try {
+    // The tap first grants fullscreen; only then can supported browsers lock orientation.
     if (!document.fullscreenElement) {
       if (!document.documentElement.requestFullscreen) throw new Error('Fullscreen is not supported in this browser.');
       await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
     }
-    try { await (screen.orientation as unknown as { lock?: (orientation: string) => Promise<void> }).lock?.('landscape'); } catch { /* Keep the gate until the device is actually landscape. */ }
+    let orientationLocked = false;
+    try {
+      const orientation = screen.orientation as unknown as { lock?: (orientation: string) => Promise<void> };
+      if (orientation.lock) { await orientation.lock('landscape'); orientationLocked = true; }
+    } catch { /* Some browsers, especially iOS Safari, reject web orientation locking. */ }
     syncDisplayMode();
     if (!document.fullscreenElement && displayModeMessage) {
-      displayModeMessage.textContent = 'Fullscreen was blocked. Use a browser that supports fullscreen, then try again.';
+      displayModeMessage.textContent = 'Fullscreen was blocked. Open this game in a browser that supports fullscreen.';
+    } else if (!isLandscapeDisplay() && displayModeMessage) {
+      displayModeMessage.textContent = orientationLocked
+        ? 'Landscape has been requested. If the phone does not rotate, turn it sideways to continue.'
+        : 'Fullscreen is on. This browser cannot rotate the phone automatically—please turn it sideways.';
     }
   } catch {
     if (displayModeMessage) displayModeMessage.textContent = 'Fullscreen could not start. Try opening this game in a supported browser.';
@@ -4210,6 +4235,18 @@ addEventListener('resize', () => {
 
 addEventListener('beforeunload', saveNow);
 
+// Low-overhead frame-cost diagnostics. Timing runs only while local diagnostics are enabled.
+type OutbreakDiagnosticsWindow = Window & { __islandOutbreakPerfEnabled?: boolean };
+const diagnosticFrameWindow = {
+  active: false,
+  startedAt: 0,
+  frames: 0,
+  simulationTotalMs: 0,
+  simulationMaxMs: 0,
+  renderTotalMs: 0,
+  renderMaxMs: 0,
+};
+
 // The lobby is a genuine pause point: freeze simulation and limit background
 // rendering while the player chooses a loadout. A low-rate redraw lets late
 // GLB/environment loads appear without running terrain, weather, and AI every frame.
@@ -4252,8 +4289,69 @@ function loop() {
 
   lobbyHasRendered = false;
   lobbyRenderAccumulator = 0;
+
+  const diagnosticsEnabled = (window as OutbreakDiagnosticsWindow).__islandOutbreakPerfEnabled !== false;
+  if (!diagnosticsEnabled) {
+    diagnosticFrameWindow.active = false;
+    update(dt);
+    renderer.render(scene, camera);
+    return;
+  }
+
+  if (!diagnosticFrameWindow.active) {
+    diagnosticFrameWindow.active = true;
+    diagnosticFrameWindow.startedAt = performance.now();
+    diagnosticFrameWindow.frames = 0;
+    diagnosticFrameWindow.simulationTotalMs = 0;
+    diagnosticFrameWindow.simulationMaxMs = 0;
+    diagnosticFrameWindow.renderTotalMs = 0;
+    diagnosticFrameWindow.renderMaxMs = 0;
+  }
+
+  const simulationStartedAt = performance.now();
   update(dt);
+  const simulationMs = performance.now() - simulationStartedAt;
+
+  const renderStartedAt = performance.now();
   renderer.render(scene, camera);
+  const renderMs = performance.now() - renderStartedAt;
+
+  diagnosticFrameWindow.frames++;
+  diagnosticFrameWindow.simulationTotalMs += simulationMs;
+  diagnosticFrameWindow.simulationMaxMs = Math.max(diagnosticFrameWindow.simulationMaxMs, simulationMs);
+  diagnosticFrameWindow.renderTotalMs += renderMs;
+  diagnosticFrameWindow.renderMaxMs = Math.max(diagnosticFrameWindow.renderMaxMs, renderMs);
+
+  const diagnosticsNow = performance.now();
+  const diagnosticsWindowMs = diagnosticsNow - diagnosticFrameWindow.startedAt;
+  if (diagnosticsWindowMs >= 5000) {
+    window.dispatchEvent(new CustomEvent('island-outbreak-performance', {
+      detail: {
+        windowMs: Math.round(diagnosticsWindowMs),
+        renderedFrames: diagnosticFrameWindow.frames,
+        simulationAvgMs: Math.round(diagnosticFrameWindow.simulationTotalMs / Math.max(1, diagnosticFrameWindow.frames) * 10) / 10,
+        simulationMaxMs: Math.round(diagnosticFrameWindow.simulationMaxMs * 10) / 10,
+        renderAvgMs: Math.round(diagnosticFrameWindow.renderTotalMs / Math.max(1, diagnosticFrameWindow.frames) * 10) / 10,
+        renderMaxMs: Math.round(diagnosticFrameWindow.renderMaxMs * 10) / 10,
+        drawCalls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        points: renderer.info.render.points,
+        lines: renderer.info.render.lines,
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+        sceneChildren: scene.children.length,
+        pixelRatio: renderer.getPixelRatio(),
+        canvasWidth: renderer.domElement.width,
+        canvasHeight: renderer.domElement.height,
+      },
+    }));
+    diagnosticFrameWindow.startedAt = diagnosticsNow;
+    diagnosticFrameWindow.frames = 0;
+    diagnosticFrameWindow.simulationTotalMs = 0;
+    diagnosticFrameWindow.simulationMaxMs = 0;
+    diagnosticFrameWindow.renderTotalMs = 0;
+    diagnosticFrameWindow.renderMaxMs = 0;
+  }
 }
 document.addEventListener('visibilitychange', () => {
   // Reset the clock baseline when returning from the background to avoid a

@@ -1,3 +1,27 @@
+## 2026-10-10 — Survival HUD cleanup
+
+- Hid the general resource inventory/hotbar while survival mode is active, keeping its resource counts out of the FPS combat HUD. It returns outside survival mode.
+- Renderer optimizations remain deferred until phone diagnostics establish a baseline.
+
+## 2026-10-10 — HUD editor and responsive survival cards
+
+- Fixed `bindAction` so buttons inside the HUD editor remain clickable while HUD edit mode is active.
+- Added an explicit Cancel button. HUD layout is snapshotted on editor entry; Cancel restores the saved local layout and reapplies it, while Save & close keeps the edits.
+- HUD edit mode now visually suppresses the pause overlay and survival lobby while the editor is open, allowing the editor to receive taps. Their existing visibility returns when edit mode exits.
+- Reworked wildcard cards toward the requested 9:16 flashcard format: portrait cards, compact front/name, hidden front description, clamped back description, and flip state retained across re-renders.
+- Added landscape-specific death-card layout with bounded height, scrolling fallback, safe-area padding, and two-column content.
+- Replaced the visually ambiguous safe-zone triangle with a clear arrowhead and stem while retaining its rotation.
+- Validation status: changes are on the feature branch only. No TypeScript/Vite build or real-device interaction test has been run yet. The general resource inventory/hotbar is now hidden in survival mode; confirm visually on device. Renderer optimization remains deferred until diagnostics establish a baseline.
+
+## 2026-10-10 — Island Outbreak diagnostics groundwork
+
+- Added a bounded, local-only background diagnostics logger in `index.html`.
+- Settings now receives a Background Diagnostics section with recording toggle, Copy Logs, and Clear Logs controls.
+- Captures browser/device context, 5-second frame timing samples (FPS, average/worst/p95 frame interval, slow-frame count), long-task observations when supported, UI actions, body-state transitions, visibility/orientation changes, and runtime errors/rejections.
+- Keeps the latest 120 records in local storage and exports a JSON report. No backend transmission is performed.
+- Draw-call and triangle counts are explicitly marked unavailable; renderer instrumentation is still required before those metrics can be reported.
+- Validation: source changes committed on `feature/island-outbreak-diagnostics-ui-fixes`; no build or physical-device test has been run yet. The HUD editor, death card, wildcard cards, safe-zone arrow, unused counters, and renderer optimizations remain pending.
+
 # AGENT_CHANGELOG.md — Multi-Agent Handoff Log
 
 This is the chronological handoff record for meaningful AI-agent work. It complements git history by recording reasoning, verification, discoveries, unresolved issues and what the next agent needs to know.
@@ -838,3 +862,19 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Changed:** Lowered the deliberate-movement threshold to 3.2 velocity or 0.55 joystick magnitude while retaining grounded, non-swimming and cooldown guards. Added explicit `z-index`, `pointer-events` and `touch-action` rules for the Slide button so tapping it while another pointer controls movement is supported.
 
 **Verification:** `npm run lint`, `npm run build` and `git diff --check` all passed. Physical-device multitouch verification remains pending.
+
+## 2026-10-10 14:26 +0000 UTC — ChatGPT
+
+**Scope:** Mobile performance diagnostics for Island Outbreak active gameplay.
+
+**Changed:** Added frame-cost instrumentation to the active gameplay loop. While background diagnostics are enabled, it records average and maximum simulation-update time and render time over roughly five-second windows, plus Three.js draw calls, triangles, points, lines, geometry/texture counts, scene top-level child count, renderer pixel ratio and canvas resolution. The Settings diagnostics export now includes those values alongside FPS/frame-time and long-task measurements. Turning diagnostics off also turns off the per-frame timing instrumentation. Existing screenshot rendering and preserveDrawingBuffer behavior are unchanged.
+
+**Verification:**
+- GitHub Actions type-check: PASS.
+- GitHub Actions production build: PASS.
+- Vercel preview for the instrumentation commit: READY — https://island-outbreak-79d7gwnoc-flames-projects-5a93c7bd.vercel.app
+- Physical-device performance comparison: NOT YET VERIFIED; the next step is a repeatable mobile survival run and export of the new logs.
+
+**Important limitation:** This change measures bottlenecks; it is not itself a performance optimization. No rendering settings, world radius, zombie cap or gameplay behavior were altered based on assumptions.
+
+**Next step:** Repeat the same gameplay scenario on the same phone with diagnostics enabled, then compare simulation time against render time and renderer complexity before applying a targeted optimization.
