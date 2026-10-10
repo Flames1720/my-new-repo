@@ -4235,6 +4235,18 @@ addEventListener('resize', () => {
 
 addEventListener('beforeunload', saveNow);
 
+// Low-overhead frame-cost diagnostics. Timing runs only while local diagnostics are enabled.
+type OutbreakDiagnosticsWindow = Window & { __islandOutbreakPerfEnabled?: boolean };
+const diagnosticFrameWindow = {
+  active: false,
+  startedAt: 0,
+  frames: 0,
+  simulationTotalMs: 0,
+  simulationMaxMs: 0,
+  renderTotalMs: 0,
+  renderMaxMs: 0,
+};
+
 // The lobby is a genuine pause point: freeze simulation and limit background
 // rendering while the player chooses a loadout. A low-rate redraw lets late
 // GLB/environment loads appear without running terrain, weather, and AI every frame.
@@ -4277,8 +4289,69 @@ function loop() {
 
   lobbyHasRendered = false;
   lobbyRenderAccumulator = 0;
+
+  const diagnosticsEnabled = (window as OutbreakDiagnosticsWindow).__islandOutbreakPerfEnabled !== false;
+  if (!diagnosticsEnabled) {
+    diagnosticFrameWindow.active = false;
+    update(dt);
+    renderer.render(scene, camera);
+    return;
+  }
+
+  if (!diagnosticFrameWindow.active) {
+    diagnosticFrameWindow.active = true;
+    diagnosticFrameWindow.startedAt = performance.now();
+    diagnosticFrameWindow.frames = 0;
+    diagnosticFrameWindow.simulationTotalMs = 0;
+    diagnosticFrameWindow.simulationMaxMs = 0;
+    diagnosticFrameWindow.renderTotalMs = 0;
+    diagnosticFrameWindow.renderMaxMs = 0;
+  }
+
+  const simulationStartedAt = performance.now();
   update(dt);
+  const simulationMs = performance.now() - simulationStartedAt;
+
+  const renderStartedAt = performance.now();
   renderer.render(scene, camera);
+  const renderMs = performance.now() - renderStartedAt;
+
+  diagnosticFrameWindow.frames++;
+  diagnosticFrameWindow.simulationTotalMs += simulationMs;
+  diagnosticFrameWindow.simulationMaxMs = Math.max(diagnosticFrameWindow.simulationMaxMs, simulationMs);
+  diagnosticFrameWindow.renderTotalMs += renderMs;
+  diagnosticFrameWindow.renderMaxMs = Math.max(diagnosticFrameWindow.renderMaxMs, renderMs);
+
+  const diagnosticsNow = performance.now();
+  const diagnosticsWindowMs = diagnosticsNow - diagnosticFrameWindow.startedAt;
+  if (diagnosticsWindowMs >= 5000) {
+    window.dispatchEvent(new CustomEvent('island-outbreak-performance', {
+      detail: {
+        windowMs: Math.round(diagnosticsWindowMs),
+        renderedFrames: diagnosticFrameWindow.frames,
+        simulationAvgMs: Math.round(diagnosticFrameWindow.simulationTotalMs / Math.max(1, diagnosticFrameWindow.frames) * 10) / 10,
+        simulationMaxMs: Math.round(diagnosticFrameWindow.simulationMaxMs * 10) / 10,
+        renderAvgMs: Math.round(diagnosticFrameWindow.renderTotalMs / Math.max(1, diagnosticFrameWindow.frames) * 10) / 10,
+        renderMaxMs: Math.round(diagnosticFrameWindow.renderMaxMs * 10) / 10,
+        drawCalls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        points: renderer.info.render.points,
+        lines: renderer.info.render.lines,
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+        sceneChildren: scene.children.length,
+        pixelRatio: renderer.getPixelRatio(),
+        canvasWidth: renderer.domElement.width,
+        canvasHeight: renderer.domElement.height,
+      },
+    }));
+    diagnosticFrameWindow.startedAt = diagnosticsNow;
+    diagnosticFrameWindow.frames = 0;
+    diagnosticFrameWindow.simulationTotalMs = 0;
+    diagnosticFrameWindow.simulationMaxMs = 0;
+    diagnosticFrameWindow.renderTotalMs = 0;
+    diagnosticFrameWindow.renderMaxMs = 0;
+  }
 }
 document.addEventListener('visibilitychange', () => {
   // Reset the clock baseline when returning from the background to avoid a
