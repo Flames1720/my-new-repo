@@ -125,19 +125,21 @@
           </svg>
       </div>
         <nav class="lobbyNav" aria-label="Lobby navigation">
-          <button class="active" type="button" data-lobby-focus="lobbyMissionBoard">MISSION</button>
-          <button type="button" data-lobby-focus="lobbyFieldKit">FIELD KIT</button>
-          <button type="button" data-lobby-focus="lobbyWildcardsPanel">WILDCARDS</button>
-          <button type="button" data-lobby-focus="lobbyRecords">RECORDS</button>
+          <button class="active" type="button" data-lobby-page="mission" aria-current="page">MISSION</button>
+          <button type="button" data-lobby-page="kit">FIELD KIT</button>
+          <button type="button" data-lobby-page="wildcards">WILDCARDS</button>
+          <button type="button" data-lobby-page="records">RECORDS</button>
+          <button type="button" data-lobby-page="challenges">CHALLENGES</button>
+          <button type="button" data-lobby-page="upgrades">UPGRADES</button>
           <button id="lobbyOptionsBtn" type="button">SETTINGS</button>
-          <span class="lobbyNavSpacer"></span><span class="lobbyCurrency">◉ 2,900</span><span class="lobbyLevel">LV 1</span>
+          <span class="lobbyNavSpacer"></span><span class="lobbyCurrency" title="Currency display · economy pending">◉ 2,900</span><span class="lobbyLevel" id="lobbyNavLevel">LV 1</span>
         </nav>
         <header class="lobbyTopline">
           <div class="lobbyMark"><span class="lobbyMarkGlyph">IO</span><span>ISLAND OUTBREAK<small>FIELD OPERATIONS</small></span></div>
           <div class="lobbySignal"><i></i> ISLAND SIGNAL <strong>LIVE</strong></div>
         </header>
         <main class="lobbyStage">
-          <aside class="lobbyPartyPanel" aria-label="Field operations" id="lobbyRecords">
+          <aside class="lobbyPartyPanel lobbyPage" data-lobby-panel="records" aria-label="Your records" id="lobbyRecords">
             <div class="lobbyPanelTitle"><span>FIELD OPERATIONS</span><small>SOLO DEPLOYMENT</small></div>
             <div class="lobbyOperator active"><span class="operatorAvatar">IO</span><span><strong id="lobbyOperatorName">EXPLORER</strong><small>LEVEL 1 · ACTIVE</small></span><b>●</b></div>
             <div class="lobbyOperator"><span class="operatorAvatar operatorGhost">+</span><span><strong>OPEN SLOT</strong><small>SOLO RUN</small></span><b>—</b></div>
@@ -147,31 +149,36 @@
             <div class="lobbyPanelMetric"><span>TOTAL KILLS</span><strong id="lobbyTotalKillsMetric">0</strong></div>
             <div class="lobbyOpsNote"><i></i><span>ISLAND SIGNAL<br><strong>CONNECTED</strong></span></div>
           </aside>
-          <section class="lobbyHero">
-            <p class="lobbyEyebrow"><span>01</span> · LAST KNOWN SAFE REGION</p>
+          <section class="lobbyHero lobbyPage active" data-lobby-panel="mission">
+            <p class="lobbyEyebrow"><span>01</span> · SAFE STARTING AREA</p>
             <div class="lobbyMissionBoard" id="lobbyMissionBoard" aria-label="Current island mission">
               <div class="missionBoardGrid"></div><div class="missionPulse"></div><span class="missionPin pinHome">⌂</span><span class="missionPin pinThreat">!</span><span class="missionRoute"></span>
-              <div class="missionBoardLabels"><span>HOMESTEAD</span><span>INFECTED ACTIVITY</span><span>RIVERWOOD SECTOR</span></div>
+              <div class="missionBoardLabels"><span>HOME BASE</span><span>ZOMBIES NEARBY</span><span>RIVERWOOD</span></div>
             </div>
             <h1 id="lobbyTitle">ISLAND<br><em>OUTBREAK</em></h1>
-            <p class="lobbyTagline">HOLD THE SANCTUARY<br><strong>Survive the next 100 waves.</strong></p>
+            <p class="lobbyTagline">PROTECT YOUR BASE<br><strong>Survive 100 zombie waves.</strong></p>
             <div class="lobbyQuickStats" aria-label="Mission parameters">
               <div><strong>100</strong><span>WAVES</span></div>
-              <div><strong>04</strong><span>STARTING HOSTILES</span></div>
-              <div><strong>01</strong><span>ACTIVE ZONE</span></div>
+              <div><strong>04</strong><span>ZOMBIES AT START</span></div>
+              <div><strong>01</strong><span>SAFE AREA</span></div>
             </div>
-            <p id="lobbyLastRun" class="lobbyLastRun">NO RUN RECORDED</p>
+            <div class="lobbyHomeSummary" aria-label="Your progress">
+                <span id="lobbyHomeLevel">LEVEL 1</span><span id="lobbyHomeXp">0 XP</span><span id="lobbyHomeWave">BEST WAVE 0</span>
+              </div>
+              <p id="lobbyLastRun" class="lobbyLastRun">NO RUN RECORDED</p>
           </section>
           <aside class="lobbyDeploy" id="lobbyFieldKit">
-            <section class="lobbyChallenges" aria-label="Challenges"><div class="challengeTabs"><strong>CHALLENGES</strong><span>EVENT</span></div><div class="challengeRow"><span>FIRST CONTACT</span><b>0 / 5</b><i><em></em></i></div><div class="challengeRow"><span>HOLD THE LINE</span><b>0 / 2</b><i><em></em></i></div><small>Complete a run objective to earn XP and unlock field cards.</small></section>
-            <div class="lobbySectionHead"><span>FIELD KIT</span><small>SELECT LOADOUT</small></div>
+            <section class="lobbyChallenges lobbyPage" data-lobby-panel="challenges" aria-label="Challenges"><div class="challengeTabs"><strong>CHALLENGES</strong><span>EVENT</span></div><div class="challengeRow"><span>FIRST CONTACT</span><b>0 / 5</b><i><em></em></i></div><div class="challengeRow"><span>HOLD THE LINE</span><b>0 / 2</b><i><em></em></i></div><small>Complete a run objective to earn XP and unlock field cards.</small></section>
+            <section class="lobbyPage lobbyKitPage" data-lobby-panel="kit" aria-label="Choose a starting weapon">
+            <div class="lobbySectionHead"><span>YOUR WEAPONS</span><small>CHOOSE ONE BEFORE DEPLOYING</small></div>
             <div id="lobbyWeaponCards" class="lobbyWeaponCards" role="radiogroup" aria-label="Starting weapon">
-              <button class="lobbyWeaponPick active" type="button" role="radio" aria-checked="true" data-lobby-weapon="pistol"><span class="weaponCardIcon pistolIcon">P</span><span class="weaponCardCopy"><strong>P9 TACTICAL</strong><small>SIDEARM · STEADY</small></span><span class="weaponCardSelect">●</span></button>
-              <button class="lobbyWeaponPick" type="button" role="radio" aria-checked="false" data-lobby-weapon="shotgun"><span class="weaponCardIcon shotgunIcon">12</span><span class="weaponCardCopy"><strong>W-870 BREACHER</strong><small>SHOTGUN · CLOSE</small></span><span class="weaponCardSelect">○</span></button>
-              <button class="lobbyWeaponPick" type="button" role="radio" aria-checked="false" data-lobby-weapon="rifle"><span class="weaponCardIcon rifleIcon">AR</span><span class="weaponCardCopy"><strong>AR-15 SPECOPS</strong><small>RIFLE · AUTOMATIC</small></span><span class="weaponCardSelect">○</span></button>
+              <button class="lobbyWeaponPick active" type="button" role="radio" aria-checked="true" data-lobby-weapon="pistol"><span class="weaponCardIcon pistolIcon" aria-hidden="true"><svg viewBox="0 0 128 65"><path d="M9 18h76l12 9v11H73l-8 18H47l-6-28H9z" fill="#7a94a8"/><path d="M43 28l5 26 13-1 8-25M22 15h63v6H22z" fill="#273a49"/><path d="M12 25h86v4H12z" fill="#c2d4de"/></svg></span><span class="weaponCardCopy"><strong>P9 TACTICAL</strong><small>SIDEARM · STEADY</small></span><span class="weaponCardSelect">●</span></button>
+              <button class="lobbyWeaponPick" type="button" role="radio" aria-checked="false" data-lobby-weapon="shotgun"><span class="weaponCardIcon shotgunIcon" aria-hidden="true"><svg viewBox="0 0 128 65"><path d="M7 32h114v7H7z" fill="#c6b79f"/><path d="M13 39l-8 12 10-1 15-12z" fill="#775d48"/><path d="M30 28h63v5H30z" fill="#647887"/><path d="M46 40l11 12h11l-7-14z" fill="#8a6a4a"/><path d="M70 27h19v13H70z" fill="#7d9aa9"/></svg></span><span class="weaponCardCopy"><strong>W-870 BREACHER</strong><small>SHOTGUN · CLOSE</small></span><span class="weaponCardSelect">○</span></button>
+              <button class="lobbyWeaponPick" type="button" role="radio" aria-checked="false" data-lobby-weapon="rifle"><span class="weaponCardIcon rifleIcon" aria-hidden="true"><svg viewBox="0 0 128 65"><path d="M4 27h119v7H4z" fill="#a2acb0"/><path d="M16 23h35v4H16zM59 20h34v7H59z" fill="#4a636d"/><path d="M70 35l7 23h14l-8-23z" fill="#4a636d"/><path d="M38 35l-14 17H9l9-19z" fill="#536a6e"/><path d="M48 34l4 14h10l5-14z" fill="#788d92"/><path d="M111 24h5v14h-5z" fill="#cad8d9"/></svg></span><span class="weaponCardCopy"><strong>AR-15 SPECOPS</strong><small>RIFLE · AUTOMATIC</small></span><span class="weaponCardSelect">○</span></button>
             </div>
             <select id="lobbyWeaponSelect" aria-label="Starting weapon"><option value="pistol">P9 Tactical</option><option value="shotgun">W-870 Breacher</option><option value="rifle">AR-15 SpecOps</option></select>
-            <section class="lobbyProgression" aria-label="Persistent upgrades">
+            </section>
+            <section class="lobbyProgression lobbyPage" data-lobby-panel="upgrades" aria-label="Permanent upgrades">
               <div class="lobbySectionHead"><span id="lobbyProgressionSummary">LEVEL 1 · 0 XP · BEST WAVE 0/100</span><small>PERMANENT UPGRADES</small></div>
               <div class="lobbyUpgradeGrid">
                 <button id="upgradeHealthBtn" type="button">+10 HP <small>120 XP</small></button>
@@ -179,7 +186,7 @@
                 <button id="upgradeDamageBtn" type="button">+5% DAMAGE <small>180 XP</small></button>
               </div>
             </section>
-            <section class="lobbyWildcards" id="lobbyWildcardsPanel" aria-label="Wildcards">
+            <section class="lobbyWildcards lobbyPage" data-lobby-panel="wildcards" id="lobbyWildcardsPanel" aria-label="Wildcards">
               <div class="lobbySectionHead"><span>WILDCARDS</span><small id="wildcardSlotSummary">2 ACTIVE SLOTS</small></div>
               <p class="wildcardIntro">Equip active field cards before deployment. Each equipped card adds one ready button in the run.</p>
               <div id="wildcardCollection" class="wildcardCollection"></div>
@@ -187,7 +194,7 @@
           </aside>
         </main>
         <footer class="lobbyFooter">
-          <div class="lobbyObjective"><span class="lobbyObjectiveDot"></span><span>OBJECTIVE <strong>HOLD THE SANCTUARY</strong></span></div>
+          <div class="lobbyObjective"><span class="lobbyObjectiveDot"></span><span>GOAL <strong>SURVIVE 100 WAVES</strong></span></div>
           <button id="startRunBtn" type="button"><span>DEPLOY</span><b>→</b></button>
         </footer>
       </div>
