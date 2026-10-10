@@ -133,6 +133,25 @@ class SoundEngine {
     }
   }
 
+  // Short gravel-and-cloth scrape for tactical sliding. Generated locally,
+  // avoiding an additional sound download on low-power mobile devices.
+  public playSlide(): void {
+    if (!this.ctx || !this.sfxGain) return;
+    const now = this.ctx.currentTime;
+    this.playNoise(0.28, 750, 0.24);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(130, now);
+    osc.frequency.exponentialRampToValueAtTime(55, now + 0.26);
+    gain.gain.setValueAtTime(0.13, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.27);
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.28);
+  }
+
   public playDryFire() {
     if (!this.ctx || !this.sfxGain) return;
     this.playMechanicalClick(800, 0.04);
