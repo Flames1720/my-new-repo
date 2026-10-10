@@ -11,6 +11,16 @@
     <meta property="og:description" content="First-person open-world zombie survival prototype with procedural terrain, weapons, loot, and safe zones." />
   </head>
   <body>
+    <div id="displayModeGate" role="dialog" aria-modal="true" aria-labelledby="displayModeTitle">
+      <div class="displayModeCard">
+        <div class="displayModeEyebrow">ISLAND OUTBREAK · FIELD DEPLOYMENT</div>
+        <h1 id="displayModeTitle">PREPARE FOR DEPLOYMENT</h1>
+        <p class="displayModeLandscapeHint">This operation is designed for landscape. Rotate your phone sideways to continue.</p>
+        <p class="displayModeFullscreenHint">Enter the island in fullscreen for the intended game experience.</p>
+        <button id="enterGameDisplayMode" type="button">ENTER ISLAND <span>→</span></button>
+        <div class="displayModeFootnote">Best played in landscape · Fullscreen recommended</div>
+      </div>
+    </div>
     <div id="game"></div>
     <div id="hud">
       <!-- Top Tactical Compass -->
