@@ -1814,6 +1814,8 @@ lookZone.addEventListener('pointerdown', e => {
   if (lookPointer !== null) return;
   e.preventDefault();
   e.stopPropagation();
+  // A dedicated look-zone finger has priority over optional button drag-look.
+  buttonLookPointer = null;
   lookPointer = e.pointerId;
   beginLookGesture(e.clientX, e.clientY);
   lookZone.setPointerCapture(e.pointerId);
@@ -1851,7 +1853,8 @@ function bindAction(el: HTMLElement, fn: () => void, allowDuringHudEdit = false)
   });
 }
 
-function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void, onRelease?: () => void) {
+let buttonLookPointer: number | null = null;
+function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void, onRelease?: () => void, canDragLook?: () => boolean) {
   const heldPointers = new Set<number>();
   const down = (e: PointerEvent) => {
     e.preventDefault();
@@ -1863,10 +1866,23 @@ function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void, onRe
     keyPointers.add(e.pointerId);
     syncKeyState(key);
     onPress?.();
+    if (canDragLook?.() && lookPointer === null && buttonLookPointer === null) {
+      buttonLookPointer = e.pointerId;
+      beginLookGesture(e.clientX, e.clientY);
+    }
     el.setPointerCapture(e.pointerId);
+  };
+  const move = (e: PointerEvent) => {
+    if (!heldPointers.has(e.pointerId)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (buttonLookPointer === e.pointerId && canDragLook?.() && lookPointer === null) {
+      onLookMove(e.clientX, e.clientY);
+    }
   };
   const up = (e: PointerEvent) => {
     e.stopPropagation();
+    if (buttonLookPointer === e.pointerId) buttonLookPointer = null;
     if (!heldPointers.delete(e.pointerId)) return;
     const keyPointers = pointerKeys.get(key);
     keyPointers?.delete(e.pointerId);
@@ -1875,6 +1891,7 @@ function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void, onRe
     if (!keys.has(key)) onRelease?.();
   };
   el.addEventListener('pointerdown', down);
+  el.addEventListener('pointermove', move);
   el.addEventListener('pointerup', up);
   el.addEventListener('pointercancel', up);
   el.addEventListener('lostpointercapture', up);
@@ -2181,16 +2198,20 @@ bindAction(document.querySelector('#attackBtn') as HTMLButtonElement, triggerSwo
 bindAction(document.querySelector('#punchBtn') as HTMLButtonElement, triggerPunch);
 bindAction(document.querySelector('#kickBtn') as HTMLButtonElement, triggerKick);
 bindAction(document.querySelector('#castBtn') as HTMLButtonElement, () => survival?.enabled ? survival.fire() : triggerFireCast());
-bindHoldAction(document.querySelector('#shootBtn') as HTMLButtonElement, 'shoot', () => survival?.enabled && survival.fire());
+bindHoldAction(document.querySelector('#shootBtn') as HTMLButtonElement, 'shoot',
+  () => survival?.enabled && survival.fire(), undefined, () => settings.current.lookWhileFiring);
 bindAction(document.querySelector('#skillBtn') as HTMLButtonElement, () => survival?.enabled && survival.activateSkill());
 const adsButton = document.querySelector('#aimBtn') as HTMLButtonElement;
 bindHoldAction(adsButton, 'aim', () => {
+  // Apply aim state on pointer-down, rather than waiting for the next simulation tick.
+  survival?.setAim(true);
   document.body.classList.add('aim-active');
   adsButton.setAttribute('aria-pressed', 'true');
 }, () => {
+  survival?.setAim(false);
   document.body.classList.remove('aim-active');
   adsButton.setAttribute('aria-pressed', 'false');
-});
+}, () => settings.current.lookWhileAiming);
 bindAction(document.querySelector('#reloadBtn') as HTMLButtonElement, () => survival?.enabled && survival.reload());
 bindHoldAction(document.querySelector('#jumpBtn') as HTMLButtonElement, ' ', jump);
 bindAction(document.querySelector('#slideBtn') as HTMLButtonElement, triggerSlide);
@@ -2557,6 +2578,8 @@ const sensYVal = document.querySelector('#sensYVal') as HTMLSpanElement;
 const adsSensSlider = document.querySelector('#adsSensSlider') as HTMLInputElement;
 const adsSensVal = document.querySelector('#adsSensVal') as HTMLSpanElement;
 const invertYCheck = document.querySelector('#invertYCheck') as HTMLInputElement;
+const lookWhileAimingCheck = document.querySelector('#lookWhileAimingCheck') as HTMLInputElement;
+const lookWhileFiringCheck = document.querySelector('#lookWhileFiringCheck') as HTMLInputElement;
 const camAccelSelect = document.querySelector('#camAccelSelect') as HTMLSelectElement;
 const camAccelStrengthSlider = document.querySelector('#camAccelStrengthSlider') as HTMLInputElement;
 const camAccelStrengthVal = document.querySelector('#camAccelStrengthVal') as HTMLSpanElement;
@@ -2612,6 +2635,8 @@ function openSettings(open: boolean) {
     sensXVal.textContent = `${Math.round(settings.current.sensitivityX)}°`;
     sensYVal.textContent = `${Math.round(settings.current.sensitivityY)}°`;
     invertYCheck.checked = settings.current.invertY;
+    lookWhileAimingCheck.checked = settings.current.lookWhileAiming;
+    lookWhileFiringCheck.checked = settings.current.lookWhileFiring;
     camAccelSelect.value = settings.current.cameraAcceleration;
     camAccelStrengthSlider.value = String(settings.current.cameraAccelerationStrength);
     camAccelStrengthVal.textContent = `${settings.current.cameraAccelerationStrength.toFixed(2).replace(/0$/, '')}×`;
@@ -2656,6 +2681,8 @@ document.querySelectorAll<HTMLButtonElement>('[data-lobby-focus]').forEach(butto
   });
 });
 bindAction(settingsClose, () => openSettings(false));
+lookWhileAimingCheck.addEventListener('change', () => settings.update({ lookWhileAiming: lookWhileAimingCheck.checked }));
+lookWhileFiringCheck.addEventListener('change', () => settings.update({ lookWhileFiring: lookWhileFiringCheck.checked }));
 bindAction(hudCustomizeBtn, () => setHudEditMode(true));
 
 if (playerGenderSelect) {
@@ -3779,6 +3806,9 @@ function releaseSurvivalInputs() {
   keys.clear();
   keyboardKeys.clear();
   pointerKeys.clear();
+  buttonLookPointer = null;
+  lookPointer = null;
+  pointer = null;
   joy.x = 0;
   joy.y = 0;
   joyActive = false;
@@ -4187,8 +4217,15 @@ function update(dt: number) {
     say(player.swimming ? 'Swimming · hold Space / RISE to surface; Ctrl / DIVE to submerge.' : 'Back on land.');
   }
 
-  camYaw = angleLerp(camYaw, targetYaw, Math.min(1, dt * 12));
-  camPitch = lerp(camPitch, targetPitch, Math.min(1, dt * 12));
+  // In FPP survival, avoid the extra delayed aim angle introduced by camera
+  // interpolation. Smooth spectator/exploration camera behavior remains unchanged.
+  if (survival?.enabled && mode === 'fpp') {
+    camYaw = targetYaw;
+    camPitch = targetPitch;
+  } else {
+    camYaw = angleLerp(camYaw, targetYaw, Math.min(1, dt * 12));
+    camPitch = lerp(camPitch, targetPitch, Math.min(1, dt * 12));
+  }
   camDistance = lerp(camDistance, targetDistance, Math.min(1, dt * 12));
   player.root.visible = mode !== 'fpp';
 
@@ -4259,7 +4296,8 @@ function update(dt: number) {
   } else {
     const eye = cameraEye.copy(p);
     eye.y += slideTimer > 0 ? 0.93 : player.swimming ? 0.22 : 1.55;
-    camera.position.lerp(eye, Math.min(1, dt * 18));
+    if (survival?.enabled) camera.position.copy(eye);
+    else camera.position.lerp(eye, Math.min(1, dt * 18));
     const look = cameraLook.copy(eye);
     look.x += Math.sin(camYaw) * Math.cos(camPitch) * 8;
     look.y += Math.sin(camPitch) * 8;
