@@ -1755,3 +1755,29 @@ body.hud-edit-mode #hudEditorOverlay {
   z-index: 1200 !important;
   visibility: visible !important;
 }
+
+
+/* HUD editor interaction safeguard: keep its floating controls above the static backdrop. */
+body.hud-edit-mode #hudEditorOverlay,
+body.hud-edit-mode #hudEditorOverlay.show {
+  display: block !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  z-index: 2147483000 !important;
+}
+body.hud-edit-mode #hudEditorPanel {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  position: absolute;
+  z-index: 2147483001 !important;
+  touch-action: pan-y !important;
+}
+body.hud-edit-mode #hudEditorPanel button,
+body.hud-edit-mode #hudEditorPanel select,
+body.hud-edit-mode #hudEditorPanel input {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 2147483002 !important;
+  touch-action: manipulation !important;
+}

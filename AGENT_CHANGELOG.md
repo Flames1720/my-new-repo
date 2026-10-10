@@ -868,3 +868,12 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 - Kept the selected control's existing cyan highlight/outline, drag behavior, size/opacity sliders, presets and local save behavior.
 
 **Verification:** Source reviewed and patch applied to the feature branch. Build/CI and real-device interaction checks are pending; do not treat this as phone-tested until the user confirms.
+
+
+## 2026-10-10 — GPT-6 — restore HUD editor floating panel interactions
+
+**Branch:** `feature/zombie-survival-world-v2`; `main` unchanged.
+
+**Fix:** Explicitly restore pointer-event handling, visibility, touch behavior, and a high stacking order for the HUD editor overlay, panel, and its buttons/selects/sliders while HUD edit mode is active. This prevents the isolated editor backdrop/layering from intercepting Save & close, Reset, Collapse/Expand, and Close controls.
+
+**Verification:** Source patch committed and preview deployment requested. Physical-device tap test is still required.
