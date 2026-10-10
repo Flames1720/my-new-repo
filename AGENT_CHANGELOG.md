@@ -827,3 +827,14 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 - Device: NOT VERIFIED on a physical phone.
 
 **Remaining work:** The category buttons are presentation-only labels for the current unified settings panel; physical Android/iOS safe-area and touch testing remains required.
+
+
+## 2026-10-10 10:08 +0000 UTC — Manus
+
+**Scope:** Survival Slide touch control.
+
+**Finding:** The Slide button was wired to multi-touch-safe `bindAction`, but the activation gate required sprint state or a velocity of at least 5.2. Survival mode does not expose a clear sprint modifier, so a player moving with the joystick could be rejected even while visibly running. The control also lacked an explicit touch-priority rule.
+
+**Changed:** Lowered the deliberate-movement threshold to 3.2 velocity or 0.55 joystick magnitude while retaining grounded, non-swimming and cooldown guards. Added explicit `z-index`, `pointer-events` and `touch-action` rules for the Slide button so tapping it while another pointer controls movement is supported.
+
+**Verification:** `npm run lint`, `npm run build` and `git diff --check` all passed. Physical-device multitouch verification remains pending.
