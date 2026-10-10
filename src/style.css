@@ -1988,3 +1988,21 @@ body.survival-mode #inventory { display: none !important; }
  #survivalLobby .weaponCardCopy small{font-size:7px}
  #survivalLobby .lobbyHomeSummary span{padding:6px;font-size:9px}
 }
+
+
+/* Functional settings sections; unselected categories do not consume screen space. */
+.settingsBody [data-settings-section][hidden],
+.settingsBody .settingGroup[hidden],
+.settingsBody .settingRow[hidden]{display:none!important}
+.settingsTabs{overflow-x:auto;max-width:100%;scrollbar-width:thin}
+.settingsTabs button{white-space:nowrap}
+.settingNote{margin:5px 0 12px;color:#aebfc4;font-size:11px;line-height:1.55}
+.settingsDiagnosticActions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.settingsDiagnosticActions button{padding:9px 12px;border:1px solid #486c73;border-radius:7px;background:#1b343c;color:#f1f5f9;font-size:10px;font-weight:800;cursor:pointer}
+#diagnosticReadout{max-height:135px;min-height:44px;overflow:auto;padding:10px;border:1px solid #ffffff19;border-radius:7px;background:#080f14;color:#bdd8ce;font-size:9px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
+/* Keep existing legacy systems callable internally, but do not surface removed
+   exploration UI in Island Outbreak's first-person survival presentation. */
+body.survival-mode #playerCard,
+body.survival-mode #inventory,
+body.survival-mode #upgradeOverlay,
+body.survival-mode #surveyBtn{display:none!important}
