@@ -7,6 +7,8 @@ export const defaultSettings: SettingsState = {
   sensitivityY: 100,
   adsSensitivity: 0.5,
   invertY: false,
+  lookWhileAiming: false,
+  lookWhileFiring: false,
   cameraAcceleration: 'fixed',
   cameraAccelerationStrength: 0.65,
   cameraAccelerationThreshold: 1.0,
@@ -42,6 +44,8 @@ class SettingsManager {
         }
         if (!Number.isFinite(this.current.adsSensitivity)) this.current.adsSensitivity = defaultSettings.adsSensitivity;
         this.current.adsSensitivity = Math.max(0.25, Math.min(1, this.current.adsSensitivity));
+        this.current.lookWhileAiming = parsed.lookWhileAiming === true;
+        this.current.lookWhileFiring = parsed.lookWhileFiring === true;
         if (!['fixed', 'distance', 'speed'].includes(this.current.cameraAcceleration)) {
           this.current.cameraAcceleration = defaultSettings.cameraAcceleration;
         }
