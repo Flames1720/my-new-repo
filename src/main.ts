@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import './style.css';
+import './ui-modern.css';
 import type { Mode, EmoteKind, HomeLevel, ResourceKind, ResourceDef, PlayerProfile, CharacterModelId } from './types';
 import {
   SEED,
@@ -3858,16 +3859,50 @@ addEventListener('resize', () => {
 
 addEventListener('beforeunload', saveNow);
 
+// The lobby is a genuine pause point: freeze simulation and limit background
+// rendering while the player chooses a loadout. A low-rate redraw lets late
+// GLB/environment loads appear without running terrain, weather, and AI every frame.
+let lobbyRenderAccumulator = 0;
+let lobbyHasRendered = false;
 function loop() {
   requestAnimationFrame(loop);
   const dt = Math.min(clock.getDelta(), 0.05);
+
+  if (document.hidden) {
+    lobbyHasRendered = false;
+    lobbyRenderAccumulator = 0;
+    return;
+  }
+
   if (survey.isActive) {
+    lobbyHasRendered = false;
+    lobbyRenderAccumulator = 0;
     // Only redraw the frozen survey scene when its camera actually changes.
-    // This keeps the full-world survey detailed without continuously burning GPU.
     if (survey.update(dt)) renderer.render(scene, survey.camera);
     return;
   }
+
+  const lobbyOpen = !!survivalLobby?.classList.contains('show');
+  if (lobbyOpen) {
+    lobbyRenderAccumulator += dt;
+    if (!lobbyHasRendered || lobbyRenderAccumulator >= 0.25) {
+      lobbyRenderAccumulator = 0;
+      renderer.render(scene, camera);
+      lobbyHasRendered = true;
+    }
+    return;
+  }
+
+  lobbyHasRendered = false;
+  lobbyRenderAccumulator = 0;
   update(dt);
   renderer.render(scene, camera);
 }
+document.addEventListener('visibilitychange', () => {
+  // Reset the clock baseline when returning from the background to avoid a
+  // large simulation step or a jump in physics on mobile browsers.
+  clock.getDelta();
+  lobbyHasRendered = false;
+  lobbyRenderAccumulator = 0;
+});
 loop();
