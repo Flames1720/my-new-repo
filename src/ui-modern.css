@@ -1,3 +1,896 @@
+/* Modern UI foundation — presentation-only overrides.
+   Keep gameplay behavior and existing DOM hooks unchanged. */
+:root {
+  color-scheme: dark;
+  --ui-bg: rgba(12, 17, 27, .86);
+  --ui-panel: rgba(19, 27, 41, .92);
+  --ui-panel-soft: rgba(25, 35, 51, .82);
+  --ui-border: rgba(226, 232, 240, .15);
+  --ui-border-strong: rgba(196, 181, 253, .42);
+  --ui-text: #f5f3ff;
+  --ui-muted: #a7b0c2;
+  --ui-accent: #c4b5fd;
+  --ui-gold: #f3c969;
+  --ui-success: #86d6ad;
+  --ui-radius: 14px;
+  --ui-shadow: 0 10px 30px rgba(0, 0, 0, .32);
+}
+body { color: var(--ui-text); background: #090e17; }
+button, input, select { font: inherit; }
+button { -webkit-appearance: none; appearance: none; }
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--ui-accent); outline-offset: 3px;
+}
+#hud { padding: calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left)); }
+#compass {
+  min-height: 30px; padding: 6px 14px; border-radius: 999px;
+  color: #f7f4ff; background: var(--ui-bg); border: 1px solid var(--ui-border);
+  box-shadow: var(--ui-shadow); font-size: 10px; letter-spacing: 1.8px;
+}
+#topRightBar { gap: 7px; }
+#settingsBtn, #fullscreenBtn, #ecoBtn, #photoBtn, #surveyBtn {
+  width: 42px; height: 42px; border-radius: 13px; border: 1px solid var(--ui-border);
+  background: var(--ui-bg); box-shadow: 0 5px 16px rgba(0,0,0,.25);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  font-size: 18px; transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+#settingsBtn:hover, #fullscreenBtn:hover, #ecoBtn:hover, #photoBtn:hover, #surveyBtn:hover {
+  border-color: var(--ui-border-strong); background: rgba(38, 44, 66, .96);
+}
+#photoBtn:hover { border-color: rgba(243,201,105,.7); box-shadow: 0 0 16px rgba(243,201,105,.14); }
+#playerCard { gap: 6px; }
+#profileBadge {
+  padding: 7px 11px; border-radius: 11px; color: #e6ddff;
+  background: var(--ui-bg); border: 1px solid var(--ui-border-strong);
+  box-shadow: var(--ui-shadow); font-size: 11px; letter-spacing: .2px;
+}
+#status {
+  padding: 5px 9px; border-radius: 8px; color: #e5e7eb;
+  background: rgba(12,17,27,.72); border: 1px solid var(--ui-border);
+  font-size: 9px; letter-spacing: .65px;
+}
+#wildlife, #waypointBadge {
+  border-radius: 10px; border: 1px solid var(--ui-border);
+  background: var(--ui-bg); box-shadow: 0 6px 18px rgba(0,0,0,.2);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  font-size: 10px; line-height: 1.45;
+}
+#minimapContainer { top: calc(60px + env(safe-area-inset-top)); width: 88px; height: 88px; }
+#miniCanvas {
+  width: 88px; height: 88px; border: 2px solid rgba(226,232,240,.25);
+  box-shadow: 0 8px 24px rgba(0,0,0,.38); background: var(--ui-bg);
+}
+#minimapSub { bottom: -18px; gap: 3px; }
+#minimapHomeDist { padding: 3px 7px; border-radius: 999px; color: var(--ui-gold); background: var(--ui-bg); }
+#minimapTapHint { font-size: 7px; letter-spacing: 1px; color: #e5e7eb; }
+#inventory {
+  gap: 5px; padding: 6px; max-width: min(72vw, 520px); border-radius: 16px;
+  background: var(--ui-bg); border: 1px solid var(--ui-border);
+  box-shadow: 0 10px 28px rgba(0,0,0,.34);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  scrollbar-width: none;
+}
+#inventory::-webkit-scrollbar { display: none; }
+.invItem {
+  min-height: 34px; padding: 6px 9px; border-radius: 10px;
+  background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.09);
+  font-size: 10px; text-shadow: none; white-space: nowrap;
+}
+#target { text-shadow: 0 1px 8px #000, 0 0 8px rgba(196,181,253,.55); }
+#target.active { color: var(--ui-gold); }
+#prompt {
+  padding: 8px 13px; gap: 9px; border-radius: 13px;
+  background: rgba(12,17,27,.94); border: 1px solid var(--ui-border-strong);
+  box-shadow: 0 10px 28px rgba(0,0,0,.34); font-size: 11px;
+}
+.promptKey { width: 25px; height: 25px; border-radius: 8px; background: var(--ui-accent); color: #171426; }
+#controls { color: rgba(241,245,249,.64); font-size: 9px; letter-spacing: .2px; }
+#emoteBar {
+  gap: 6px; padding: 8px; border-radius: 15px; background: var(--ui-panel);
+  border: 1px solid var(--ui-border); box-shadow: var(--ui-shadow);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+}
+.emoteOption {
+  min-height: 36px; padding: 8px 11px; border-radius: 10px;
+  background: var(--ui-panel-soft); border: 1px solid var(--ui-border);
+  font-size: 11px; transition: background .15s ease, border-color .15s ease;
+}
+.emoteOption:active { background: #34304b; border-color: var(--ui-border-strong); }
+#mapOverlay {
+  background: rgba(7, 11, 19, .96); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+#mapTitle { font-size: 13px; letter-spacing: 1.4px; }
+#mapTitle span { display: block; margin: 5px 0 0; font-size: 9px; line-height: 1.5; letter-spacing: .7px; }
+#mapCanvas { border-color: var(--ui-border); border-radius: 18px; box-shadow: var(--ui-shadow); }
+#mapClose, #settingsClose, #upgradeClose, #ecoClose {
+  min-width: 40px; min-height: 40px; border-radius: 11px;
+  background: var(--ui-panel-soft); border: 1px solid var(--ui-border);
+}
+#settingsOverlay, #upgradeOverlay, #ecoOverlay {
+  background: rgba(3, 6, 12, .72); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+}
+.settingsCard, .upgradeCard, .ecoCard {
+  width: min(520px, 94vw); max-height: min(88dvh, 780px);
+  background: linear-gradient(160deg, rgba(25,33,49,.98), rgba(12,17,27,.98));
+  border: 1px solid var(--ui-border); border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,.48);
+}
+.settingsHeader, .upgradeHeader, .ecoHeader { padding: 15px 17px; border-color: rgba(255,255,255,.09); }
+.settingsHeader h3, .upgradeHeader h3, .ecoHeader h3 {
+  max-width: calc(100% - 50px); color: #ddd6fe; font-size: 11px; letter-spacing: .9px; line-height: 1.45;
+}
+.settingsBody, .upgradeBody, .ecoBody { padding: 16px 17px; gap: 17px; }
+.settingGroup { gap: 8px; }
+.settingLabel, .settingRow { color: #e5e7eb; font-size: 12px; line-height: 1.45; }
+.settingLabel > span:last-child { color: var(--ui-accent); }
+select, input[type="text"], #playerNameInput {
+  min-height: 42px; padding: 10px 12px; border-radius: 11px;
+  color: #f8fafc; background: rgba(7,12,21,.84); border: 1px solid var(--ui-border);
+  font-size: 12px;
+}
+input[type="range"] { accent-color: var(--ui-accent); height: 5px; }
+input[type="checkbox"] { width: 20px; height: 20px; accent-color: #a78bfa; }
+#upgradeCurrentLevel { color: var(--ui-gold); font-size: 13px; }
+#upgradeDesc, .ecoIntro { color: var(--ui-muted); font-size: 12px; line-height: 1.6; }
+.costBadge { padding: 6px 9px; border-radius: 9px; background: rgba(255,255,255,.045); border-color: var(--ui-border); }
+#upgradeBtn {
+  min-height: 44px; border-radius: 12px; color: #171426;
+  background: linear-gradient(135deg, #ddd6fe, #a78bfa); font-size: 11px; letter-spacing: .6px;
+}
+#upgradeBtn:disabled { color: #cbd5e1; background: #374151; }
+.ecoRow { padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.04); border-color: var(--ui-border); }
+.ecoSummary { color: var(--ui-accent); border-color: var(--ui-border); }
+#touch { z-index: 200; }
+#stick {
+  width: 104px; height: 104px; background: rgba(15,20,32,.28);
+  border: 1px solid rgba(226,232,240,.24); box-shadow: 0 8px 24px rgba(0,0,0,.16);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+#knob {
+  width: 44px; height: 44px; margin: -22px; background: rgba(221,214,254,.3);
+  border: 1px solid rgba(221,214,254,.48); box-shadow: 0 2px 10px rgba(0,0,0,.2);
+}
+.actions { gap: 7px; }
+.actions button {
+  width: 54px; height: 54px; border-radius: 18px;
+  color: #f8fafc; background: rgba(12,17,27,.78); border: 1px solid rgba(226,232,240,.22);
+  box-shadow: 0 7px 18px rgba(0,0,0,.22); font-size: 9px;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.actions button:active { background: rgba(66,53,100,.92); border-color: var(--ui-border-strong); }
+#photoOverlay { color: var(--ui-text); }
+.photoBadge { color: var(--ui-accent); border-color: var(--ui-border-strong); }
+#photoCloseBtn, #photoGridBtn, #photoSnapBtn {
+  border-radius: 12px; border-color: var(--ui-border); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+}
+@media (max-width: 900px), (pointer: coarse) {
+  #topRightBar { gap: 5px; }
+  #settingsBtn, #fullscreenBtn, #ecoBtn, #photoBtn, #surveyBtn { width: 38px; height: 38px; border-radius: 11px; font-size: 16px; }
+  #playerCard { max-width: 42vw; }
+  #profileBadge { max-width: 100%; font-size: 10px; padding: 6px 8px; }
+  #wildlife { max-width: min(190px, 48vw); font-size: 9px; }
+  #inventory { bottom: calc(9px + env(safe-area-inset-bottom)); max-width: min(68vw, 420px); gap: 4px; }
+  .invItem { padding: 5px 7px; font-size: 9px; }
+  #prompt { max-width: min(74vw, 360px); white-space: normal; text-align: center; }
+  #emoteBar { max-width: calc(100vw - 24px); overflow-x: auto; }
+  .emoteOption { flex: 0 0 auto; }
+}
+@media (orientation: landscape) and (pointer: coarse) {
+  #stick { width: 90px; height: 90px; left: calc(18px + env(safe-area-inset-left)); bottom: calc(12px + env(safe-area-inset-bottom)); }
+  #knob { width: 40px; height: 40px; margin: -20px; }
+  .actions { right: calc(14px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); gap: 6px; }
+  .actions button { width: 48px; height: 48px; border-radius: 16px; }
+  #minimapContainer { width: 76px; height: 76px; top: calc(54px + env(safe-area-inset-top)); }
+  #miniCanvas { width: 76px; height: 76px; }
+  #inventory { bottom: calc(8px + env(safe-area-inset-bottom)); }
+}
+@media (max-height: 460px) and (orientation: landscape) {
+  #wildlife { display: none; }
+  #minimapContainer { top: calc(48px + env(safe-area-inset-top)); }
+  #inventory { max-width: 52vw; }
+  #prompt { bottom: 16%; }
+  .settingsCard, .upgradeCard, .ecoCard { max-height: 92dvh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+
+/* --- ISLAND OUTBREAK: release-ready lobby and low-cost tactical UI --- */
+#survivalLobby {
+  overflow-y: auto;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background:
+    radial-gradient(ellipse at 16% 15%, rgba(167, 62, 34, .19), transparent 44%),
+    radial-gradient(ellipse at 86% 82%, rgba(199, 151, 67, .12), transparent 42%),
+    linear-gradient(112deg, rgba(3, 7, 10, .88), rgba(5, 9, 13, .72) 48%, rgba(3, 7, 10, .91));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.survivalLobbyCard {
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 1040px);
+  max-height: min(900px, calc(100dvh - 24px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: clamp(20px, 3.5vw, 42px);
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(260px, .85fr);
+  grid-template-areas:
+    "eyebrow loadout"
+    "title loadout"
+    "description loadout"
+    "info progression"
+    "status progression"
+    "start start";
+  align-content: center;
+  align-items: stretch;
+  gap: 14px clamp(18px, 3vw, 34px);
+  border: 1px solid rgba(232, 218, 190, .24);
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgba(17, 24, 28, .985), rgba(9, 14, 18, .985) 57%, rgba(20, 19, 17, .985)),
+    #0b1116;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .56), inset 0 1px 0 rgba(255,255,255,.045);
+  scrollbar-color: rgba(230, 190, 116, .42) transparent;
+}
+.survivalLobbyCard::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, transparent 0%, #d99b4b 16%, #9d3928 62%, transparent 100%);
+  opacity: .9;
+}
+.survivalLobbyCard::after {
+  content: "FIELD BRIEF  /  IO-01";
+  position: absolute;
+  right: 24px;
+  top: 18px;
+  color: rgba(222, 225, 218, .28);
+  font: 800 8px/1 system-ui, sans-serif;
+  letter-spacing: 1.7px;
+  pointer-events: none;
+}
+.lobbyEyebrow { grid-area: eyebrow; align-self: end; margin: 0; color: #f1bb69; font-size: 10px; letter-spacing: 2.5px; }
+.survivalLobbyCard h1 {
+  grid-area: title;
+  max-width: 10ch;
+  margin: 0;
+  color: #f8f4eb;
+  font-size: clamp(38px, 5.8vw, 68px);
+  font-weight: 950;
+  letter-spacing: -.055em;
+  line-height: .91;
+  text-wrap: balance;
+  text-shadow: 0 6px 26px rgba(0,0,0,.28);
+}
+.survivalLobbyCard h1::after {
+  content: "";
+  display: block;
+  width: 76px;
+  height: 3px;
+  margin-top: 17px;
+  background: linear-gradient(90deg, #dd9f4c, #a93b2c);
+  border-radius: 3px;
+}
+.lobbyDescription { grid-area: description; max-width: 45ch; margin: 0; color: #b8c2c7; font-size: clamp(12px, 1.35vw, 14px); line-height: 1.8; }
+.lobbyLoadout {
+  grid-area: loadout;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0;
+  padding: clamp(16px, 2vw, 24px);
+  border: 1px solid rgba(227, 191, 126, .19);
+  border-radius: 15px;
+  background: linear-gradient(155deg, rgba(255,255,255,.045), rgba(255,255,255,.012));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+}
+.lobbyLoadout label { color: #d8cdbd; font-size: 9px; letter-spacing: 1.6px; }
+#lobbyWeaponSelect {
+  min-height: 48px;
+  border: 1px solid rgba(233, 197, 137, .30);
+  border-radius: 10px;
+  background: #121a1f;
+  color: #f4efe7;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.3);
+}
+#lobbyWeaponSelect:focus-visible { outline: 2px solid #e6b76d; outline-offset: 3px; }
+.lobbyLoadout p { color: #a4afb4; line-height: 1.75; }
+.lobbyProgression {
+  grid-area: progression;
+  align-self: stretch;
+  margin: 0;
+  padding: 15px;
+  border: 1px solid rgba(164, 195, 157, .18);
+  border-radius: 15px;
+  background: linear-gradient(145deg, rgba(106, 139, 92, .085), rgba(255,255,255,.012));
+}
+#lobbyProgressionSummary { color: #d5e5bb; letter-spacing: 1px; line-height: 1.5; }
+.lobbyUpgradeGrid { grid-template-columns: 1fr; gap: 7px; }
+.lobbyUpgradeGrid button {
+  min-height: 40px;
+  text-align: left;
+  padding: 9px 11px;
+  border-color: rgba(219, 229, 205, .13);
+  border-radius: 9px;
+  background: rgba(9, 14, 16, .6);
+  color: #d9e2d1;
+  font-size: 10px;
+  letter-spacing: .35px;
+  transition: border-color .15s ease, background .15s ease, transform .15s ease;
+}
+.lobbyUpgradeGrid button:active { transform: translateY(1px); }
+.lobbyUpgradeGrid button:not(:disabled):hover { border-color: rgba(198, 218, 160, .48); background: rgba(105, 139, 82, .13); }
+.lobbyUpgradeGrid button:disabled { opacity: .42; }
+.lobbyProgression > p { color: #8e9c91; font-size: 10px; line-height: 1.65; }
+.lobbyRunInfo { grid-area: info; align-self: end; gap: 6px; margin: 0; }
+.lobbyRunInfo span {
+  padding: 7px 9px;
+  border: 1px solid rgba(221, 226, 222, .12);
+  border-radius: 7px;
+  background: rgba(255,255,255,.025);
+  color: #bdc8ca;
+  font-size: 8px;
+  letter-spacing: .85px;
+}
+.lobbyLastRun { grid-area: status; align-self: start; min-height: 16px; margin: 0; color: #e6bb74; font-size: 10px; }
+#startRunBtn {
+  grid-area: start;
+  min-height: 56px;
+  margin-top: 1px;
+  padding: 0 19px;
+  border: 1px solid #f1bd6f;
+  border-radius: 11px;
+  background: linear-gradient(100deg, #a84727 0%, #78341f 48%, #5f301f 100%);
+  box-shadow: 0 8px 24px rgba(82, 35, 20, .25), inset 0 1px 0 rgba(255,255,255,.14);
+  color: #fff8ed;
+  font-size: 11px;
+  letter-spacing: 1.8px;
+  cursor: pointer;
+  transition: filter .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+#startRunBtn:hover { filter: brightness(1.12); box-shadow: 0 10px 28px rgba(111, 47, 25, .3), inset 0 1px 0 rgba(255,255,255,.16); }
+#startRunBtn:active { transform: translateY(1px) scale(.995); }
+#startRunBtn span { color: #f7d6a4; }
+#survivalDeathOverlay { backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* Functional, high-contrast reticle; ADS contracts the visual spread without changing hit math. */
+body.survival-mode #target {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: rgba(250, 250, 245, .93);
+  font-size: 8px;
+  line-height: 1;
+  text-shadow: 0 1px 3px #000, 0 0 7px rgba(0,0,0,.9);
+  pointer-events: none;
+}
+body.survival-mode #target::before,
+body.survival-mode #target::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+  background: rgba(248, 248, 239, .84);
+  box-shadow: 0 0 3px rgba(0,0,0,.8);
+  transform: translate(-50%, -50%);
+}
+body.survival-mode #target::before { width: 1px; height: 13px; }
+body.survival-mode #target::after { width: 13px; height: 1px; }
+body.survival-mode.aim-active #target { width: 24px; height: 24px; color: #d9f5e9; }
+body.survival-mode.aim-active #target::before { height: 8px; width: 2px; background: #c7f5df; }
+body.survival-mode.aim-active #target::after { width: 8px; height: 2px; background: #c7f5df; }
+body.survival-mode.aim-active #hud { filter: none; }
+
+@media (max-width: 699px) {
+  .survivalLobbyCard {
+    width: min(520px, 100%);
+    max-height: min(900px, calc(100dvh - 24px));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "eyebrow" "title" "description" "loadout" "info" "progression" "status" "start";
+    gap: 12px;
+    padding: clamp(19px, 5vw, 28px);
+    border-radius: 17px;
+    align-content: start;
+  }
+  .survivalLobbyCard::after { top: 18px; right: 18px; font-size: 7px; letter-spacing: 1px; }
+  .survivalLobbyCard h1 { max-width: 11ch; font-size: clamp(36px, 10vw, 52px); }
+  .survivalLobbyCard h1::after { margin-top: 12px; }
+  .lobbyDescription { max-width: none; font-size: 12px; line-height: 1.65; }
+  .lobbyLoadout { padding: 13px; }
+  .lobbyLoadout p { margin-top: 9px; font-size: 10px; }
+  .lobbyProgression { padding: 12px; }
+  .lobbyUpgradeGrid { grid-template-columns: 1fr; }
+  .lobbyRunInfo { margin-top: 0; }
+  .lobbyRunInfo span { font-size: 7px; padding: 6px 7px; }
+  #startRunBtn { min-height: 50px; }
+}
+@media (min-width: 700px) and (max-height: 620px) {
+  .survivalLobbyCard { align-content: start; gap: 9px 20px; padding: 18px 24px; }
+  .survivalLobbyCard h1 { font-size: clamp(34px, 5vh, 48px); }
+  .survivalLobbyCard h1::after { margin-top: 9px; }
+  .lobbyDescription { font-size: 11px; line-height: 1.55; }
+  .lobbyLoadout, .lobbyProgression { padding: 12px; }
+  .lobbyLoadout p, .lobbyProgression > p { font-size: 9px; line-height: 1.45; }
+  .lobbyUpgradeGrid button { min-height: 34px; padding: 6px 9px; }
+  .lobbyRunInfo span { padding: 5px 7px; }
+  #startRunBtn { min-height: 46px; }
+}
+@media (orientation: landscape) and (pointer: coarse) {
+  #survivalLobby { padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .survivalLobbyCard { max-height: calc(100dvh - 16px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #startRunBtn, .lobbyUpgradeGrid button { transition: none; }
+}
+
+
+/* A real pause surface is essential for touch-only players and app switching. */
+body:not(.survival-mode) #survivalPauseBtn { display: none !important; }
+body.survival-mode #survivalPauseBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(232, 195, 130, .42);
+  border-radius: 12px;
+  background: rgba(22, 27, 29, .94);
+  color: #f7d59c;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 5px 16px rgba(0,0,0,.28);
+  touch-action: manipulation;
+}
+body.survival-mode #survivalPauseBtn:active { transform: scale(.94); background: #3a2a1d; }
+#survivalPauseOverlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1150;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: radial-gradient(ellipse at 50% 10%, rgba(91, 66, 42, .32), rgba(3, 6, 9, .94) 72%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+#survivalPauseOverlay.show { display: flex; }
+.survivalPauseCard {
+  width: min(420px, 100%);
+  max-height: 92dvh;
+  overflow-y: auto;
+  padding: clamp(22px, 5vw, 34px);
+  border: 1px solid rgba(231, 192, 126, .28);
+  border-radius: 20px;
+  background: linear-gradient(155deg, rgba(22, 29, 31, .99), rgba(9, 14, 17, .99));
+  box-shadow: 0 24px 72px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.045);
+  color: #f7f4ec;
+}
+.survivalPauseEyebrow { color: #e6b86f; font-size: 9px; font-weight: 900; letter-spacing: 2.4px; }
+.survivalPauseCard h2 { margin: 10px 0 8px; font-size: clamp(28px, 7vw, 38px); font-weight: 950; letter-spacing: -.04em; line-height: 1; }
+.survivalPauseCard p { color: #aeb9bc; font-size: 12px; line-height: 1.7; margin: 0 0 20px; }
+#resumeRunBtn, #restartPausedRunBtn, #leaveSurvivalBtn {
+  display: flex;
+  width: 100%;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 1px solid rgba(226,232,240,.15);
+  border-radius: 10px;
+  background: rgba(255,255,255,.035);
+  color: #e6ecea;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+#resumeRunBtn {
+  border-color: rgba(230,184,111,.58);
+  background: linear-gradient(100deg, #974528, #6e321f);
+  color: #fff4e4;
+}
+#restartPausedRunBtn { border-color: rgba(226,232,240,.18); }
+#leaveSurvivalBtn { color: #c5cece; background: transparent; }
+#resumeRunBtn:active, #restartPausedRunBtn:active, #leaveSurvivalBtn:active { transform: translateY(1px); }
+@media (orientation: landscape) and (pointer: coarse) and (max-height: 520px) {
+  .survivalPauseCard { width: min(650px, 100%); padding: 17px 22px; }
+  .survivalPauseCard p { margin-bottom: 10px; }
+  #resumeRunBtn, #restartPausedRunBtn, #leaveSurvivalBtn { display: inline-flex; width: calc(33.333% - 7px); min-height: 42px; margin: 0 3px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #resumeRunBtn, #restartPausedRunBtn, #leaveSurvivalBtn { transition: none; }
+}
+
+
+/* LANDSCAPE-ONLY GAME SHELL + USER-GESTURE FULLSCREEN ENTRY */
+html, body {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  touch-action: none;
+}
+#displayModeGate {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(133, 74, 39, .27), transparent 54%),
+    linear-gradient(145deg, #151d20 0%, #0a0f12 65%, #080b0d 100%);
+  color: #f7f4ec;
+}
+body.display-mode-ready #displayModeGate { display: none; }
+.displayModeCard {
+  width: min(590px, 100%);
+  text-align: center;
+  padding: clamp(24px, 5vw, 46px);
+  border: 1px solid rgba(232, 194, 130, .25);
+  border-radius: 24px;
+  background: linear-gradient(150deg, rgba(26, 34, 36, .97), rgba(10, 15, 18, .98));
+  box-shadow: 0 28px 90px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.displayModeEyebrow {
+  color: #e8bd78;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .22em;
+}
+.displayModeCard h1 {
+  margin: 14px 0 12px;
+  font-size: clamp(25px, 5vw, 42px);
+  line-height: .98;
+  letter-spacing: -.045em;
+  font-weight: 950;
+}
+.displayModeCard p {
+  max-width: 420px;
+  margin: 0 auto 18px;
+  color: #b7c1c1;
+  font-size: 12px;
+  line-height: 1.75;
+}
+#enterGameDisplayMode {
+  display: inline-flex;
+  min-height: 48px;
+  min-width: min(250px, 100%);
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  margin-top: 8px;
+  padding: 12px 20px;
+  border: 1px solid rgba(239, 196, 127, .6);
+  border-radius: 11px;
+  background: linear-gradient(105deg, #9c4c2c, #71331f);
+  color: #fff5e5;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .12em;
+  box-shadow: 0 8px 26px rgba(105, 48, 27, .25);
+  touch-action: manipulation;
+}
+#enterGameDisplayMode:active { transform: scale(.98); }
+.displayModeFootnote {
+  margin-top: 18px;
+  color: #758184;
+  font-size: 9px;
+  letter-spacing: .08em;
+}
+.displayModeLandscapeHint { display: none; }
+.displayModeFullscreenHint { display: block; }
+.rotatePhoneAnimation { display: none; }
+.rotatePhoneDevice { position: relative; width: 58px; height: 100px; border: 3px solid #f0c77f; border-radius: 12px; background: #111820; box-shadow: 0 0 24px rgba(232,189,120,.16), inset 0 0 0 2px rgba(255,255,255,.05); }
+.rotatePhoneSpeaker { position: absolute; top: 5px; left: 50%; width: 15px; height: 3px; border-radius: 9px; background: #c49c5e; transform: translateX(-50%); }
+.rotatePhoneScreen { position: absolute; inset: 13px 5px; border-radius: 4px; background: linear-gradient(145deg, rgba(124,154,129,.6), rgba(29,51,48,.9) 52%, rgba(155,91,48,.8)); }
+.rotatePhoneScreen::after { content: ""; position: absolute; left: 15%; right: 15%; bottom: 15%; height: 2px; background: rgba(255,224,170,.8); box-shadow: 0 -8px 0 rgba(255,224,170,.3); }
+.rotatePhoneHome { position: absolute; bottom: 4px; left: 50%; width: 5px; height: 5px; border: 1px solid #c49c5e; border-radius: 50%; transform: translateX(-50%); }
+.rotatePhoneArrow { position: absolute; right: -22px; top: -13px; color: #f0c77f; font-size: 28px; line-height: 1; }
+@keyframes rotatePhoneToLandscape { 0%, 12% { transform: rotate(0deg) scale(1); } 45%, 68% { transform: rotate(90deg) scale(.92); } 88%, 100% { transform: rotate(0deg) scale(1); } }
+@keyframes rotateArrowPulse { 0%, 100% { opacity: .45; transform: rotate(-20deg) scale(.9); } 50% { opacity: 1; transform: rotate(25deg) scale(1.08); } }
+@media (orientation: portrait) {
+  #displayModeGate { background: radial-gradient(ellipse at 50% 15%, rgba(133,74,39,.24), transparent 48%), #0a0f12; }
+  .rotatePhoneAnimation { position: relative; display: flex; align-items: center; justify-content: center; width: 150px; height: 126px; margin: 6px auto 14px; }
+  .rotatePhoneDevice { animation: rotatePhoneToLandscape 2.8s ease-in-out infinite; transform-origin: center center; }
+  .rotatePhoneArrow { animation: rotateArrowPulse 1.4s ease-in-out infinite; }
+  .displayModeLandscapeHint { display: block; font-size: 12px !important; color: #f2d4a2 !important; letter-spacing: .14em; text-transform: uppercase; }
+  .displayModeFullscreenHint, #enterGameDisplayMode, .displayModeFootnote { display: none !important; }
+  .displayModeCard { border-color: rgba(232,194,130,.18); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rotatePhoneDevice, .rotatePhoneArrow { animation: none !important; }
+}
+@media (orientation: landscape) and (pointer: coarse) {
+  .displayModeCard { width: min(650px, 88vw); padding: clamp(18px, 4vh, 32px) clamp(24px, 5vw, 46px); }
+  .displayModeCard h1 { margin-top: 10px; font-size: clamp(24px, 5vh, 38px); }
+  .displayModeCard p { margin-bottom: 10px; }
+}
+@media (orientation: landscape) and (max-height: 430px) {
+  .displayModeCard { padding: 14px 22px; }
+  .displayModeCard h1 { margin: 8px 0; }
+  .displayModeFootnote { margin-top: 9px; }
+}
+
+
+/* Entry is deliberately gated: the playable scene only opens in landscape fullscreen. */
+#displayModeGate {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  color: #edf3eb;
+  background: radial-gradient(ellipse at 50% 45%, rgba(37, 74, 61, .3), transparent 48%), linear-gradient(135deg, #07100f, #121817 52%, #080d10);
+}
+body.display-mode-ready #displayModeGate { display: none !important; }
+.displayModeCard {
+  width: min(520px, 100%);
+  padding: clamp(25px, 5vw, 48px);
+  border: 1px solid rgba(149, 198, 161, .22);
+  border-radius: 4px 22px 4px 22px;
+  background: linear-gradient(145deg, rgba(17, 29, 27, .92), rgba(7, 14, 15, .96));
+  box-shadow: 0 35px 110px #000b, inset 0 1px rgba(255,255,255,.045);
+  text-align: center;
+}
+.displayModeEyebrow { color: #83bd95; font-size: 9px; font-weight: 900; letter-spacing: .24em; }
+.displayModeCard h1 { color: #f3f2e9; font-size: clamp(28px, 5vw, 42px); letter-spacing: -.055em; }
+.displayModeCard p { max-width: 34ch; margin: 0 auto 20px; color: #a7b7af; font-size: 12px; line-height: 1.65; }
+.displayModeFootnote { margin-top: 18px; color: #697a72; font-size: 8px; letter-spacing: .22em; }
+#enterGameDisplayMode {
+  min-height: 52px;
+  min-width: min(250px, 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 25px;
+  margin-top: 8px;
+  padding: 0 18px;
+  border: 1px solid rgba(135, 220, 160, .6);
+  border-radius: 3px 12px 3px 12px;
+  background: linear-gradient(100deg, #1d7548, #194d3a);
+  color: #effff1;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .16em;
+  box-shadow: 0 8px 30px rgba(27, 121, 72, .23);
+  touch-action: manipulation;
+}
+#enterGameDisplayMode:disabled { opacity: .4; cursor: not-allowed; }
+.displayModeLandscapeHint { display: none; color: #d3e7d7 !important; font-size: 10px !important; letter-spacing: .12em; text-transform: uppercase; }
+.displayModeFullscreenHint { display: block; }
+.rotatePhoneAnimation { display: none; position: relative; width: 150px; height: 126px; margin: 8px auto 16px; align-items: center; justify-content: center; }
+.rotatePhoneDevice { position: relative; width: 58px; height: 100px; border: 3px solid #a8d7b0; border-radius: 12px; background: #111820; box-shadow: 0 0 28px rgba(93, 218, 131, .2), inset 0 0 0 2px rgba(255,255,255,.05); }
+.rotatePhoneSpeaker { position: absolute; top: 5px; left: 50%; width: 15px; height: 3px; border-radius: 9px; background: #70b883; transform: translateX(-50%); }
+.rotatePhoneScreen { position: absolute; inset: 13px 5px; border-radius: 4px; background: linear-gradient(145deg, rgba(77,140,94,.65), rgba(19,52,42,.94) 52%, rgba(131,79,42,.8)); }
+.rotatePhoneScreen::after { content: ""; position: absolute; left: 15%; right: 15%; bottom: 15%; height: 2px; background: rgba(195,255,205,.8); box-shadow: 0 -8px 0 rgba(195,255,205,.3); }
+.rotatePhoneHome { position: absolute; bottom: 4px; left: 50%; width: 5px; height: 5px; border: 1px solid #70b883; border-radius: 50%; transform: translateX(-50%); }
+.rotatePhoneArrow { position: absolute; right: -22px; top: -13px; color: #b1e4b9; font-size: 28px; line-height: 1; }
+@keyframes rotatePhoneToLandscape { 0%, 12% { transform: rotate(0deg) scale(1); } 45%, 68% { transform: rotate(90deg) scale(.92); } 88%, 100% { transform: rotate(0deg) scale(1); } }
+@keyframes rotateArrowPulse { 0%, 100% { opacity: .45; transform: rotate(-20deg) scale(.9); } 50% { opacity: 1; transform: rotate(25deg) scale(1.08); } }
+@media (orientation: portrait) {
+  .rotatePhoneAnimation { display: flex; }
+  .rotatePhoneDevice { animation: rotatePhoneToLandscape 2.8s ease-in-out infinite; transform-origin: center; }
+  .rotatePhoneArrow { animation: rotateArrowPulse 1.4s ease-in-out infinite; }
+  .displayModeLandscapeHint { display: block; }
+  .displayModeFullscreenHint, #enterGameDisplayMode, .displayModeFootnote { display: none !important; }
+}
+body.native-fullscreen #fullscreenBtn { display: none !important; }
+
+/* Island Outbreak lobby: full-screen command stage, not a centered settings card. */
+#survivalLobby {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: none;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+  padding: max(18px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  color: #f0f0e7;
+  background: linear-gradient(90deg, rgba(4,10,10,.94) 0%, rgba(5,11,11,.82) 48%, rgba(6,10,10,.94) 100%);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+#survivalLobby.show { display: flex; }
+.survivalLobbyCard {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0 clamp(3px, 3vw, 44px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.survivalLobbyCard::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -4%;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 20% 55%, rgba(44,115,73,.19), transparent 34%), radial-gradient(ellipse at 76% 40%, rgba(176,95,48,.12), transparent 38%), linear-gradient(90deg, transparent 49.8%, rgba(199,218,197,.07) 50%, transparent 50.2%);
+  animation: lobbyAtmosphere 8s ease-in-out infinite alternate;
+}
+.survivalLobbyCard::after {
+  content: "FIELD DEPLOYMENT  /  ISLAND-07";
+  position: absolute;
+  top: 17px;
+  right: 0;
+  color: rgba(218,230,216,.34);
+  font: 850 8px/1 system-ui, sans-serif;
+  letter-spacing: .19em;
+}
+@keyframes lobbyAtmosphere { from { opacity: .65; transform: translateX(-1%); } to { opacity: 1; transform: translateX(1%); } }
+.lobbyTopline, .lobbyFooter { display: flex; align-items: center; justify-content: space-between; flex: 0 0 auto; }
+.lobbyTopline { height: 58px; border-bottom: 1px solid rgba(208,224,207,.13); }
+.lobbyMark { display: flex; align-items: center; gap: 10px; color: #f3f4eb; font-size: 9px; font-weight: 950; letter-spacing: .18em; }
+.lobbyMarkGlyph { display: grid; place-items: center; width: 31px; height: 31px; border: 1px solid rgba(144,215,162,.55); color: #a7e2b1; font-size: 11px; letter-spacing: -.05em; transform: rotate(-3deg); }
+.lobbyMark small { display: block; margin-top: 4px; color: #779080; font-size: 7px; letter-spacing: .21em; }
+.lobbySignal { display: flex; align-items: center; gap: 7px; color: #8e9e95; font-size: 8px; font-weight: 850; letter-spacing: .15em; }
+.lobbySignal i, .lobbyObjectiveDot { width: 6px; height: 6px; border-radius: 50%; background: #72e690; box-shadow: 0 0 12px #5de680; animation: signalPulse 1.6s ease-in-out infinite; }
+.lobbySignal strong { color: #a4efb4; }
+@keyframes signalPulse { 50% { opacity: .42; box-shadow: 0 0 3px #5de680; } }
+.lobbyTopline, .lobbyStage, .lobbyFooter { position: relative; z-index: 1; }
+.lobbyStalker { position: absolute; z-index: 0; top: 11%; bottom: 3%; right: 34%; width: clamp(190px, 25vw, 380px); display: flex; align-items: flex-end; justify-content: center; opacity: .62; pointer-events: none; mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 78%, transparent 100%); }
+.lobbyStalker svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 26px rgba(89,132,91,.13)); }
+.stalkerMain { transform-origin: 52% 72%; animation: infectedSway 4.8s ease-in-out infinite; }
+.stalkerHead { transform-origin: 55% 92%; animation: infectedHead 3.4s ease-in-out infinite; }
+.stalkerLeftArm { transform-origin: 132px 169px; animation: infectedLeftReach 3.6s ease-in-out infinite; }
+.stalkerRightArm { transform-origin: 239px 168px; animation: infectedRightReach 4.1s ease-in-out infinite; }
+.stalkerFar { animation: distantHorde 7s ease-in-out infinite alternate; }
+.stalkerEyes { fill: #f0a06a; filter: drop-shadow(0 0 5px rgba(245,105,64,.8)); animation: eyeFlicker 3.8s steps(1,end) infinite; }
+@keyframes infectedSway { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-7px) rotate(1deg); } }
+@keyframes infectedHead { 0%,100% { transform: rotate(0deg); } 38% { transform: rotate(-4deg); } 72% { transform: rotate(2deg); } }
+@keyframes infectedLeftReach { 0%,100% { transform: rotate(-1deg); } 48% { transform: rotate(5deg); } }
+@keyframes infectedRightReach { 0%,100% { transform: rotate(2deg); } 52% { transform: rotate(-5deg); } }
+@keyframes distantHorde { from { opacity: .28; transform: translateX(-7px); } to { opacity: .55; transform: translateX(8px); } }
+@keyframes eyeFlicker { 0%, 39%, 44%, 100% { opacity: .78; } 41%, 43% { opacity: .12; } }
+.lobbyStage { min-height: 0; flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1.06fr) minmax(300px, .82fr); align-items: center; gap: clamp(26px, 6vw, 100px); padding: clamp(14px, 4vh, 38px) 0; }
+.lobbyHero { position: relative; padding-left: clamp(0px, 1.6vw, 24px); animation: lobbyRise .65s cubic-bezier(.2,.7,.2,1) both; }
+@keyframes lobbyRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+.lobbyEyebrow { margin: 0 0 16px; color: #9bb6a2; font-size: 9px; font-weight: 900; letter-spacing: .19em; }
+.lobbyEyebrow span { color: #d59e5b; }
+.survivalLobbyCard h1 { max-width: 11ch; margin: 0; color: #f2f0e4; font-size: clamp(58px, 10vw, 138px); font-weight: 1000; letter-spacing: -.085em; line-height: .77; text-wrap: balance; text-shadow: 0 14px 60px rgba(0,0,0,.26); }
+.survivalLobbyCard h1 em { color: #d4a365; font-style: normal; }
+.survivalLobbyCard h1::after { content: none; }
+.lobbyTagline { margin: clamp(16px, 3vh, 30px) 0 0; color: #aab7ae; font-size: clamp(12px, 1.35vw, 16px); line-height: 1.55; letter-spacing: .02em; }
+.lobbyTagline strong { color: #e5eee4; font-weight: 700; }
+.lobbyQuickStats { display: flex; gap: clamp(20px, 4vw, 52px); margin-top: clamp(20px, 4vh, 40px); }
+.lobbyQuickStats div { display: flex; flex-direction: column; gap: 4px; padding-left: 10px; border-left: 1px solid rgba(199,219,196,.32); }
+.lobbyQuickStats strong { color: #e6e9dc; font-size: 18px; line-height: 1; }
+.lobbyQuickStats span { color: #788a80; font-size: 7px; font-weight: 900; letter-spacing: .16em; }
+.lobbyLastRun { min-height: 12px; margin: 20px 0 0; color: #c6975b; font-size: 8px; font-weight: 850; letter-spacing: .13em; }
+.lobbyDeploy { width: 100%; max-width: 470px; justify-self: end; padding-left: clamp(18px, 3vw, 42px); border-left: 1px solid rgba(192,215,191,.17); animation: lobbyRise .75s .08s cubic-bezier(.2,.7,.2,1) both; }
+.lobbySectionHead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px; margin-bottom: 12px; color: #d9dfd4; font-size: 9px; font-weight: 950; letter-spacing: .16em; }
+.lobbySectionHead small { color: #7f9387; font-size: 7px; letter-spacing: .14em; }
+.lobbyWeaponCards { display: grid; gap: 6px; }
+.lobbyWeaponPick { width: 100%; min-height: 54px; display: grid; grid-template-columns: 44px 1fr 14px; align-items: center; gap: 11px; padding: 6px 10px; border: 1px solid rgba(198,220,197,.13); border-left: 2px solid transparent; border-radius: 2px; background: rgba(14,24,22,.55); color: #aebbb0; text-align: left; cursor: pointer; transition: border-color .18s, background .18s, transform .18s; }
+.lobbyWeaponPick:hover { background: rgba(40,67,50,.48); }
+.lobbyWeaponPick.active { border-color: rgba(145,214,155,.48); border-left-color: #8fdaa0; background: linear-gradient(90deg, rgba(57,115,69,.32), rgba(15,26,21,.82)); color: #eef4e8; transform: translateX(3px); }
+.weaponCardIcon { display: grid; place-items: center; width: 40px; height: 38px; border: 1px solid rgba(218,228,211,.15); color: #dbd4bf; font-size: 10px; font-weight: 950; letter-spacing: -.04em; }
+.shotgunIcon { color: #e6b979; }.rifleIcon { color: #95cea1; }
+.weaponCardCopy strong { display: block; font-size: 9px; font-weight: 950; letter-spacing: .1em; }
+.weaponCardCopy small { display: block; margin-top: 4px; color: #819188; font-size: 7px; letter-spacing: .13em; }
+.weaponCardSelect { color: #76877b; font-size: 11px; }
+.lobbyWeaponPick.active .weaponCardSelect { color: #a1e6a9; }
+#lobbyWeaponSelect { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.lobbyProgression { margin: 18px 0 0; padding: 13px 0 0; border: 0; border-top: 1px solid rgba(199,219,196,.15); border-radius: 0; background: transparent; }
+#lobbyProgressionSummary { color: #d6e2d0; font-size: 8px; font-weight: 900; letter-spacing: .08em; }
+.lobbyUpgradeGrid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px; }
+.lobbyUpgradeGrid button { min-height: 38px; padding: 5px 7px; border: 1px solid rgba(199,219,196,.17); border-radius: 2px; background: rgba(14,24,22,.55); color: #d3dfd1; font-size: 8px; font-weight: 900; line-height: 1.3; transition: background .16s, border-color .16s, transform .16s; }
+.lobbyUpgradeGrid button:hover:not(:disabled) { border-color: rgba(150,218,159,.6); background: rgba(56,102,63,.35); }
+.lobbyUpgradeGrid button:active:not(:disabled) { transform: translateY(1px); }
+.lobbyUpgradeGrid button:disabled { opacity: .36; }
+.lobbyFooter { min-height: 72px; gap: 15px; border-top: 1px solid rgba(208,224,207,.13); }
+.lobbyObjective { display: flex; align-items: center; gap: 10px; color: #7f9286; font-size: 7px; font-weight: 900; letter-spacing: .17em; }
+.lobbyObjectiveDot { flex: 0 0 auto; }
+.lobbyObjective strong { display: block; margin-top: 4px; color: #d3e3d2; font-size: 9px; letter-spacing: .1em; }
+#startRunBtn { width: clamp(170px, 24vw, 270px); min-height: 49px; display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 0 17px; border: 1px solid #dcb36d; border-radius: 2px 12px 2px 12px; background: linear-gradient(100deg, #996039, #6d4027); color: #fff4df; box-shadow: 0 8px 25px rgba(95,55,28,.22); font-size: 10px; font-weight: 950; letter-spacing: .2em; transition: filter .16s, transform .16s, box-shadow .16s; }
+#startRunBtn:hover { filter: brightness(1.18); box-shadow: 0 10px 32px rgba(140,86,43,.34); }
+#startRunBtn:active { transform: translateY(1px) scale(.99); }
+#startRunBtn b { color: #f4d7a0; font-size: 20px; font-weight: 500; }
+
+/* Combat feedback: a visible recoil beat and a distinct registered-hit confirmation. */
+#hud::after { content: ""; position: fixed; inset: 0; z-index: 180; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at 52% 57%, transparent 52%, rgba(255,201,128,.17) 100%); }
+body.survival-fired #hud::after { animation: muzzleScreenKick .13s ease-out; }
+@keyframes muzzleScreenKick { 0% { opacity: .8; } 100% { opacity: 0; } }
+body.survival-fired #target { animation: reticleKick .13s ease-out; }
+body.survival-hit #target { color: #a6ffc0 !important; filter: drop-shadow(0 0 7px rgba(109,255,153,.9)); }
+body.survival-hit #target::before, body.survival-hit #target::after { background: #9bffb7 !important; }
+@keyframes reticleKick { 0% { transform: translate(-50%,-50%) scale(1.8); } 100% { transform: translate(-50%,-50%) scale(1); } }
+
+@media (max-width: 720px) {
+  #survivalLobby { padding-left: max(15px, env(safe-area-inset-left)); padding-right: max(15px, env(safe-area-inset-right)); }
+  .lobbyStalker { right: 29%; width: clamp(170px, 25vw, 245px); opacity: .46; }
+  .lobbyStage { grid-template-columns: minmax(0, .9fr) minmax(250px, 1fr); gap: 18px; }
+  .survivalLobbyCard h1 { font-size: clamp(48px, 10vw, 76px); }
+  .lobbyDeploy { padding-left: 16px; }
+  .lobbyWeaponPick { min-height: 46px; grid-template-columns: 34px 1fr 12px; gap: 8px; padding: 4px 7px; }
+  .weaponCardIcon { width: 32px; height: 32px; }
+}
+@media (max-height: 460px) and (orientation: landscape) {
+  #survivalLobby { padding-top: max(7px, env(safe-area-inset-top)); padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+  .lobbyTopline { height: 39px; }
+  .lobbyStage { gap: 16px; padding: 8px 0; }
+  .lobbyEyebrow { margin-bottom: 9px; font-size: 7px; }
+  .survivalLobbyCard h1 { font-size: clamp(44px, 9vh, 74px); }
+  .lobbyTagline { margin-top: 10px; font-size: 11px; }
+  .lobbyQuickStats { margin-top: 13px; }
+  .lobbyLastRun { margin-top: 8px; }
+  .lobbyDeploy { padding-left: 16px; }
+  .lobbyStalker { top: 10%; right: 29%; bottom: 0; width: clamp(150px, 19vw, 245px); }
+  .lobbyWeaponPick { min-height: 40px; }
+  .lobbyProgression { margin-top: 9px; padding-top: 8px; }
+  .lobbyUpgradeGrid button { min-height: 30px; }
+  .lobbyFooter { min-height: 48px; }
+  #startRunBtn { min-height: 39px; }
+}
+@media (max-width: 560px) and (orientation: landscape) {
+  .lobbyStage { grid-template-columns: minmax(0, .8fr) minmax(225px, 1fr); gap: 12px; }
+  .lobbyDeploy { padding-left: 10px; }
+  .lobbySignal { font-size: 7px; }
+  .lobbyQuickStats { gap: 13px; }
+  .lobbyObjective { font-size: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rotatePhoneDevice, .rotatePhoneArrow, .lobbySignal i, .lobbyObjectiveDot, .survivalLobbyCard::before,
+  .stalkerMain, .stalkerHead, .stalkerLeftArm, .stalkerRightArm, .stalkerFar, .stalkerEyes { animation: none !important; }
+  .lobbyHero, .lobbyDeploy { animation: none !important; }
+}
+
+/* Island Outbreak lobby layout takes precedence over the generic modern UI grid. */
+.lobbyStage{grid-template-columns:minmax(170px,17vw) minmax(320px,1fr) minmax(285px,340px)!important;gap:clamp(12px,2vw,28px)!important}
+.lobbyPartyPanel,.lobbyHero,.lobbyDeploy{min-width:0!important}.lobbyDeploy{grid-column:auto!important;grid-row:auto!important;overflow-x:hidden!important}
+@media (max-width:900px) and (min-width:681px){.lobbyStage{grid-template-columns:145px minmax(260px,1fr) 235px!important;gap:10px!important}}
+
+/* Settings is a top-level modal and must sit above the fullscreen lobby. */
+#settingsOverlay{z-index:1300!important;padding:clamp(10px,2vw,24px)!important;overflow:auto!important}
+.settingsCard{width:min(620px,94vw)!important;max-height:min(88dvh,760px)!important;overflow:auto!important;margin:auto!important}
+@media (orientation:landscape){#settingsOverlay{align-items:flex-start!important}.settingsCard{max-height:calc(100dvh - 20px)!important}.lobbyStage{height:calc(100% - 168px);min-height:0}.lobbyDeploy,.lobbyPartyPanel{overflow-y:auto;overscroll-behavior:contain}}
+
+/* Wildcard card copy must remain contained at every landscape width. */
+.wildcardCard,.wildcardFace,.wildcardBack{min-width:0!important;overflow:hidden!important}
+.wildcardCard strong,.wildcardCard small,.wildcardCard>i,.wildcardBack strong,.wildcardBack small,.wildcardBackEyebrow,.wildcardBack i{min-width:0!important;max-width:100%;overflow:hidden;text-overflow:ellipsis;overflow-wrap:anywhere;word-break:break-word;white-space:normal!important}
+.wildcardCard strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.15}.wildcardCard small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.2}.wildcardCard>i{display:block;line-height:1.1}.wildcardBack small{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical}
+@media (max-width:900px) and (min-width:681px){.lobbyDeploy .wildcardCard strong{font-size:8px}.lobbyDeploy .wildcardCard small{font-size:7px}.lobbyDeploy .wildcardCard>i{font-size:6px}.lobbyDeploy .wildcardFace{gap:2px 4px}}
+
+@media (orientation:landscape){#settingsOverlay{padding:10px!important;align-items:flex-start!important}.settingsCard{margin:0 auto!important;max-height:calc(100dvh - 40px)!important}}
 
 
 /* --- Landscape control-room settings and readable lobby threat backdrop --- */
