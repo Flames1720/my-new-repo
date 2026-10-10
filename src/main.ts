@@ -2579,6 +2579,66 @@ const settingsBtn = document.querySelector('#settingsBtn') as HTMLButtonElement;
 const lobbyOptionsBtn = document.querySelector('#lobbyOptionsBtn') as HTMLButtonElement | null;
 const settingsOverlay = document.querySelector('#settingsOverlay') as HTMLDivElement;
 const settingsClose = document.querySelector('#settingsClose') as HTMLButtonElement;
+const settingsTabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-settings-tab]'));
+const settingsSections = document.querySelector('.settingsBody') as HTMLElement | null;
+// Tag existing settings without moving the inputs their event handlers depend on.
+const settingsSectionByControl: Record<string, string> = {
+  sensXSlider: 'controls', sensYSlider: 'controls', adsSensSlider: 'controls',
+  invertYCheck: 'controls', lookWhileAimingCheck: 'controls', lookWhileFiringCheck: 'controls',
+  camAccelSelect: 'controls', camAccelStrengthSlider: 'controls',
+  camAccelThresholdSlider: 'controls', hudCustomizeBtn: 'controls',
+  graphicsSelect: 'graphics', weatherSelect: 'graphics', lodSelect: 'graphics',
+  playerNameInput: 'player',
+};
+for (const [id, section] of Object.entries(settingsSectionByControl)) {
+  const control = document.getElementById(id);
+  const container = control?.closest<HTMLElement>('.settingGroup, .settingRow') || control;
+  if (container) container.dataset.settingsSection = section;
+}
+// Legacy rig, profession and future outfit controls remain in the source for
+// compatibility, but do not clutter the current first-person survival settings.
+for (const id of ['characterModelSelect', 'playerRoleSelect', 'outfitSelect']) {
+  document.getElementById(id)?.closest<HTMLElement>('.settingGroup')?.setAttribute('hidden', '');
+}
+function showSettingsTab(section: string): void {
+  settingsTabButtons.forEach(button => {
+    const active = button.dataset.settingsTab === section;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  settingsSections?.querySelectorAll<HTMLElement>('[data-settings-section]').forEach(group => {
+    group.hidden = group.dataset.settingsSection !== section;
+  });
+}
+settingsTabButtons.forEach(button => bindAction(button, () => showSettingsTab(button.dataset.settingsTab || 'controls')));
+showSettingsTab('controls');
+let lastPerformanceReadout = '';
+const diagnosticCaptureBtn = document.querySelector('#diagnosticCaptureBtn') as HTMLButtonElement | null;
+const diagnosticCopyBtn = document.querySelector('#diagnosticCopyBtn') as HTMLButtonElement | null;
+const diagnosticClearBtn = document.querySelector('#diagnosticClearBtn') as HTMLButtonElement | null;
+const diagnosticReadout = document.querySelector('#diagnosticReadout') as HTMLElement | null;
+const captureWindow = window as Window & { __islandOutbreakPerfEnabled?: boolean };
+if (diagnosticCaptureBtn) bindAction(diagnosticCaptureBtn, () => {
+  captureWindow.__islandOutbreakPerfEnabled = !captureWindow.__islandOutbreakPerfEnabled;
+  diagnosticCaptureBtn.textContent = captureWindow.__islandOutbreakPerfEnabled ? 'STOP CAPTURE' : 'START CAPTURE';
+  if (diagnosticReadout && captureWindow.__islandOutbreakPerfEnabled) diagnosticReadout.textContent = 'Capture active. Return to the game to collect performance data.';
+});
+if (diagnosticCopyBtn) bindAction(diagnosticCopyBtn, () => {
+  if (!lastPerformanceReadout) { if (diagnosticReadout) diagnosticReadout.textContent = 'No results yet. Start a capture during gameplay.'; return; }
+  void navigator.clipboard.writeText(lastPerformanceReadout).then(() => { if (diagnosticReadout) diagnosticReadout.textContent = 'Results copied.\n' + lastPerformanceReadout; }).catch(() => { if (diagnosticReadout) diagnosticReadout.textContent = 'Clipboard unavailable. Select results below:\n' + lastPerformanceReadout; });
+});
+if (diagnosticClearBtn) bindAction(diagnosticClearBtn, () => {
+  captureWindow.__islandOutbreakPerfEnabled = false;
+  if (diagnosticCaptureBtn) diagnosticCaptureBtn.textContent = 'START CAPTURE';
+  lastPerformanceReadout = '';
+  if (diagnosticReadout) diagnosticReadout.textContent = 'Results cleared.';
+});
+window.addEventListener('island-outbreak-performance', event => {
+  const data = (event as CustomEvent).detail as Record<string, unknown>;
+  lastPerformanceReadout = JSON.stringify(data, null, 2);
+  if (diagnosticReadout) diagnosticReadout.textContent = lastPerformanceReadout;
+  if (data.captureComplete && diagnosticCaptureBtn) diagnosticCaptureBtn.textContent = 'START CAPTURE';
+});
 const sensXSlider = document.querySelector('#sensXSlider') as HTMLInputElement;
 const sensYSlider = document.querySelector('#sensYSlider') as HTMLInputElement;
 const sensXVal = document.querySelector('#sensXVal') as HTMLSpanElement;
