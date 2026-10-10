@@ -703,6 +703,9 @@ if (settings.current.characterModel !== initialCharacterModel) {
 }
 const player = new PlayerCharacter(LOW_POWER_MODE, initialCharacterModel);
 actors.add(player.root);
+// The starting lobby and survival mode are first-person: don't render the avatar
+// in the menu while the world waits for the player to begin.
+player.root.visible = false;
 
 type ImpactEffect = { object: THREE.Group; age: number; lifetime: number };
 type BurnEffect = { object: THREE.Group; root: THREE.Group; age: number; lifetime: number };
@@ -3755,14 +3758,18 @@ function update(dt: number) {
 
   // Choose directional animation from velocity relative to the character's facing,
   // not raw joystick direction. Assets without a matching clip safely use locomotion.
-  const facingYaw = player.root.rotation.y;
-  const localForwardSpeed = player.velocity.x * Math.sin(facingYaw) + player.velocity.z * Math.cos(facingYaw);
-  const localSideSpeed = -player.velocity.x * Math.cos(facingYaw) + player.velocity.z * Math.sin(facingYaw);
-  const movementIntent: 'forward' | 'backward' | 'strafe-left' | 'strafe-right' =
-    Math.abs(localSideSpeed) > Math.abs(localForwardSpeed) * 1.15 && Math.abs(localSideSpeed) > 0.35
-      ? (localSideSpeed < 0 ? 'strafe-left' : 'strafe-right')
-      : localForwardSpeed < -0.35 ? 'backward' : 'forward';
-  player.animate(walkTime += dt, moving, sprinting, player.swimming, dt, horizontalSpeed, angularVelocity, player.onGround, player.velocity.y, movementIntent);
+  // First-person mode hides the player mesh; skip its skeletal mixer and
+  // fallback rig updates entirely until third-person is requested again.
+  if (mode !== 'fpp') {
+    const facingYaw = player.root.rotation.y;
+    const localForwardSpeed = player.velocity.x * Math.sin(facingYaw) + player.velocity.z * Math.cos(facingYaw);
+    const localSideSpeed = -player.velocity.x * Math.cos(facingYaw) + player.velocity.z * Math.sin(facingYaw);
+    const movementIntent: 'forward' | 'backward' | 'strafe-left' | 'strafe-right' =
+      Math.abs(localSideSpeed) > Math.abs(localForwardSpeed) * 1.15 && Math.abs(localSideSpeed) > 0.35
+        ? (localSideSpeed < 0 ? 'strafe-left' : 'strafe-right')
+        : localForwardSpeed < -0.35 ? 'backward' : 'forward';
+    player.animate(walkTime += dt, moving, sprinting, player.swimming, dt, horizontalSpeed, angularVelocity, player.onGround, player.velocity.y, movementIntent);
+  }
   if (isPhotoMode) updatePhotoBadges();
 
   // Shooter simulation runs after the existing camera is positioned, so its hitscan uses the actual FPP view.
