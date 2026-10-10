@@ -2955,11 +2955,13 @@ const displayModeMessage = document.querySelector('.displayModeFullscreenHint') 
 let displayGatePausedRun = false;
 
 function isLandscapeDisplay(): boolean {
-  return matchMedia('(orientation: landscape)').matches || innerWidth >= innerHeight;
+  // Require the actual viewport to be wider than tall. The orientation
+  // media query can briefly lag Android's layout during a rotation.
+  return innerWidth > innerHeight;
 }
 
 function syncDisplayMode(): void {
-  const fullscreen = !!document.fullscreenElement;
+  const fullscreen = !!(document.fullscreenElement || (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement);
   const ready = fullscreen && isLandscapeDisplay();
   document.body.classList.toggle('native-fullscreen', fullscreen);
   document.body.classList.toggle('display-mode-ready', ready);
@@ -3011,8 +3013,20 @@ async function enterRequiredDisplayMode(): Promise<void> {
 if (enterGameDisplayMode) bindAction(enterGameDisplayMode, enterRequiredDisplayMode);
 if (fullscreenBtn) bindAction(fullscreenBtn, enterRequiredDisplayMode);
 document.addEventListener('fullscreenchange', syncDisplayMode);
-addEventListener('orientationchange', syncDisplayMode);
+document.addEventListener('webkitfullscreenchange', syncDisplayMode);
+const recheckDisplayMode = () => {
+  syncDisplayMode();
+  // Re-evaluate after Android updates the viewport metrics.
+  requestAnimationFrame(syncDisplayMode);
+};
+addEventListener('orientationchange', recheckDisplayMode);
 addEventListener('resize', syncDisplayMode);
+addEventListener('pageshow', recheckDisplayMode);
+addEventListener('focus', recheckDisplayMode);
+screen.orientation?.addEventListener?.('change', recheckDisplayMode);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) recheckDisplayMode();
+});
 syncDisplayMode();
 
 // --- WORLD SURVEY: AUTHORITATIVE TOPOLOGY + HYDROLOGY DIAGNOSTICS ---
