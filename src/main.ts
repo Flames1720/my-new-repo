@@ -3375,6 +3375,8 @@ function triggerSlide() {
   player.velocity.z = slideDirection.z * launchSpeed;
   slideTimer = SLIDE_DURATION;
   slideCooldown = 1.12;
+  survival.activateAudio();
+  survivalSound.playSlide();
   say('SLIDE');
 }
 
