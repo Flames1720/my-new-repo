@@ -1,3 +1,21 @@
+## 2026-10-10 20:12 +01:00 — UI regression recovery on the active world-v2 branch
+
+**Scope:** Restore previously implemented HUD, result-screen overflow, safe-zone arrow, and wildcard-card safeguards without merging other branch history.
+
+**Starting point:** `feature/zombie-survival-world-v2`; inspected the matching UI fix block on `feature/island-outbreak-diagnostics-ui-fixes`.
+
+**Changed:**
+- `src/style.css`: selectively restored the safe-zone arrow glyph, landscape death/result-card fit and scroll behavior, wildcard-card sizing/text clamping, and survival inventory visibility rule.
+- `src/style.css`: disabled the full-screen backdrop-filter in HUD-edit mode and placed the decorative backdrop below the touch controls, so it cannot blur/cover movable buttons.
+- `src/main.ts`: offset the right-pointing arrow glyph by -90° so a 0° relative bearing points ahead/up.
+- No branch merge; no new branch; chunk-streaming performance work left untouched.
+
+**Verification:**
+- Source changes written to the active branch; build and device verification still pending.
+- Do not claim the visible HUD/death-screen/cards are fixed until tested in-browser/on Android.
+
+**Next agent:** Run lint/build, inspect the resulting diff and confirm these changes coexist with the incremental chunk queue and recent diagnostics controls.
+
 ## 2026-10-10 — Restore in-game Copy Logs controls on the active working branch
 
 - Restored the Background Diagnostics panel inside Settings on `feature/zombie-survival-world-v2`, alongside the current HUD editor work.
