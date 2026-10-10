@@ -1,3 +1,12 @@
+## 2026-10-10 — Island Outbreak diagnostics groundwork
+
+- Added a bounded, local-only background diagnostics logger in `index.html`.
+- Settings now receives a Background Diagnostics section with recording toggle, Copy Logs, and Clear Logs controls.
+- Captures browser/device context, 5-second frame timing samples (FPS, average/worst/p95 frame interval, slow-frame count), long-task observations when supported, UI actions, body-state transitions, visibility/orientation changes, and runtime errors/rejections.
+- Keeps the latest 120 records in local storage and exports a JSON report. No backend transmission is performed.
+- Draw-call and triangle counts are explicitly marked unavailable; renderer instrumentation is still required before those metrics can be reported.
+- Validation: source changes committed on `feature/island-outbreak-diagnostics-ui-fixes`; no build or physical-device test has been run yet. The HUD editor, death card, wildcard cards, safe-zone arrow, unused counters, and renderer optimizations remain pending.
+
 # AGENT_CHANGELOG.md — Multi-Agent Handoff Log
 
 This is the chronological handoff record for meaningful AI-agent work. It complements git history by recording reasoning, verification, discoveries, unresolved issues and what the next agent needs to know.
