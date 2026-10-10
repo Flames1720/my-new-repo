@@ -552,6 +552,135 @@
     <!-- Photo Mode Toast Notification -->
     <div id="photoToast"></div>
 
+<script>
+(() => {
+  const KEY = 'island-outbreak-diagnostics-v2';
+  const MAX_ROWS = 32;
+  const rows = [];
+  let performanceSamples = 0;
+  let longTasksSinceStart = 0;
+  let statusNode = null;
+  const round = value => Math.round(value * 10) / 10;
+  const deviceInfo = () => ({
+    userAgent: navigator.userAgent,
+    cores: navigator.hardwareConcurrency || null,
+    deviceMemoryGB: navigator.deviceMemory || null,
+    screen: screen.width + 'x' + screen.height,
+    viewport: innerWidth + 'x' + innerHeight,
+    dpr: devicePixelRatio || 1,
+    visibility: document.visibilityState
+  });
+  const persist = () => {
+    try { localStorage.setItem(KEY, JSON.stringify(rows)); } catch {}
+  };
+  const push = (type, data = {}) => {
+    rows.push({ t: new Date().toISOString(), ms: Math.round(performance.now()), type, ...data });
+    if (rows.length > MAX_ROWS) rows.splice(0, rows.length - MAX_ROWS);
+  };
+  window.__islandOutbreakPerfEnabled = true;
+  push('session-start', deviceInfo());
+  if ('PerformanceObserver' in window) {
+    try {
+      new PerformanceObserver(list => { longTasksSinceStart += list.getEntries().length; })
+        .observe({ type: 'longtask', buffered: true });
+    } catch {}
+  }
+  addEventListener('island-outbreak-performance', event => {
+    const detail = event.detail || {};
+    performanceSamples++;
+    push('performance-sample', {
+      ...detail,
+      longTasksSinceStart,
+      bodyStates: ['survival-mode', 'survival-paused', 'aim-active', 'native-fullscreen', 'display-mode-ready']
+        .filter(name => document.body.classList.contains(name)),
+      device: performanceSamples === 1 ? deviceInfo() : undefined
+    });
+    // Persist every 15 seconds (every third 5-second sample), never per frame.
+    if (performanceSamples % 3 === 0 || detail.captureComplete) persist();
+    if (statusNode) {
+      statusNode.textContent = detail.captureComplete
+        ? 'Capture finished automatically. Copy the logs below.'
+        : 'Capturing automatically during active gameplay · ' + performanceSamples + ' samples · stops after 120 seconds.';
+    }
+  });
+  addEventListener('error', event => {
+    push('error', {
+      message: String(event.message || 'unknown error').slice(0, 240),
+      source: String(event.filename || '').split('/').pop(),
+      line: event.lineno || null
+    });
+    persist();
+  });
+  addEventListener('unhandledrejection', event => {
+    push('unhandled-rejection', { message: String(event.reason?.message || event.reason || 'unknown rejection').slice(0, 240) });
+    persist();
+  });
+  addEventListener('visibilitychange', () => {
+    push('visibility', { state: document.visibilityState });
+    persist();
+  });
+
+  const settingsBody = document.querySelector('#settingsOverlay .settingsBody');
+  if (settingsBody && !document.getElementById('diagnosticsPanel')) {
+    const panel = document.createElement('section');
+    panel.id = 'diagnosticsPanel';
+    panel.style.cssText = 'margin:4px 0 16px;padding:12px;border:1px solid #40544a;border-radius:10px;background:#0b1412;color:#e8f0e9';
+    panel.innerHTML = '<h4 style="margin:0 0 6px;font-size:13px;letter-spacing:.08em">MOBILE PERFORMANCE TEST</h4>' +
+      '<p style="margin:0 0 10px;font-size:12px;line-height:1.45;opacity:.82">Automatically captures the first 120 seconds of active gameplay. Timing is sampled inside the game loop; no extra animation loop and no per-frame log writes. Play for about 90 seconds, then pause and copy the results.</p>';
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.textContent = '📋 COPY TEST LOGS';
+    copyButton.style.cssText = 'padding:10px 12px;border:1px solid #6fbd8a;border-radius:7px;background:#194d3a;color:#f1fff5;font-weight:800;font-size:11px';
+    const clearButton = document.createElement('button');
+    clearButton.type = 'button';
+    clearButton.textContent = 'CLEAR LOGS';
+    clearButton.style.cssText = 'padding:10px 12px;border:1px solid #65746b;border-radius:7px;background:#17211d;color:#e8f0e9;font-weight:800;font-size:11px';
+    statusNode = document.createElement('p');
+    statusNode.style.cssText = 'margin:9px 0 0;font-size:11px;line-height:1.4;opacity:.85';
+    statusNode.textContent = 'Ready. Start a survival run; no setup or start button is needed.';
+    actions.append(copyButton, clearButton);
+    panel.append(actions, statusNode);
+    settingsBody.prepend(panel);
+    copyButton.addEventListener('click', async () => {
+      const output = JSON.stringify(rows, null, 2);
+      try {
+        await navigator.clipboard.writeText(output);
+        statusNode.textContent = 'Copied ' + performanceSamples + ' performance samples and related events. Paste them here or into livelogs.md.';
+      } catch {
+        const area = document.createElement('textarea');
+        area.value = output;
+        area.style.cssText = 'position:fixed;left:-9999px;top:0';
+        document.body.appendChild(area);
+        area.focus();
+        area.select();
+        const copied = document.execCommand('copy');
+        area.remove();
+        if (copied) {
+          statusNode.textContent = 'Copied ' + performanceSamples + ' performance samples and related events.';
+        } else {
+          const blob = new Blob([output], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'island-outbreak-performance-test.json';
+          link.click();
+          URL.revokeObjectURL(url);
+          statusNode.textContent = 'Clipboard unavailable; saved the test log as a JSON download.';
+        }
+      }
+    });
+    clearButton.addEventListener('click', () => {
+      rows.length = 0;
+      performanceSamples = 0;
+      try { localStorage.removeItem(KEY); } catch {}
+      statusNode.textContent = 'Logs cleared. Automatic capture will continue during gameplay.';
+    });
+  }
+})();
+</script>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

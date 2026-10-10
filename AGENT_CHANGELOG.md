@@ -838,3 +838,20 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Changed:** Lowered the deliberate-movement threshold to 3.2 velocity or 0.55 joystick magnitude while retaining grounded, non-swimming and cooldown guards. Added explicit `z-index`, `pointer-events` and `touch-action` rules for the Slide button so tapping it while another pointer controls movement is supported.
 
 **Verification:** `npm run lint`, `npm run build` and `git diff --check` all passed. Physical-device multitouch verification remains pending.
+
+
+## 2026-10-10 — GPT-6 — mobile performance optimization and bounded diagnostics
+
+**Branch:** `feature/zombie-survival-world-v2` (no merge to `main`).
+
+**Optimizations:**
+- On coarse-pointer/low-power devices, cap active world streaming at chunk radius 5 instead of the configured 6. The nearby 5×5 area retains its existing LOD rules; this removes only the outermost LOD2 ring while chunks continue to stream normally as the player moves.
+- Zombie line-of-sight checks now reuse scratch vectors and an intersections buffer, and lazily obtain the filtered sight-blocker list once per simulation tick instead of once per zombie check.
+- Reuse the weapon-position scratch vector and skip traversing muzzle-flash meshes when the requested opacity is unchanged. The rendered result for the same opacity remains unchanged.
+
+**Next-test instrumentation:**
+- Captures raw frame intervals, simulation and render wall time, survival-update and aim-query timings, chunk-stream cost, draw calls, triangles, geometry/texture counts, loaded chunks, aim targets, camera blockers, and survival actor/effect counts.
+- Core simulation/render timings run in the existing animation loop. More detailed subphase timing runs every fourth frame. No second animation loop was introduced.
+- Capture ends after 120 seconds of active gameplay. Logs are kept to 32 records and written to local storage every third 5-second sample, plus on errors/visibility changes.
+
+**Verification status:** Changes committed to the feature branch; CI and Vercel preview results to be checked after the push. Physical-device performance comparison is pending.

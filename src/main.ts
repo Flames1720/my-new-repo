@@ -1284,7 +1284,10 @@ class Chunks {
 
   stream(px: number, pz: number) {
     const cx = this.coord(px), cz = this.coord(pz);
-    const radius = settings.current.chunkRadius;
+    const configuredRadius = settings.current.chunkRadius;
+    // Mobile diagnostics showed rendering/submission is more expensive than simulation.
+    // Keep the nearby gameplay-quality area and drop only the farthest LOD2 ring on touch devices.
+    const radius = LOW_POWER_MODE ? Math.min(configuredRadius, 5) : configuredRadius;
 
     for (const [k, g] of this.loaded) {
       const [a, b] = k.split(',').map(Number);
@@ -3754,6 +3757,62 @@ const cameraBlockerObjects: THREE.Object3D[] = [];
 const cameraHits: THREE.Intersection[] = [];
 let cameraProbeTimer = 0, cameraClearance = camDistance;
 
+type DiagnosticCostKey = 'simulation' | 'render' | 'survivalUpdate' | 'aimQuery' | 'chunkStream';
+type DiagnosticCost = { totalMs: number; maxMs: number; count: number };
+type OutbreakDiagnosticsWindow = Window & { __islandOutbreakPerfEnabled?: boolean };
+const newDiagnosticCost = (): DiagnosticCost => ({ totalMs: 0, maxMs: 0, count: 0 });
+const diagnosticFrameWindow: {
+  active: boolean;
+  startedAt: number;
+  captureStartedAt: number;
+  frames: number;
+  slowFrames: number;
+  frameDurations: number[];
+  costs: Record<DiagnosticCostKey, DiagnosticCost>;
+} = {
+  active: false,
+  startedAt: 0,
+  captureStartedAt: 0,
+  frames: 0,
+  slowFrames: 0,
+  frameDurations: [],
+  costs: {
+    simulation: newDiagnosticCost(),
+    render: newDiagnosticCost(),
+    survivalUpdate: newDiagnosticCost(),
+    aimQuery: newDiagnosticCost(),
+    chunkStream: newDiagnosticCost(),
+  },
+};
+let diagnosticMeasureFrame = false;
+
+function recordDiagnosticCost(key: DiagnosticCostKey, ms: number): void {
+  if (!diagnosticFrameWindow.active || !Number.isFinite(ms) || ms < 0) return;
+  const cost = diagnosticFrameWindow.costs[key];
+  cost.totalMs += ms;
+  cost.count++;
+  if (ms > cost.maxMs) cost.maxMs = ms;
+}
+
+function resetDiagnosticWindow(now: number): void {
+  diagnosticFrameWindow.startedAt = now;
+  diagnosticFrameWindow.frames = 0;
+  diagnosticFrameWindow.slowFrames = 0;
+  diagnosticFrameWindow.frameDurations.length = 0;
+  for (const key of Object.keys(diagnosticFrameWindow.costs) as DiagnosticCostKey[]) {
+    diagnosticFrameWindow.costs[key] = newDiagnosticCost();
+  }
+}
+
+function diagnosticCostSummary(key: DiagnosticCostKey): { avgMs: number | null; maxMs: number | null; samples: number } {
+  const cost = diagnosticFrameWindow.costs[key];
+  return {
+    avgMs: cost.count ? Math.round((cost.totalMs / cost.count) * 10) / 10 : null,
+    maxMs: cost.count ? Math.round(cost.maxMs * 10) / 10 : null,
+    samples: cost.count,
+  };
+}
+
 function input() {
   let x = joy.x, y = joy.y;
   if (keys.has('a') || keys.has('arrowleft')) x -= 1;
@@ -3995,7 +4054,9 @@ function update(dt: number) {
 
   const cx = chunks.coord(p.x), cz = chunks.coord(p.z);
   if (cx !== lastCx || cz !== lastCz) {
+    const streamStartedAt = diagnosticFrameWindow.active ? performance.now() : 0;
     chunks.stream(p.x, p.z);
+    if (streamStartedAt) recordDiagnosticCost('chunkStream', performance.now() - streamStartedAt);
     lastCx = cx;
     lastCz = cz;
   }
@@ -4117,15 +4178,25 @@ function update(dt: number) {
   if (isPhotoMode) updatePhotoBadges();
 
   // Shooter simulation runs after the existing camera is positioned, so its hitscan uses the actual FPP view.
-  survival.update(dt, keys.has('shoot'), keys.has('aim'));
+  if (diagnosticMeasureFrame) {
+    const survivalStartedAt = performance.now();
+    survival.update(dt, keys.has('shoot'), keys.has('aim'));
+    recordDiagnosticCost('survivalUpdate', performance.now() - survivalStartedAt);
+  } else {
+    survival.update(dt, keys.has('shoot'), keys.has('aim'));
+  }
 
   // Record breadcrumb displacement trail
   minimap.recordPosition(p.x, p.z);
 
+  const aimStartedAt = diagnosticMeasureFrame ? performance.now() : 0;
   const aimed = getAimTarget();
+  if (aimStartedAt) recordDiagnosticCost('aimQuery', performance.now() - aimStartedAt);
   const canInteractWithAimed = !!aimed && !!(aimed.userData.resource || aimed.userData.interactable);
   document.body.classList.toggle('survival-can-interact', !!survival?.enabled && canInteractWithAimed);
+  const combatAimStartedAt = diagnosticMeasureFrame ? performance.now() : 0;
   const combatTarget = getAimTarget(false, true);
+  if (combatAimStartedAt) recordDiagnosticCost('aimQuery', performance.now() - combatAimStartedAt);
   combatTargetMarker.visible = false;
   if (aimed) {
     const r = aimed.userData.resource as { kind: string; hits: number; maxHits: number } | undefined;
@@ -4217,21 +4288,29 @@ let lobbyRenderAccumulator = 0;
 let lobbyHasRendered = false;
 function loop() {
   requestAnimationFrame(loop);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const rawDeltaSeconds = clock.getDelta();
+  const rawFrameMs = rawDeltaSeconds * 1000;
+  const dt = Math.min(rawDeltaSeconds, 0.05);
 
   if (document.hidden) {
+    diagnosticMeasureFrame = false;
+    diagnosticFrameWindow.active = false;
     lobbyHasRendered = false;
     lobbyRenderAccumulator = 0;
     return;
   }
 
   if (!document.body.classList.contains('display-mode-ready')) {
+    diagnosticMeasureFrame = false;
+    diagnosticFrameWindow.active = false;
     lobbyHasRendered = false;
     lobbyRenderAccumulator = 0;
     return;
   }
 
   if (survey.isActive) {
+    diagnosticMeasureFrame = false;
+    diagnosticFrameWindow.active = false;
     lobbyHasRendered = false;
     lobbyRenderAccumulator = 0;
     // Only redraw the frozen survey scene when its camera actually changes.
@@ -4241,6 +4320,8 @@ function loop() {
 
   const lobbyOpen = !!survivalLobby?.classList.contains('show') || survivalPaused;
   if (lobbyOpen) {
+    diagnosticMeasureFrame = false;
+    diagnosticFrameWindow.active = false;
     lobbyRenderAccumulator += dt;
     if (!lobbyHasRendered || lobbyRenderAccumulator >= 0.25) {
       lobbyRenderAccumulator = 0;
@@ -4252,8 +4333,105 @@ function loop() {
 
   lobbyHasRendered = false;
   lobbyRenderAccumulator = 0;
+
+  const diagnosticsWindow = window as OutbreakDiagnosticsWindow;
+  if (diagnosticsWindow.__islandOutbreakPerfEnabled !== true) {
+    diagnosticMeasureFrame = false;
+    diagnosticFrameWindow.active = false;
+    update(dt);
+    renderer.render(scene, camera);
+    return;
+  }
+
+  if (!diagnosticFrameWindow.active) {
+    const startedAt = performance.now();
+    diagnosticFrameWindow.active = true;
+    diagnosticFrameWindow.captureStartedAt = startedAt;
+    resetDiagnosticWindow(startedAt);
+  }
+
+  diagnosticFrameWindow.frames++;
+  diagnosticFrameWindow.frameDurations.push(rawFrameMs);
+  if (rawFrameMs > 50) diagnosticFrameWindow.slowFrames++;
+  // Only the extra subphase probes are sampled at 1/4 rate. The core update/render
+  // timings and raw frame interval are kept complete so rare stalls remain visible.
+  diagnosticMeasureFrame = diagnosticFrameWindow.frames % 4 === 0;
+
+  const simulationStartedAt = performance.now();
   update(dt);
+  recordDiagnosticCost('simulation', performance.now() - simulationStartedAt);
+
+  const renderStartedAt = performance.now();
   renderer.render(scene, camera);
+  recordDiagnosticCost('render', performance.now() - renderStartedAt);
+
+  if (diagnosticMeasureFrame) {
+    const diagnosticsNow = performance.now();
+    const windowMs = diagnosticsNow - diagnosticFrameWindow.startedAt;
+    const captureElapsedMs = diagnosticsNow - diagnosticFrameWindow.captureStartedAt;
+    const captureComplete = captureElapsedMs >= 120000;
+    if (windowMs >= 5000 || captureComplete) {
+      const sortedFrames = diagnosticFrameWindow.frameDurations.slice().sort((a, b) => a - b);
+      const avgFrameMs = sortedFrames.length
+        ? diagnosticFrameWindow.frameDurations.reduce((sum, value) => sum + value, 0) / diagnosticFrameWindow.frameDurations.length
+        : 0;
+      const zombieDiagnostics = survival.getPerformanceDiagnostics();
+      const round1 = (value: number) => Math.round(value * 10) / 10;
+      const detail = {
+        windowMs: Math.round(windowMs),
+        frames: diagnosticFrameWindow.frames,
+        fps: Math.round(diagnosticFrameWindow.frames * 1000 / Math.max(1, windowMs)),
+        avgFrameMs: round1(avgFrameMs),
+        worstFrameMs: round1(sortedFrames[sortedFrames.length - 1] || 0),
+        p95FrameMs: round1(sortedFrames[Math.min(sortedFrames.length - 1, Math.floor((sortedFrames.length - 1) * 0.95))] || 0),
+        slowFramesOver50ms: diagnosticFrameWindow.slowFrames,
+        timingSampleRate: 'simulation/render every frame; subphases every 4th frame',
+        simulationAvgMs: diagnosticCostSummary('simulation').avgMs,
+        simulationMaxMs: diagnosticCostSummary('simulation').maxMs,
+        renderAvgMs: diagnosticCostSummary('render').avgMs,
+        renderMaxMs: diagnosticCostSummary('render').maxMs,
+        survivalUpdateAvgMs: diagnosticCostSummary('survivalUpdate').avgMs,
+        survivalUpdateMaxMs: diagnosticCostSummary('survivalUpdate').maxMs,
+        survivalUpdateSamples: diagnosticCostSummary('survivalUpdate').samples,
+        aimQueryAvgMs: diagnosticCostSummary('aimQuery').avgMs,
+        aimQueryMaxMs: diagnosticCostSummary('aimQuery').maxMs,
+        aimQuerySamples: diagnosticCostSummary('aimQuery').samples,
+        chunkStreamAvgMs: diagnosticCostSummary('chunkStream').avgMs,
+        chunkStreamMaxMs: diagnosticCostSummary('chunkStream').maxMs,
+        chunkStreamCount: diagnosticCostSummary('chunkStream').samples,
+        drawCalls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        points: renderer.info.render.points,
+        lines: renderer.info.render.lines,
+        rendererGeometries: renderer.info.memory.geometries,
+        rendererTextures: renderer.info.memory.textures,
+        canvasWidth: renderer.domElement.width,
+        canvasHeight: renderer.domElement.height,
+        pixelRatio: renderer.getPixelRatio(),
+        chunksLoaded: chunks.loaded.size,
+        aimTargets: chunks.aimTargets.size,
+        cameraBlockers: chunks.cameraBlockers.size,
+        configuredChunkRadius: settings.current.chunkRadius,
+        effectiveChunkRadius: LOW_POWER_MODE ? Math.min(settings.current.chunkRadius, 5) : settings.current.chunkRadius,
+        lowPowerMode: LOW_POWER_MODE,
+        mode,
+        survivalEnabled: survival.enabled,
+        wave: survival.wave,
+        kills: survival.kills,
+        ...zombieDiagnostics,
+        captureElapsedMs: Math.round(captureElapsedMs),
+        captureComplete,
+      };
+      window.dispatchEvent(new CustomEvent('island-outbreak-performance', { detail }));
+      resetDiagnosticWindow(diagnosticsNow);
+      diagnosticMeasureFrame = false;
+      if (captureComplete) {
+        diagnosticsWindow.__islandOutbreakPerfEnabled = false;
+        diagnosticFrameWindow.active = false;
+      }
+    }
+  }
+  diagnosticMeasureFrame = false;
 }
 document.addEventListener('visibilitychange', () => {
   // Reset the clock baseline when returning from the background to avoid a
