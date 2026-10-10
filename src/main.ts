@@ -1457,6 +1457,7 @@ let survival: ZombieSurvivalSystem;
 const keyboardKeys = new Set<string>();
 const pointerKeys = new Map<string, Set<number>>();
 let hudEditMode = false;
+let hudLayoutSnapshot: string | null = null;
 
 function syncKeyState(key: string) {
   if (keyboardKeys.has(key) || (pointerKeys.get(key)?.size ?? 0) > 0) keys.add(key);
@@ -1723,7 +1724,7 @@ function bindAction(el: HTMLElement, fn: () => void) {
     e.stopPropagation();
     // Activate on touch-down so a four-finger player can trigger reload, weapon swap
     // or a skill while another finger keeps aiming, moving or firing.
-    if (!document.body.classList.contains('hud-edit-mode')) fn();
+    if (!document.body.classList.contains('hud-edit-mode') || el.closest('#hudEditorPanel')) fn();
   });
   el.addEventListener('pointerup', stopPointerEvent);
   el.addEventListener('pointercancel', stopPointerEvent);
@@ -1731,7 +1732,7 @@ function bindAction(el: HTMLElement, fn: () => void) {
     e.preventDefault();
     e.stopPropagation();
     // Keep keyboard/switch-device activation; pointer taps already fired on pointerdown.
-    if ((e as MouseEvent).detail === 0 && !document.body.classList.contains('hud-edit-mode')) fn();
+    if ((e as MouseEvent).detail === 0 && (!document.body.classList.contains('hud-edit-mode') || el.closest('#hudEditorPanel'))) fn();
   });
 }
 
@@ -1879,6 +1880,9 @@ function applyHudPreset(preset: 'four' | 'three' | 'thumbs') {
   saveHudLayout();
 }
 function setHudEditMode(active: boolean) {
+  if (active && !hudEditMode) {
+    try { hudLayoutSnapshot = localStorage.getItem(HUD_LAYOUT_KEY); } catch { hudLayoutSnapshot = null; }
+  }
   hudEditMode = active;
   document.body.classList.toggle('hud-edit-mode', active);
   hudEditorOverlay.classList.toggle('show', active);
@@ -1895,7 +1899,19 @@ function setHudEditMode(active: boolean) {
     selectedHudItem?.classList.remove('hud-selected');
     selectedHudItem = null;
     saveHudLayout();
+    hudLayoutSnapshot = null;
   }
+}
+function cancelHudEditMode() {
+  try {
+    if (hudLayoutSnapshot === null) localStorage.removeItem(HUD_LAYOUT_KEY);
+    else localStorage.setItem(HUD_LAYOUT_KEY, hudLayoutSnapshot);
+  } catch {}
+  hudLayout = Object.fromEntries(Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }]));
+  loadHudLayout();
+  hudTouchButtons.forEach(applyHudItem);
+  hudLayoutSnapshot = null;
+  setHudEditMode(false);
 }
 loadHudLayout();
 
@@ -2041,8 +2057,9 @@ bindAction(hudEditorMinimize, () => {
   hudEditorMinimize.textContent = collapsed ? '+' : '−';
   hudEditorMinimize.setAttribute('aria-label', collapsed ? 'Expand HUD editor' : 'Collapse HUD editor');
 });
-bindAction(document.querySelector('#hudEditorClose') as HTMLButtonElement, () => setHudEditMode(false));
+bindAction(document.querySelector('#hudEditorClose') as HTMLButtonElement, cancelHudEditMode);
 bindAction(document.querySelector('#hudSaveBtn') as HTMLButtonElement, () => setHudEditMode(false));
+bindAction(document.querySelector('#hudCancelBtn') as HTMLButtonElement, cancelHudEditMode);
 bindAction(document.querySelector('#hudResetBtn') as HTMLButtonElement, () => {
   hudLayout = Object.fromEntries(Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }]));
   hudTouchButtons.forEach(applyHudItem);
