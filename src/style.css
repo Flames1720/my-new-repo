@@ -1933,3 +1933,58 @@ body.hud-edit-mode::before {
 
 /* Survival runs use the FPS HUD; hide the unrelated world inventory hotbar. */
 body.survival-mode #inventory { display: none !important; }
+
+
+/* Island Outbreak lobby: real panels, not scroll-to-section navigation. */
+#survivalLobby .lobbyNav{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;white-space:nowrap;gap:2px}
+#survivalLobby .lobbyNav button{flex:0 0 auto;min-width:80px}
+#survivalLobby .lobbyNav .lobbyNavSpacer{min-width:8px}
+#survivalLobby .lobbyStage{display:block;height:calc(100% - 168px);overflow-y:auto;overflow-x:hidden;padding:clamp(10px,2vw,22px) clamp(14px,3vw,42px) 100px}
+#survivalLobby .lobbyDeploy{display:contents!important}
+#survivalLobby .lobbyPage{display:none!important}
+#survivalLobby .lobbyPage.active{display:block!important}
+#survivalLobby .lobbyHero.lobbyPage.active{display:flex!important}
+#survivalLobby .lobbyPartyPanel.lobbyPage.active{display:flex!important}
+#survivalLobby .lobbyPage{width:min(950px,100%);margin:0 auto;min-width:0}
+#survivalLobby .lobbyHero{max-width:760px;min-height:calc(100% - 20px);padding:8px 4px;justify-content:center}
+#survivalLobby .lobbyMissionBoard{height:clamp(110px,25vh,240px);max-width:520px}
+#survivalLobby .lobbyHero h1{font-size:clamp(30px,5.5vw,65px)}
+#survivalLobby .lobbyPartyPanel,#survivalLobby .lobbyKitPage,#survivalLobby .lobbyChallenges,#survivalLobby .lobbyWildcards,#survivalLobby .lobbyProgression{padding:clamp(14px,2.5vw,26px);border:1px solid rgba(203,213,225,.22);border-radius:12px;background:linear-gradient(140deg,rgba(24,38,36,.95),rgba(9,16,20,.96));box-shadow:0 12px 38px #0006}
+#survivalLobby .lobbyPartyPanel{max-width:720px;flex-direction:column;gap:12px}
+#survivalLobby .lobbyHomeSummary{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin-top:12px}
+#survivalLobby .lobbyHomeSummary span{padding:8px 11px;border:1px solid rgba(251,191,36,.28);border-radius:8px;background:rgba(245,158,11,.08);font-size:11px;color:#f7d47c;font-weight:900;letter-spacing:.5px}
+#survivalLobby .lobbyKitPage .lobbySectionHead{margin-bottom:18px}
+#survivalLobby .lobbyWeaponCards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(9px,1.8vw,18px)}
+#survivalLobby .lobbyWeaponPick{min-width:0;min-height:175px;display:flex;flex-direction:column;gap:10px;align-items:stretch;position:relative;text-align:left;padding:14px;border:1px solid rgba(148,163,184,.3);border-radius:12px;background:linear-gradient(145deg,#263435,#101a20);color:#e2e8f0;cursor:pointer}
+#survivalLobby .lobbyWeaponPick.active,#survivalLobby .lobbyWeaponPick[aria-checked="true"]{border-color:#fbbf24;box-shadow:inset 0 0 0 1px rgba(251,191,36,.32),0 0 18px rgba(245,158,11,.13);background:linear-gradient(145deg,#33413c,#17211f)}
+#survivalLobby .weaponCardIcon{display:grid;place-items:center;width:100%;height:97px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:radial-gradient(ellipse at center,rgba(149,184,178,.14),rgba(4,11,15,.35))}
+#survivalLobby .weaponCardIcon svg{display:block;width:100%;height:100%;max-width:220px;filter:drop-shadow(0 7px 5px #0008)}
+#survivalLobby .weaponCardCopy{display:flex;flex-direction:column;gap:3px}
+#survivalLobby .weaponCardCopy strong{font-size:clamp(10px,1.2vw,14px);letter-spacing:.35px}
+#survivalLobby .weaponCardCopy small{font-size:9px;color:#a6b7b7}
+#survivalLobby .weaponCardSelect{position:absolute;right:10px;top:10px;color:#fbbf24;font-size:15px}
+#survivalLobby #lobbyWeaponSelect{margin-top:12px;max-width:400px;min-height:37px;font-size:11px;opacity:.88}
+#survivalLobby .lobbyChallenges{max-width:720px}
+#survivalLobby .lobbyProgression{max-width:760px;margin:0 auto}
+#survivalLobby .lobbyWildcards{max-width:950px;margin:0 auto}
+#survivalLobby .lobbyFooter{pointer-events:none}
+#survivalLobby #startRunBtn{pointer-events:auto}
+@media (max-width:900px){
+ #survivalLobby .lobbyStage{height:calc(100% - 148px);padding-bottom:76px}
+ #survivalLobby .lobbyHero{min-height:auto}
+ #survivalLobby .lobbyNav button{min-width:80px;font-size:9px}
+ #survivalLobby .lobbyWeaponPick{min-height:145px;padding:8px;gap:7px}
+ #survivalLobby .weaponCardIcon{height:77px}
+ #survivalLobby .lobbyFooter{bottom:8px}
+}
+@media (max-width:680px){
+ #survivalLobby .lobbyStage{height:calc(100% - 94px)}
+ #survivalLobby .lobbyPartyPanel.lobbyPage.active{display:flex!important}
+ #survivalLobby .lobbyHero{min-height:0}
+ #survivalLobby .lobbyWeaponCards{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+ #survivalLobby .lobbyWeaponPick{padding:6px;min-height:120px}
+ #survivalLobby .weaponCardIcon{height:63px}
+ #survivalLobby .weaponCardCopy strong{font-size:8px}
+ #survivalLobby .weaponCardCopy small{font-size:7px}
+ #survivalLobby .lobbyHomeSummary span{padding:6px;font-size:9px}
+}
