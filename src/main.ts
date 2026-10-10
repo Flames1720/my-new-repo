@@ -1719,14 +1719,15 @@ lookZone.addEventListener('pointerup', endLook);
 lookZone.addEventListener('pointercancel', endLook);
 lookZone.addEventListener('lostpointercapture', endLook);
 
-function bindAction(el: HTMLElement, fn: () => void) {
+function bindAction(el: HTMLElement, fn: () => void, allowDuringHudEdit = false) {
   const stopPointerEvent = (e: Event) => e.stopPropagation();
+  const canActivate = () => allowDuringHudEdit || !document.body.classList.contains('hud-edit-mode');
   el.addEventListener('pointerdown', e => {
     e.preventDefault();
     e.stopPropagation();
-    // Activate on touch-down so a four-finger player can trigger reload, weapon swap
-    // or a skill while another finger keeps aiming, moving or firing.
-    if (!document.body.classList.contains('hud-edit-mode')) fn();
+    // HUD editor controls must remain operable while the gameplay controls are locked.
+    // Normal combat actions stay disabled during layout editing.
+    if (canActivate()) fn();
   });
   el.addEventListener('pointerup', stopPointerEvent);
   el.addEventListener('pointercancel', stopPointerEvent);
@@ -1734,7 +1735,7 @@ function bindAction(el: HTMLElement, fn: () => void) {
     e.preventDefault();
     e.stopPropagation();
     // Keep keyboard/switch-device activation; pointer taps already fired on pointerdown.
-    if ((e as MouseEvent).detail === 0 && !document.body.classList.contains('hud-edit-mode')) fn();
+    if ((e as MouseEvent).detail === 0 && canActivate()) fn();
   });
 }
 
@@ -2043,9 +2044,9 @@ bindAction(hudEditorMinimize, () => {
   const collapsed = hudEditorPanel.classList.toggle('collapsed');
   hudEditorMinimize.textContent = collapsed ? '+' : '−';
   hudEditorMinimize.setAttribute('aria-label', collapsed ? 'Expand HUD editor' : 'Collapse HUD editor');
-});
-bindAction(document.querySelector('#hudEditorClose') as HTMLButtonElement, () => setHudEditMode(false));
-bindAction(document.querySelector('#hudSaveBtn') as HTMLButtonElement, () => setHudEditMode(false));
+}, true);
+bindAction(document.querySelector('#hudEditorClose') as HTMLButtonElement, () => setHudEditMode(false), true);
+bindAction(document.querySelector('#hudSaveBtn') as HTMLButtonElement, () => setHudEditMode(false), true);
 bindAction(document.querySelector('#hudResetBtn') as HTMLButtonElement, () => {
   hudLayout = Object.fromEntries(Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }]));
   hudTouchButtons.forEach(applyHudItem);
@@ -2053,7 +2054,7 @@ bindAction(document.querySelector('#hudResetBtn') as HTMLButtonElement, () => {
   saveHudLayout();
   const first = hudTouchButtons.find(el => el.dataset.hudId === 'shoot') || hudTouchButtons[0];
   if (first) selectHudItem(first);
-});
+}, true);
 
 
 // Touch buttons. Survival mode reuses the same joystick/look zones but swaps fantasy actions for FPS actions.
