@@ -962,3 +962,5 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Verification:** Vercel preview auto-build for commit `fa031e5` reached `READY`, which includes TypeScript+Vite build as configured in `package.json`. This is **build verification only**, not a mobile-browser interaction, accuracy, performance, screenshot, or save-data regression test. Previous optimization `chunk-queue-1` was not modified.
 
 **Next tests:** Reproduce 40px-left symptom with stationary target at multiple ranges and ADS/hip modes; Android claw multi-touch; fullscreen exit/return and portrait rotation; inspect lobby card layout and all page actions; confirm save data, memory and frame time. Collect user audio files before implementing music.
+
+**Follow-up audio settings (same sprint):** Added persisted master-volume and sound-effects sliders (0–100%) to Graphics / Audio. `ZombieSurvivalSystem.activateAudio()` now reapplies saved values instead of overwriting preferences with hardcoded levels whenever firing/reloading. Browser audio and cross-session persistence still require device validation. Lobby/gameplay music files have not yet been provided.
