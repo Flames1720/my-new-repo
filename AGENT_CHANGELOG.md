@@ -711,3 +711,24 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Remaining work:** Enemy attack AI against the player, authored hitbox timing per combo frame, weapon progression, sound/haptics, stamina/cooldowns, and deeper device testing remain future work.
 
 **Next agent:** Deploy this integration branch for browser review, then tune target selection and combat feel using real device feedback before adding more combat content.
+
+## 2026-10-10 07:34 +01:00 — GPT-6 — fullscreen button handoff
+
+**Scope:** Replace the blocking fullscreen/landscape entry gate with an optional one-tap fullscreen control.
+
+**Branch/repository:** `feature/zombie-survival-world-v2` in `Flames1720/my-new-repo`. Keep `main` untouched; PR #8 remains the review path.
+
+**Changed (already present on branch):**
+- `src/main.ts` (commit `dd31d186e5179d3a732c7dc788dd3640cfe9d14d`): removed the old display-mode gate behavior and orientation-locking entry flow. Added a simple fullscreen button handler using `requestFullscreen({ navigationUI: 'hide' })`, an exit-fullscreen path, a `fullscreenchange` listener, and user-facing fallback messages when fullscreen is unsupported or fails.
+- `src/ui-modern.css` (latest known commit `b94c04aa3eb7b324ac15467e6e9bf34ec1e37f3d`): hides the obsolete `#displayModeGate` and hides `#fullscreenBtn` while `body.native-fullscreen` is active.
+
+**Deployment:** Latest known Vercel preview deployment is READY, ID `dpl_FNKgaKY2avr8fcrB71kYrq6Ykwut`, for commit `b94c04aa3eb7b324ac15467e6e9bf34ec1e37f3d`. Preview: https://virtual-family-core-dzzp6104h-flames-projects-5a93c7bd.vercel.app
+
+**Verification status:** Deployment reports READY; this is not the same as complete gameplay or physical-device QA. Still test on Android: (1) button is visible in normal browser mode, (2) tapping enters fullscreen where supported, (3) button hides during fullscreen, and (4) it reappears after exiting fullscreen. Browser support and browser-chrome behavior can vary.
+
+**Known unrelated gameplay issues not confirmed fixed:** FPP left/right turning direction may be reversed; TPP movement/look controls were previously unreliable; world colliders, road intersections, FPP local-mesh hiding, jump/harvest state, water-edge access, house/road spacing, and TPP crosshair obstruction still require targeted reproduction and verification.
+
+**Safety/merge note:** Do not merge to `main` unless the user explicitly asks. Do not describe the older gameplay issues as fixed without reproducing and testing them.
+
+**Next agent:** Open the preview on the user's Android device and verify the fullscreen control first. Then tackle one reproducible gameplay issue at a time, run build/typecheck and inspect the deployment before reporting success.
+
