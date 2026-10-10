@@ -59,7 +59,8 @@
 - [x] Make settings navigation actually switch sections. (code/source verified; mobile checks pending where relevant)
 - [x] Keep camera/aiming controls and HUD editor. (code/source verified; mobile checks pending where relevant)
 - [x] Combine Graphics / Audio navigation; retain quality, terrain LOD, weather controls. (code/source verified; mobile checks pending where relevant)
-- [ ] Add audio settings and separate lobby/gameplay tracks when user supplies files.
+- [x] Add saved master-volume and sound-effects sliders, linked to the existing Web Audio engine (build verification pending on latest commit).
+- [ ] Add separate lobby/gameplay music tracks and controls when the user supplies files.
 - [x] Keep identity and diagnostics. (code/source verified; mobile checks pending where relevant)
 - [x] Hide character model picker and profession from planned UI after dependency audit. (code/source verified; mobile checks pending where relevant)
 - [x] Defer outfits without deleting their code or data. (code/source verified; mobile checks pending where relevant)
@@ -88,3 +89,4 @@
 - 2026-10-10: Implemented crosshair-aligned ADS firing rays and tracers, faster ADS and camera turn response, optional independent button drag-look, and procedural slide cue.
 - 2026-10-10: Replaced lobby scrolling with six distinct panels; added weapon illustrations and progress summary. Grouped settings, enabled diagnostics capture, safely hid approved exploration controls, and hardened Android display-mode rechecks.
 - 2026-10-10: Latest gameplay-code preview at commit `fa031e5` reported Vercel READY. TypeScript+Vite build passed; **on-device accuracy/input/UI/performance validation still pending**. Work remains NOT FINALIZED.
+- 2026-10-10: Added saved master and SFX volume sliders; replaced fixed per-shot volume override with preferences. Awaiting final combined preview build and Android sound check.
