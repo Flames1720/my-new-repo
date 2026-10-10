@@ -39,6 +39,7 @@ export interface SurvivalStatus {
   dead: boolean;
   runComplete?: boolean;
   preparationSeconds?: number;
+  durationSeconds?: number;
   skillCooldownSeconds?: number;
   zonePhase?: SafeZonePhase;
   zoneIntegrity?: number;
@@ -408,6 +409,15 @@ export class ZombieSurvivalSystem {
     this.damageMultiplier = 1 + Math.max(0, Math.min(5, Math.floor(damageLevels))) * 0.05;
     this.health = this.maxHealth;
     this.emitStatus();
+  }
+
+  restoreHealth(amount: number): boolean {
+    if (!this.enabled || this.isDead || amount <= 0 || this.health >= this.maxHealth) return false;
+    const before = this.health;
+    this.health = Math.min(this.maxHealth, this.health + Math.round(amount));
+    this.options.notify(`FIELD MEDIC · +${this.health - before} HP`);
+    this.emitStatus();
+    return this.health > before;
   }
 
   beginPreparation(seconds = 12): void {
@@ -1206,6 +1216,7 @@ export class ZombieSurvivalSystem {
       ammoInMag: ammo.mag, ammoReserve: ammo.reserve, kills: this.kills, wave: this.wave,
       livingZombies: living, inSafeZone: this.isPlayerProtected(p.x, p.z), runComplete: this.runComplete,
       preparationSeconds: Math.ceil(this.preparationTimer),
+      durationSeconds: Math.max(0, Math.floor(this.elapsed)),
       skillCooldownSeconds: Math.ceil(this.skillCooldown),
       nearestZone: guideZone?.label ?? 'SAFE ZONE',
       zoneDistance: guideZone ? Math.max(0, distToZone(p.x, p.z, guideZone) - guideZone.radius) : 0,

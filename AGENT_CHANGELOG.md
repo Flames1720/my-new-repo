@@ -757,3 +757,36 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Changed:** `index.html` now carries a minimal inline critical style for the entry gate, a portrait rotation animation, and a rule that hides and disables all other body layers until `.display-mode-ready`. This preserves the essential safety gate even if the app's stylesheet request fails. The updated app was built and is served for mobile review as a static Vite production preview on port 4173, rather than the development server on port 3000.
 
 **Verification:** production build passed; local and public HTML/CSS requests returned HTTP 200; the production preview rendered the styled gate and the fullscreen deployment lobby in the browser. Actual phone/WebView retest is still required; use the production preview link supplied in the handoff.
+
+
+## 2026-10-10 09:35 +0000 UTC — Manus
+
+**Scope:** Island Outbreak survival lobby, Wildcards, pause/results flow, wave feedback and procedural audio.
+
+**Starting point:** `feature/zombie-survival-world-v2` at `5c7a0d4`, with a clean worktree. No merge, permanent hosting or deployment was performed.
+
+**Inspected:** `PROJECT_PLAN.md`, `README.md`, `index.html`, `src/main.ts`, `src/zombie-survival.ts`, `src/survival-audio.ts`, `src/style.css`, existing HUD persistence and fullscreen/pause code.
+
+**Changed:**
+- Added a data-driven collection of 10 Wildcards, with two provisional starter cards unlocked and a third slot available at level 5.
+- Added illustrated card faces with distinct accent colors and effect motifs; the first tap flips a card to its effect briefing and the second tap equips/removes it.
+- Added one ready/cooldown HUD activation button per equipped active card, including Shockwave Relay, Field Medic and Endurance runtime behavior. The legacy standalone PULSE button is now represented by Shockwave Relay rather than exposed as a separate skill layer.
+- Extended the existing `zombie-survival-hud-v1` layout defaults for three wildcard buttons and retained version-safe loading of older layouts.
+- Added an authored wave/preparation event banner and procedural wave, boss, wildcard, level-up and game-over cues using the existing Web Audio engine.
+- Replaced immediate defeat-to-lobby behavior with a result surface showing time survived, wave reached, infected kills, run XP, total XP, level progress, best-wave/best-time callouts and explicit Redeploy / Quit to Lobby actions.
+- Persisted best survival time and wildcard unlock/equipped selections inside the existing `island-outbreak-meta-v1` record with defensive migration defaults.
+- Opening Settings during an active run now releases held controls and keeps the run paused; the pause surface exposes Resume, Settings and Quit.
+- Added elapsed duration to `SurvivalStatus` and a bounded `restoreHealth()` hook for wildcard effects.
+
+**Verification:**
+- Build: PASS (`npm run build`)
+- Typecheck/lint: PASS (`npm run lint`)
+- Whitespace: PASS (`git diff --check`)
+- Runtime/browser: PARTIAL — sandbox browser entered fullscreen, rendered the lobby and showed all 10 illustrated cards; the first unlocked card was tapped and visibly flipped to its briefing side; browser console had no output/errors.
+- Device: NOT VERIFIED — no physical Android/iOS test was available.
+
+**Important findings:** The card interaction now matches the requested physical-card metaphor. The supplied browser smoke test confirms the lobby visuals and flip behavior, but the full defeat/result path and touch-device ergonomics still need a longer run on a real device.
+
+**Remaining work:** Retune exact wildcard balance and unlock rules with playtesting; exercise Redeploy, Quit, pause-settings-resume, wave-100 victory and result XP animation in browser; verify mobile safe-area placement and reduced-motion behavior on a physical phone.
+
+**Next agent:** Continue on this feature branch only. Do not deploy or merge. Run the full survival flow smoke test, then commit/push the implementation if the user wants branch continuity.

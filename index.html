@@ -90,6 +90,7 @@
       </section>
 
       <div id="waypointBadge"></div>
+      <div id="survivalEventBanner" aria-live="assertive"></div>
 
       <!-- Modern Bottom Hotbar Inventory -->
       <div id="inventory"></div>
@@ -155,6 +156,11 @@
                 <button id="upgradeDamageBtn" type="button">+5% DAMAGE <small>180 XP</small></button>
               </div>
             </section>
+            <section class="lobbyWildcards" aria-label="Wildcards">
+              <div class="lobbySectionHead"><span>WILDCARDS</span><small id="wildcardSlotSummary">2 ACTIVE SLOTS</small></div>
+              <p class="wildcardIntro">Equip active field cards before deployment. Each equipped card adds one ready button in the run.</p>
+              <div id="wildcardCollection" class="wildcardCollection"></div>
+            </section>
           </aside>
         </main>
         <footer class="lobbyFooter">
@@ -166,10 +172,14 @@
 
     <div id="survivalDeathOverlay" role="dialog" aria-modal="true" aria-labelledby="survivalDeathTitle">
       <div class="survivalDeathCard">
-        <div class="survivalDeathEyebrow">SIGNAL LOST</div>
-        <h2 id="survivalDeathTitle">OVERRUN</h2>
-        <p>You were caught outside the safe zone.</p>
-        <button id="survivalRestartBtn">RETURN TO SAFE ZONE</button>
+        <div id="survivalResultEyebrow" class="survivalDeathEyebrow">SIGNAL LOST</div>
+        <h2 id="survivalDeathTitle">ZOMBIE ATE YOUR BRAIN</h2>
+        <p id="survivalResultCopy">The island kept the score.</p>
+        <div id="survivalResultStats" class="survivalResultStats"></div>
+        <div class="survivalXpPanel"><div><span>RUN XP</span><strong id="survivalRunXp">+0 XP</strong></div><div><span>TOTAL XP</span><strong id="survivalTotalXp">0 XP</strong></div><div class="xpTrack"><i id="survivalXpBar"></i></div><small id="survivalXpProgress">LEVEL 1 · 0 / 150 XP</small></div>
+        <div id="survivalResultCallout" class="survivalResultCallout"></div>
+        <button id="survivalRestartBtn">REDEPLOY</button>
+        <button id="survivalResultQuitBtn" class="resultSecondaryBtn" type="button">QUIT TO LOBBY</button>
       </div>
     </div>
 
@@ -179,8 +189,9 @@
         <h2 id="survivalPauseTitle">RUN PAUSED</h2>
         <p>The island is on hold. Catch your breath, then get back out there.</p>
         <button id="resumeRunBtn" type="button">RESUME RUN</button>
+        <button id="pauseSettingsBtn" type="button">SETTINGS</button>
         <button id="restartPausedRunBtn" type="button">RESTART RUN</button>
-        <button id="leaveSurvivalBtn" type="button">LEAVE SURVIVAL</button>
+        <button id="leaveSurvivalBtn" type="button">QUIT</button>
       </div>
     </div>
 
@@ -434,6 +445,7 @@
         <button id="diveBtn" class="swimOnly">DIVE</button>
         <button id="interactBtn" data-hud-id="use">USE</button>
       </div>
+      <div id="wildcardHud" aria-label="Equipped wildcards"></div>
     </div>
 
     <!-- Photo Mode Viewfinder & Screenshot Capture Overlay -->

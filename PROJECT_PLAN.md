@@ -225,3 +225,10 @@ Read ARCHITECTURE.md for protected decisions and AGENT_CHANGELOG.md for the chro
 ### Mobile WebView entry-gate hardening — 2026-10-10
 - The user-provided phone screenshot showed an unstyled portrait gate with HUD content leaking into view. Added inline critical styling and background-layer hiding so the mandatory entry gate remains full-screen and the phone-rotation cue remains visible even if external stylesheets fail.
 - Built a static production preview (compiled CSS/JS) on port 4173. Local/public HTML and hashed CSS returned HTTP 200, and the production preview was visually checked in the browser. Still request a fresh physical-device WebView check from the user before calling mobile rendering verified.
+
+
+### Survival run design continuation — 2026-10-10
+- Status: IMPLEMENTED & BUILD VERIFIED; browser verification is PARTIAL on `feature/zombie-survival-world-v2`.
+- Added illustrated, flip-to-inspect Wildcards with two starter cards, two active slots, data-driven definitions, local loadout persistence and one activation button per equipped active card.
+- Added unified paused Settings/Resume/Quit behavior, a detailed defeat/victory result surface, duration and best-time persistence, XP/level feedback, wave event banners and procedural event cues.
+- Remaining verification: complete a long browser run through defeat/results/redeploy/quit, and verify physical mobile safe-area/touch ergonomics.

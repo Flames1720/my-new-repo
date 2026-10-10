@@ -44,6 +44,7 @@ import { WorldSurvey, type SurveyView } from './survey';
 import { voxelWorld, buildVoxelWorldVolumeMesh, buildVoxelWorldWaterVolumeMesh, type VoxelEdit } from './voxel';
 import { environmentAssets } from './environment-assets';
 import { ZombieSurvivalSystem, type SurvivalStatus, type SurvivalWeaponId } from './zombie-survival';
+import { survivalSound } from './survival-audio';
 
 type Save = {
   version: 2;
@@ -1774,6 +1775,9 @@ const HUD_DEFAULTS: Record<string, HudLayoutItem> = {
   weapon: { x: 52, y: 80, size: 44, opacity: 0.68 },
   use: { x: 69, y: 55, size: 46, opacity: 0.62 },
   skill: { x: 60, y: 58, size: 46, opacity: 0.78 },
+  'wildcard-1': { x: 36, y: 82, size: 46, opacity: 0.72 },
+  'wildcard-2': { x: 45, y: 82, size: 46, opacity: 0.72 },
+  'wildcard-3': { x: 54, y: 82, size: 46, opacity: 0.72 },
 };
 const HUD_PRESETS: Record<'four' | 'three' | 'thumbs', Record<string, { x: number; y: number }>> = {
   four: {
@@ -1798,7 +1802,7 @@ const hudSizeSlider = document.querySelector('#hudSizeSlider') as HTMLInputEleme
 const hudSizeVal = document.querySelector('#hudSizeVal') as HTMLSpanElement;
 const hudOpacitySlider = document.querySelector('#hudOpacitySlider') as HTMLInputElement;
 const hudOpacityVal = document.querySelector('#hudOpacityVal') as HTMLSpanElement;
-const hudTouchButtons = Array.from(document.querySelectorAll<HTMLElement>('#touch [data-hud-id]'));
+let hudTouchButtons = Array.from(document.querySelectorAll<HTMLElement>('#touch [data-hud-id]'));
 let hudLayout: Record<string, HudLayoutItem> = Object.fromEntries(
   Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }])
 );
@@ -2152,13 +2156,24 @@ const survivalReserve = document.querySelector('#survivalReserve') as HTMLSpanEl
 const survivalKills = document.querySelector('#survivalKills') as HTMLSpanElement | null;
 const survivalWave = document.querySelector('#survivalWave') as HTMLSpanElement | null;
 const survivalZombies = document.querySelector('#survivalZombies') as HTMLSpanElement | null;
+const survivalEventBanner = document.querySelector('#survivalEventBanner') as HTMLDivElement | null;
 const survivalDeathOverlay = document.querySelector('#survivalDeathOverlay') as HTMLDivElement | null;
 const survivalRestartBtn = document.querySelector('#survivalRestartBtn') as HTMLButtonElement | null;
+const survivalResultQuitBtn = document.querySelector('#survivalResultQuitBtn') as HTMLButtonElement | null;
+const survivalResultEyebrow = document.querySelector('#survivalResultEyebrow') as HTMLDivElement | null;
+const survivalResultCopy = document.querySelector('#survivalResultCopy') as HTMLParagraphElement | null;
+const survivalResultStats = document.querySelector('#survivalResultStats') as HTMLDivElement | null;
+const survivalRunXp = document.querySelector('#survivalRunXp') as HTMLElement | null;
+const survivalTotalXp = document.querySelector('#survivalTotalXp') as HTMLElement | null;
+const survivalXpBar = document.querySelector('#survivalXpBar') as HTMLElement | null;
+const survivalXpProgress = document.querySelector('#survivalXpProgress') as HTMLElement | null;
+const survivalResultCallout = document.querySelector('#survivalResultCallout') as HTMLElement | null;
 const survivalPauseBtn = document.querySelector('#survivalPauseBtn') as HTMLButtonElement | null;
 const survivalPauseOverlay = document.querySelector('#survivalPauseOverlay') as HTMLDivElement | null;
 const resumeRunBtn = document.querySelector('#resumeRunBtn') as HTMLButtonElement | null;
 const restartPausedRunBtn = document.querySelector('#restartPausedRunBtn') as HTMLButtonElement | null;
 const leaveSurvivalBtn = document.querySelector('#leaveSurvivalBtn') as HTMLButtonElement | null;
+const pauseSettingsBtn = document.querySelector('#pauseSettingsBtn') as HTMLButtonElement | null;
 let survivalPaused = false;
 const survivalLobby = document.querySelector('#survivalLobby') as HTMLDivElement | null;
 const lobbyWeaponSelect = document.querySelector('#lobbyWeaponSelect') as HTMLSelectElement | null;
@@ -2169,11 +2184,28 @@ const upgradeHealthBtn = document.querySelector('#upgradeHealthBtn') as HTMLButt
 const upgradeStaminaBtn = document.querySelector('#upgradeStaminaBtn') as HTMLButtonElement | null;
 const upgradeDamageBtn = document.querySelector('#upgradeDamageBtn') as HTMLButtonElement | null;
 const startRunBtn = document.querySelector('#startRunBtn') as HTMLButtonElement | null;
+const wildcardCollection = document.querySelector('#wildcardCollection') as HTMLDivElement | null;
+const wildcardSlotSummary = document.querySelector('#wildcardSlotSummary') as HTMLElement | null;
+const wildcardHud = document.querySelector('#wildcardHud') as HTMLDivElement | null;
 type UpgradeKey = 'health' | 'stamina' | 'damage';
-type SurvivalMetaState = { xp: number; bestWave: number; totalRuns: number; totalKills: number; upgrades: Record<UpgradeKey, number>; waveClearCounts: Record<string, number> };
+type WildcardId = 'shockwave' | 'field-medic' | 'quick-hands' | 'scavenger' | 'steady-grip' | 'reinforced-vest' | 'sharpshooter' | 'boss-spoils' | 'threat-reader' | 'endurance';
+type WildcardDefinition = { id: WildcardId; label: string; short: string; description: string; accent: string; cooldown: number; unlocked: boolean };
+const WILDCARDS: WildcardDefinition[] = [
+  { id: 'shockwave', label: 'SHOCKWAVE RELAY', short: 'PULSE', description: 'Push back nearby infected.', accent: '#f59e0b', cooldown: 18, unlocked: true },
+  { id: 'field-medic', label: 'FIELD MEDIC', short: 'MEDIC', description: 'Recover a capped burst of HP.', accent: '#4ade80', cooldown: 24, unlocked: true },
+  { id: 'quick-hands', label: 'QUICK HANDS', short: 'HANDS', description: 'Reload faster for a short window.', accent: '#38bdf8', cooldown: 22, unlocked: false },
+  { id: 'scavenger', label: 'SCAVENGER', short: 'SCAV', description: 'Pull extra value from field drops.', accent: '#a3e635', cooldown: 26, unlocked: false },
+  { id: 'steady-grip', label: 'STEADY GRIP', short: 'GRIP', description: 'Tighten the next firing window.', accent: '#c084fc', cooldown: 20, unlocked: false },
+  { id: 'reinforced-vest', label: 'REINFORCED VEST', short: 'VEST', description: 'Briefly harden against damage.', accent: '#94a3b8', cooldown: 28, unlocked: false },
+  { id: 'sharpshooter', label: 'SHARPSHOOTER', short: 'SCOPE', description: 'Prime a precise hit window.', accent: '#f472b6', cooldown: 20, unlocked: false },
+  { id: 'boss-spoils', label: 'BOSS SPOILS', short: 'SPOILS', description: 'Increase the next elite reward.', accent: '#fb7185', cooldown: 35, unlocked: false },
+  { id: 'threat-reader', label: 'THREAT READER', short: 'SCAN', description: 'Reveal nearby infected pressure.', accent: '#22d3ee', cooldown: 16, unlocked: false },
+  { id: 'endurance', label: 'ENDURANCE', short: 'ENDURE', description: 'Restore a portion of sprint stamina.', accent: '#facc15', cooldown: 20, unlocked: false },
+];
+type SurvivalMetaState = { xp: number; bestWave: number; bestTimeSeconds: number; totalRuns: number; totalKills: number; upgrades: Record<UpgradeKey, number>; waveClearCounts: Record<string, number>; unlockedWildcards: WildcardId[]; equippedWildcards: WildcardId[] };
 const SURVIVAL_META_KEY = 'island-outbreak-meta-v1';
 function loadSurvivalMeta(): SurvivalMetaState {
-  const fallback: SurvivalMetaState = { xp: 0, bestWave: 0, totalRuns: 0, totalKills: 0, upgrades: { health: 0, stamina: 0, damage: 0 }, waveClearCounts: {} };
+  const fallback: SurvivalMetaState = { xp: 0, bestWave: 0, bestTimeSeconds: 0, totalRuns: 0, totalKills: 0, upgrades: { health: 0, stamina: 0, damage: 0 }, waveClearCounts: {}, unlockedWildcards: ['shockwave', 'field-medic'], equippedWildcards: ['shockwave', 'field-medic'] };
   try {
     const raw = localStorage.getItem(SURVIVAL_META_KEY);
     if (!raw) {
@@ -2181,12 +2213,28 @@ function loadSurvivalMeta(): SurvivalMetaState {
       return fallback;
     }
     const parsed = JSON.parse(raw) as Partial<SurvivalMetaState>;
-    return { ...fallback, ...parsed, upgrades: { ...fallback.upgrades, ...(parsed.upgrades || {}) }, waveClearCounts: parsed.waveClearCounts || {} };
+    const unlocked = Array.isArray(parsed.unlockedWildcards) ? parsed.unlockedWildcards.filter(id => WILDCARDS.some(card => card.id === id)) as WildcardId[] : fallback.unlockedWildcards;
+    const equipped = Array.isArray(parsed.equippedWildcards) ? parsed.equippedWildcards.filter(id => unlocked.includes(id)).slice(0, 3) as WildcardId[] : fallback.equippedWildcards;
+    return { ...fallback, ...parsed, bestTimeSeconds: Number(parsed.bestTimeSeconds) || 0, upgrades: { ...fallback.upgrades, ...(parsed.upgrades || {}) }, waveClearCounts: parsed.waveClearCounts || {}, unlockedWildcards: unlocked.length ? unlocked : fallback.unlockedWildcards, equippedWildcards: equipped.length ? equipped : fallback.equippedWildcards };
   } catch { return fallback; }
 }
 let survivalMeta = loadSurvivalMeta();
 let lastMetaKills = 0;
 let lastMetaWave = 0;
+let lastSurvivalState: SurvivalStatus | null = null;
+let runResultShown = false;
+let runStartXp = survivalMeta.xp;
+let lastEventWave = 0;
+let lastPrepAnnouncement = -1;
+function announceSurvivalEvent(label: string, cue: 'wave-start' | 'wave-clear' | 'boss-warning' | 'level-up' | 'game-over'): void {
+  if (survivalEventBanner) {
+    survivalEventBanner.textContent = label;
+    survivalEventBanner.classList.remove('show');
+    if (!reducedMotion) void survivalEventBanner.offsetWidth;
+    survivalEventBanner.classList.add('show');
+  }
+  survivalSound.playCue(cue);
+}
 function updateLobbyProgressionUi(): void {
   const level = 1 + Math.floor(survivalMeta.xp / 150);
   if (lobbyProgressionSummary) lobbyProgressionSummary.textContent = `LEVEL ${level} · ${survivalMeta.xp} XP · BEST WAVE ${survivalMeta.bestWave}/100`;
@@ -2205,7 +2253,100 @@ function saveSurvivalMeta(): void {
   try { localStorage.setItem(SURVIVAL_META_KEY, JSON.stringify(survivalMeta)); } catch {}
   try { localStorage.setItem('island-outbreak-best-wave', String(survivalMeta.bestWave)); } catch {}
   updateLobbyProgressionUi();
+  if (typeof renderWildcards === 'function') renderWildcards();
 }
+
+const wildcardCooldowns: Partial<Record<WildcardId, number>> = {};
+let wildcardButtons: HTMLButtonElement[] = [];
+let reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const formatRunTime = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+function availableWildcardSlots(): number { return 1 + (1 < 2 ? 1 : 0) + (1 + Math.floor(survivalMeta.xp / 150) >= 5 ? 1 : 0); }
+function wildcardDefinition(id: WildcardId): WildcardDefinition { return WILDCARDS.find(card => card.id === id) || WILDCARDS[0]; }
+function showWildcardPulse(card: WildcardDefinition): void {
+  document.body.style.setProperty('--wildcard-accent', card.accent);
+  document.body.classList.remove('wildcard-pulse');
+  if (!reducedMotion) void document.body.offsetWidth;
+  document.body.classList.add('wildcard-pulse');
+  window.setTimeout(() => document.body.classList.remove('wildcard-pulse'), reducedMotion ? 30 : 520);
+  survivalSound.playCue('wildcard');
+  say(`${card.label} ACTIVE`);
+}
+function wildcardIsEquipped(id: WildcardId): boolean { return survivalMeta.equippedWildcards.includes(id); }
+function renderWildcards(): void {
+  const slots = availableWildcardSlots();
+  if (wildcardSlotSummary) wildcardSlotSummary.textContent = `${survivalMeta.equippedWildcards.length}/${slots} ACTIVE SLOTS · LEVEL ${1 + Math.floor(survivalMeta.xp / 150)}`;
+  if (wildcardCollection) {
+    wildcardCollection.innerHTML = '';
+    for (const card of WILDCARDS) {
+      const unlocked = survivalMeta.unlockedWildcards.includes(card.id);
+      const equipped = wildcardIsEquipped(card.id);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `wildcardCard${equipped ? ' equipped' : ''}${unlocked ? '' : ' locked'}`;
+      button.style.setProperty('--wildcard-accent', card.accent);
+      button.disabled = !unlocked;
+      button.setAttribute('aria-pressed', String(equipped));
+      button.innerHTML = `<span class="wildcardFace wildcardFront"><span class="wildcardArt wildcardArt-${card.id}" aria-hidden="true"><b>${unlocked ? card.short.slice(0, 3) : '×'}</b><i></i><em></em></span><strong>${card.label}</strong><small>${unlocked ? card.description : 'Unlock through progression'}</small><i>${equipped ? 'EQUIPPED' : unlocked ? 'TAP TO INSPECT' : 'LOCKED'}</i></span><span class="wildcardFace wildcardBack"><span class="wildcardBackEyebrow">FIELD CARD · ${unlocked ? 'READY TO REVIEW' : 'SEALED'}</span><strong>${card.label}</strong><small>${unlocked ? card.description : 'Reach a higher level to unlock this card.'}</small><span class="wildcardBackRule"></span><i>${equipped ? 'TAP AGAIN TO REMOVE' : unlocked ? 'TAP AGAIN TO EQUIP' : 'LOCKED'}</i></span>`;
+      if (unlocked) button.addEventListener('click', () => {
+        if (!button.classList.contains('flipped')) { button.classList.add('flipped'); return; }
+        if (equipped) survivalMeta.equippedWildcards = survivalMeta.equippedWildcards.filter(value => value !== card.id);
+        else if (survivalMeta.equippedWildcards.length < slots) survivalMeta.equippedWildcards = [...survivalMeta.equippedWildcards, card.id];
+        else { say(`UNLOCKED SLOTS FULL · ${slots} MAX`); return; }
+        saveSurvivalMeta();
+        renderWildcards();
+      });
+      wildcardCollection.appendChild(button);
+    }
+  }
+  if (wildcardHud) {
+    wildcardHud.innerHTML = '';
+    wildcardButtons = [];
+    survivalMeta.equippedWildcards.forEach((id, index) => {
+      const card = wildcardDefinition(id);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.id = `wildcardBtn${index + 1}`;
+      button.dataset.hudId = `wildcard-${index + 1}`;
+      button.className = 'wildcardAction';
+      button.style.setProperty('--wildcard-accent', card.accent);
+      button.innerHTML = `<strong>${card.short}</strong><small>READY</small>`;
+      button.title = `${card.label} · ${card.description}`;
+      button.addEventListener('click', () => activateWildcard(id));
+      wildcardHud.appendChild(button);
+      wildcardButtons.push(button);
+    });
+    hudTouchButtons = Array.from(document.querySelectorAll<HTMLElement>('#touch [data-hud-id]'));
+    hudTouchButtons.forEach(applyHudItem);
+  }
+}
+function updateWildcardHud(): void {
+  wildcardButtons.forEach((button, index) => {
+    const id = survivalMeta.equippedWildcards[index];
+    if (!id) return;
+    const remaining = Math.ceil(wildcardCooldowns[id] || 0);
+    button.classList.toggle('recharging', remaining > 0);
+    const small = button.querySelector('small');
+    if (small) small.textContent = remaining > 0 ? `${remaining}s` : 'READY';
+  });
+}
+function activateWildcard(id: WildcardId): void {
+  if (!survival?.enabled || survival.isDead || (wildcardCooldowns[id] || 0) > 0) return;
+  const card = wildcardDefinition(id);
+  let activated = false;
+  if (id === 'shockwave') { survival.activateSkill(); activated = true; }
+  else if (id === 'field-medic') activated = survival.restoreHealth(25);
+  else if (id === 'endurance') { stamina = Math.min(staminaCapacity, stamina + staminaCapacity * 0.45); activated = true; }
+  else { say(`${card.label} IS NOT YET OPERATIONAL`); return; }
+  if (!activated) return;
+  wildcardCooldowns[id] = card.cooldown;
+  showWildcardPulse(card);
+  updateWildcardHud();
+}
+function updateWildcards(dt: number): void {
+  for (const id of Object.keys(wildcardCooldowns) as WildcardId[]) wildcardCooldowns[id] = Math.max(0, (wildcardCooldowns[id] || 0) - dt);
+  updateWildcardHud();
+}
+renderWildcards();
 function purchaseSurvivalUpgrade(key: UpgradeKey): void {
   const costs: Record<UpgradeKey, number> = { health: 120, stamina: 100, damage: 180 };
   if (survivalMeta.upgrades[key] >= 5 || survivalMeta.xp < costs[key]) return;
@@ -2262,9 +2403,15 @@ bindAction(document.querySelector('#weaponSwitchBtn') as HTMLButtonElement, () =
   if (survival?.enabled) cycleSurvivalWeapon();
 });
 if (survivalRestartBtn) bindAction(survivalRestartBtn, () => {
-  survival.restart();
+  beginSurvivalRun((lobbyWeaponSelect?.value || survival.weapon || 'pistol') as SurvivalWeaponId);
+});
+if (survivalResultQuitBtn) bindAction(survivalResultQuitBtn, () => {
   survivalDeathOverlay?.classList.remove('show');
-  setSurvivalEnabled(true);
+  setSurvivalEnabled(false);
+  survivalLobby?.classList.add('show');
+  document.body.classList.add('survival-mode');
+  updateLobbyProgressionUi();
+  renderWildcards();
 });
 
 // Mini-Map & Full Map
@@ -2368,7 +2515,15 @@ function openSettings(open: boolean) {
     if (playerRoleSelect) playerRoleSelect.value = playerProfile.role;
   }
 }
-bindAction(settingsBtn, () => openSettings(true));
+bindAction(settingsBtn, () => {
+  if (survival?.enabled && !survivalPaused && !survival.isDead) {
+    survivalPaused = true;
+    releaseSurvivalInputs();
+    survivalPauseOverlay?.classList.add('show');
+    document.body.classList.add('survival-paused');
+  }
+  openSettings(true);
+});
 bindAction(settingsClose, () => openSettings(false));
 bindAction(hudCustomizeBtn, () => setHudEditMode(true));
 
@@ -3354,6 +3509,15 @@ survival = new ZombieSurvivalSystem({
     window.setTimeout(() => document.body.classList.remove('survival-fired', 'survival-hit'), hit ? 190 : 130);
   },
   onStatus: (state: SurvivalStatus) => {
+    lastSurvivalState = state;
+    if (state.preparationSeconds && state.preparationSeconds !== lastPrepAnnouncement) {
+      lastPrepAnnouncement = state.preparationSeconds;
+      if (state.preparationSeconds <= 3 || state.preparationSeconds === 12) announceSurvivalEvent(state.preparationSeconds <= 3 ? `FIRST CONTACT IN ${state.preparationSeconds}` : 'PREPARE FOR FIRST CONTACT', 'wave-start');
+    }
+    if (state.wave > lastEventWave) {
+      lastEventWave = state.wave;
+      if (state.wave > 0) announceSurvivalEvent(`WAVE ${state.wave} · CONTACT`, state.wave >= 5 && state.wave % 5 === 0 ? 'boss-warning' : 'wave-start');
+    }
     let metaChanged = false;
     const newKills = Math.max(0, state.kills - lastMetaKills);
     if (newKills > 0) {
@@ -3393,12 +3557,7 @@ survival = new ZombieSurvivalSystem({
     if (survivalKills) survivalKills.textContent = `KILLS ${state.kills}`;
     if (survivalWave) survivalWave.textContent = state.preparationSeconds ? `PREP ${state.preparationSeconds}s` : state.runComplete ? 'ISLAND SECURED' : state.wave ? `WAVE ${state.wave} / 100` : 'SAFE START';
     if (survivalZombies) survivalZombies.textContent = state.livingZombies ? `${state.livingZombies} INFECTED` : '';
-    if (state.runComplete && !survivalLobby?.classList.contains('show')) {
-      recordSurvivalRun('VICTORY');
-      survivalLobby?.classList.add('show');
-      document.body.classList.add('survival-mode');
-      survival.setEnabled(false);
-    }
+    if (state.runComplete && !runResultShown) recordSurvivalRun('VICTORY', state);
     if (safeZoneDirection) {
       const hasTarget = Number.isFinite(state.safeZoneX) && Number.isFinite(state.safeZoneZ);
       safeZoneDirection.classList.toggle('show', hasTarget && (!state.inSafeZone || state.zonePhase === 'weakening'));
@@ -3430,25 +3589,51 @@ survival = new ZombieSurvivalSystem({
     keyboardKeys.clear();
     pointerKeys.clear();
     document.body.classList.remove('aim-active');
-    recordSurvivalRun('OVERRUN');
+    recordSurvivalRun('OVERRUN', lastSurvivalState);
+    survivalSound.playCue('game-over');
     survival.setEnabled(false);
     document.body.classList.add('survival-mode');
-    survivalLobby?.classList.add('show');
-    survivalDeathOverlay?.classList.remove('show');
+    survivalLobby?.classList.remove('show');
     if (document.pointerLockElement) document.exitPointerLock();
   },
 });
 
-function recordSurvivalRun(result: 'OVERRUN' | 'VICTORY') {
-  const wave = survival.wave;
-  const kills = survival.kills;
-  const isNewBest = wave > survivalMeta.bestWave;
-  if (isNewBest) survivalMeta.bestWave = wave;
+function recordSurvivalRun(result: 'OVERRUN' | 'VICTORY', state: SurvivalStatus | null = null) {
+  if (runResultShown) return;
+  runResultShown = true;
+  const wave = state?.wave ?? survival.wave;
+  const kills = state?.kills ?? survival.kills;
+  const duration = state?.durationSeconds ?? lastSurvivalState?.durationSeconds ?? 0;
+  const isNewWave = wave > survivalMeta.bestWave;
+  const isNewTime = duration > survivalMeta.bestTimeSeconds;
+  if (isNewWave) survivalMeta.bestWave = wave;
+  if (isNewTime) survivalMeta.bestTimeSeconds = duration;
+  const xpBefore = survivalMeta.xp;
   survivalMeta.totalRuns++;
   survivalMeta.xp += result === 'VICTORY' ? 500 : Math.max(5, Math.round(wave * 0.5));
-  if (isNewBest) survivalMeta.xp += 100;
+  if (isNewWave) survivalMeta.xp += 100;
+  if (isNewTime) survivalMeta.xp += 75;
   saveSurvivalMeta();
-  if (lobbyLastRun) lobbyLastRun.textContent = result + ' · WAVE ' + wave + '/100 · ' + kills + ' KILLS' + (isNewBest ? ' · NEW BEST' : '') + ' · BEST ' + survivalMeta.bestWave;
+  const runXp = survivalMeta.xp - xpBefore;
+  const level = 1 + Math.floor(survivalMeta.xp / 150);
+  const previousLevel = 1 + Math.floor(xpBefore / 150);
+  if (level > previousLevel) survivalSound.playCue('level-up');
+  const nextLevelXp = level * 150;
+  const xpIntoLevel = survivalMeta.xp - (level - 1) * 150;
+  const xpPercent = Math.max(0, Math.min(100, (xpIntoLevel / 150) * 100));
+  if (survivalResultEyebrow) survivalResultEyebrow.textContent = result === 'VICTORY' ? 'ISLAND SECURED' : 'SIGNAL LOST';
+  const title = document.querySelector('#survivalDeathTitle');
+  if (title) title.textContent = result === 'VICTORY' ? 'DAWN HOLDS' : 'ZOMBIE ATE YOUR BRAIN';
+  if (survivalResultCopy) survivalResultCopy.textContent = result === 'VICTORY' ? 'One hundred waves. The island is still standing.' : 'The island kept the score. Your run is now part of the record.';
+  if (survivalResultStats) survivalResultStats.innerHTML = `<span><strong>${formatRunTime(duration)}</strong>TIME SURVIVED</span><span><strong>${wave}</strong>WAVE REACHED</span><span><strong>${kills}</strong>INFECTED KILLS</span>`;
+  if (survivalRunXp) survivalRunXp.textContent = `+${runXp} XP`;
+  if (survivalTotalXp) survivalTotalXp.textContent = `${survivalMeta.xp} XP`;
+  if (survivalXpProgress) survivalXpProgress.textContent = `LEVEL ${level} · ${xpIntoLevel} / ${150} XP TO LEVEL ${level + 1}`;
+  if (survivalXpBar) { survivalXpBar.style.width = '0%'; window.setTimeout(() => { if (survivalXpBar) survivalXpBar.style.width = `${xpPercent}%`; }, reducedMotion ? 0 : 120); }
+  if (survivalResultCallout) survivalResultCallout.textContent = isNewWave || isNewTime ? `${isNewWave ? 'NEW BEST WAVE' : ''}${isNewWave && isNewTime ? ' · ' : ''}${isNewTime ? 'NEW BEST TIME' : ''}${level > previousLevel ? ` · LEVEL ${level}` : ''}` : (level > previousLevel ? `LEVEL ${level} REACHED` : 'RUN LOGGED · KEEP MOVING');
+  if (lobbyLastRun) lobbyLastRun.textContent = `${result} · WAVE ${wave}/100 · ${kills} KILLS · ${formatRunTime(duration)}${isNewWave || isNewTime ? ' · NEW RECORD' : ''}`;
+  survivalDeathOverlay?.classList.add('show');
+  document.body.classList.add('survival-mode');
 }
 if (upgradeHealthBtn) bindAction(upgradeHealthBtn, () => purchaseSurvivalUpgrade('health'));
 if (upgradeStaminaBtn) bindAction(upgradeStaminaBtn, () => purchaseSurvivalUpgrade('stamina'));
@@ -3470,6 +3655,12 @@ function releaseSurvivalInputs() {
 
 function beginSurvivalRun(selectedWeapon: SurvivalWeaponId) {
   if (!document.body.classList.contains('display-mode-ready')) return;
+  runResultShown = false;
+  survivalDeathOverlay?.classList.remove('show');
+  for (const id of Object.keys(wildcardCooldowns) as WildcardId[]) delete wildcardCooldowns[id];
+  runStartXp = survivalMeta.xp;
+  lastEventWave = 0;
+  lastPrepAnnouncement = -1;
   survivalPaused = false;
   survivalPauseOverlay?.classList.remove('show');
   document.body.classList.remove('survival-paused');
@@ -3483,6 +3674,7 @@ function beginSurvivalRun(selectedWeapon: SurvivalWeaponId) {
   setSurvivalEnabled(true);
   survival.beginPreparation(12);
   survivalLobby?.classList.remove('show');
+  updateWildcardHud();
 }
 
 if (startRunBtn) bindAction(startRunBtn, () => {
@@ -3502,8 +3694,13 @@ if (resumeRunBtn) bindAction(resumeRunBtn, () => {
   survivalPauseOverlay?.classList.remove('show');
   document.body.classList.remove('survival-paused');
 });
+if (pauseSettingsBtn) bindAction(pauseSettingsBtn, () => openSettings(true));
 if (restartPausedRunBtn) bindAction(restartPausedRunBtn, () => beginSurvivalRun(survival.weapon));
-if (leaveSurvivalBtn) bindAction(leaveSurvivalBtn, () => setSurvivalEnabled(false));
+if (leaveSurvivalBtn) bindAction(leaveSurvivalBtn, () => {
+  survivalPauseOverlay?.classList.remove('show');
+  setSurvivalEnabled(false);
+  survivalLobby?.classList.add('show');
+});
 
 document.body.classList.add('survival-mode');
 survivalLobby?.classList.add('show');
@@ -3558,6 +3755,7 @@ function update(dt: number) {
     survival.update(dt, false, false);
     return;
   }
+  if (survival?.enabled) updateWildcards(dt);
   aimTimer = Math.max(0, aimTimer - dt);
   combatAimTimer = Math.max(0, combatAimTimer - dt);
   slideTimer = Math.max(0, slideTimer - dt);

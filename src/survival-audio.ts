@@ -274,6 +274,27 @@ class SoundEngine {
     osc.stop(now + 0.3);
   }
 
+  public playCue(kind: 'wave-start' | 'wave-clear' | 'boss-warning' | 'wildcard' | 'level-up' | 'game-over') {
+    if (!this.ctx || !this.sfxGain) return;
+    const now = this.ctx.currentTime;
+    const notes = kind === 'wave-start' ? [440, 660] : kind === 'wave-clear' ? [523, 784, 1046] : kind === 'boss-warning' ? [110, 82] : kind === 'wildcard' ? [520, 880] : kind === 'level-up' ? [660, 990, 1320] : [180, 90];
+    const duration = kind === 'boss-warning' ? 0.42 : kind === 'game-over' ? 0.5 : 0.16;
+    notes.forEach((frequency, index) => {
+      const start = now + index * (kind === 'game-over' ? 0.12 : 0.1);
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      osc.type = kind === 'boss-warning' || kind === 'game-over' ? 'sawtooth' : 'triangle';
+      osc.frequency.setValueAtTime(frequency, start);
+      osc.frequency.exponentialRampToValueAtTime(Math.max(35, frequency * 0.72), start + duration);
+      gain.gain.setValueAtTime(kind === 'boss-warning' || kind === 'game-over' ? 0.28 : 0.2, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+      osc.start(start);
+      osc.stop(start + duration + 0.02);
+    });
+  }
+
   // Explosive barrel boom
   public playExplosion() {
     if (!this.ctx || !this.sfxGain) return;
