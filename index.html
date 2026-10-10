@@ -22,6 +22,7 @@
         <button id="photoBtn" aria-label="Photo Mode (clean screenshot)" title="Photo Mode (P)">📷</button>
         <button id="surveyBtn" aria-label="Open World Survey" title="World Survey">🗺️</button>
         <button id="survivalBtn" aria-label="Toggle Zombie Survival Mode" title="Zombie Survival · Z">🧟</button>
+        <button id="survivalPauseBtn" type="button" aria-label="Pause survival run" title="Pause run">Ⅱ</button>
         <button id="settingsBtn" aria-label="Open settings" title="Settings">⚙️</button>
         <button id="fullscreenBtn" aria-label="Toggle fullscreen" title="Fullscreen">⛶</button>
       </div>
@@ -101,6 +102,17 @@
         <h2 id="survivalDeathTitle">OVERRUN</h2>
         <p>You were caught outside the safe zone.</p>
         <button id="survivalRestartBtn">RETURN TO SAFE ZONE</button>
+      </div>
+    </div>
+
+    <div id="survivalPauseOverlay" role="dialog" aria-modal="true" aria-labelledby="survivalPauseTitle">
+      <div class="survivalPauseCard">
+        <div class="survivalPauseEyebrow">FIELD CONTROL</div>
+        <h2 id="survivalPauseTitle">RUN PAUSED</h2>
+        <p>The island is on hold. Catch your breath, then get back out there.</p>
+        <button id="resumeRunBtn" type="button">RESUME RUN</button>
+        <button id="restartPausedRunBtn" type="button">RESTART RUN</button>
+        <button id="leaveSurvivalBtn" type="button">LEAVE SURVIVAL</button>
       </div>
     </div>
 
