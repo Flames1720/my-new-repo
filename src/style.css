@@ -1709,3 +1709,49 @@ body.survival-mode #skillBtn{display:none!important}
 
 .lobbyPartyPanel,.lobbyHero,.lobbyDeploy{min-width:0}.lobbyDeploy{overflow-x:hidden}.lobbyDeploy .wildcardCollection{min-width:0}.lobbyDeploy .wildcardCard{min-width:0}.lobbyDeploy .wildcardCard strong,.lobbyDeploy .wildcardCard small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:900px) and (min-width:681px){.lobbyStage{grid-template-columns:145px minmax(260px,1fr) 235px}.lobbyDeploy .wildcardCard{grid-template-columns:34px minmax(0,1fr);gap:2px 4px}.lobbyDeploy .wildcardArt{width:32px;height:48px}.lobbyDeploy .wildcardFace{grid-template-columns:34px minmax(0,1fr);padding:5px}.lobbyDeploy .wildcardCard{min-height:70px}.lobbyDeploy .wildcardCard small{font-size:7px}}
+
+
+/* --- Isolated HUD layout editor: static canvas, never a gameplay screenshot --- */
+body.hud-edit-mode {
+  background: #101923 !important;
+}
+body.hud-edit-mode::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 18% 20%, rgba(36, 91, 111, .34), transparent 48%),
+    radial-gradient(ellipse at 82% 78%, rgba(49, 73, 105, .28), transparent 52%),
+    linear-gradient(145deg, #17232e 0%, #101923 52%, #0b1118 100%);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+/* Hide the paused game, gameplay canvas, settings and every other modal while editing. */
+body.hud-edit-mode > *:not(#touch):not(#hudEditorOverlay) {
+  visibility: hidden !important;
+}
+body.hud-edit-mode #touch {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1100 !important;
+  visibility: visible !important;
+  pointer-events: none !important;
+}
+body.hud-edit-mode #touch > #leftMoveZone,
+body.hud-edit-mode #touch > #stick,
+body.hud-edit-mode #touch > #lookZone {
+  display: none !important;
+}
+body.hud-edit-mode #touch .actions button:not([data-hud-id]) {
+  display: none !important;
+}
+body.hud-edit-mode #touch .actions button[data-hud-id] {
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+body.hud-edit-mode #hudEditorOverlay {
+  z-index: 1200 !important;
+  visibility: visible !important;
+}

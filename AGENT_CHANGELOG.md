@@ -855,3 +855,16 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 - Capture ends after 120 seconds of active gameplay. Logs are kept to 32 records and written to local storage every third 5-second sample, plus on errors/visibility changes.
 
 **Verification status:** Changes committed to the feature branch; CI and Vercel preview results to be checked after the push. Physical-device performance comparison is pending.
+
+
+## 2026-10-10 — GPT-6 — isolate HUD customization from gameplay and pause UI
+
+**Branch:** `feature/zombie-survival-world-v2`; `main` unchanged.
+
+**Fix:**
+- HUD Customization now uses a static dark gradient with a soft blur instead of exposing the gameplay render or a screenshot of the paused screen.
+- During editing, the gameplay canvas and all other top-level game/settings/pause overlays are hidden. Only the real movable HUD controls and the HUD editor remain visible.
+- Hidden the movement/look zones and non-customizable touch actions in edit mode, so the editor presents only the controls that can actually be arranged.
+- Kept the selected control's existing cyan highlight/outline, drag behavior, size/opacity sliders, presets and local save behavior.
+
+**Verification:** Source reviewed and patch applied to the feature branch. Build/CI and real-device interaction checks are pending; do not treat this as phone-tested until the user confirms.
