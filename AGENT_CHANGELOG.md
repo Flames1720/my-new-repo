@@ -11,7 +11,7 @@
 - Reworked wildcard cards toward the requested 9:16 flashcard format: portrait cards, compact front/name, hidden front description, clamped back description, and flip state retained across re-renders.
 - Added landscape-specific death-card layout with bounded height, scrolling fallback, safe-area padding, and two-column content.
 - Replaced the visually ambiguous safe-zone triangle with a clear arrowhead and stem while retaining its rotation.
-- Validation status: changes are on the feature branch only. No TypeScript/Vite build or real-device interaction test has been run yet. The requested wood/apple counter cleanup and renderer-level performance optimization remain to be verified.
+- Validation status: changes are on the feature branch only. No TypeScript/Vite build or real-device interaction test has been run yet. The general resource inventory/hotbar is now hidden in survival mode; confirm visually on device. Renderer optimization remains deferred until diagnostics establish a baseline.
 
 ## 2026-10-10 — Island Outbreak diagnostics groundwork
 
