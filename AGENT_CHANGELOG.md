@@ -809,3 +809,21 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 - Device: NOT VERIFIED on a physical phone.
 
 **Remaining work:** The navigation is intentionally a single-lobby shell with focused scrolling, not separate full-screen pages. Physical Android/iOS testing remains required for safe-area and touch ergonomics.
+
+
+## 2026-10-10 09:55 +0000 UTC — Manus
+
+**Scope:** Landscape Settings presentation and lobby threat visibility.
+
+**Changed:** Replaced the narrow portrait-like Settings card presentation with a wide control-room panel: configuration eyebrow/title, category strip (General, Graphics, Audio, Controls, Gameplay), and a responsive three-column settings body retaining all existing controls. Added compact two-column behavior for smaller landscape widths and a one-column fallback only for narrow portrait devices. Corrected the existing procedural lobby zombie backdrop, which had no explicit positioning and rendered as an oversized static block; it is now an absolute, full-height, contained silhouette with readable contrast, eyes and distant infected forms behind the mission UI.
+
+**Verification:**
+- Build: PASS (`npm run build`)
+- Typecheck/lint: PASS (`npm run lint`)
+- Whitespace: PASS (`git diff --check`)
+- Browser: VERIFIED in Sandbox landscape viewport at 1280x1100.
+- Settings geometry: card `x=80..1200`, `y=27..1073`; body scrolls internally; page horizontal overflow `false`.
+- Zombie backdrop geometry: `x=690..1127`, `y=23..1100`, contained to the viewport and visible behind the lobby panels.
+- Device: NOT VERIFIED on a physical phone.
+
+**Remaining work:** The category buttons are presentation-only labels for the current unified settings panel; physical Android/iOS safe-area and touch testing remains required.
