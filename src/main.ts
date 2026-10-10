@@ -2648,6 +2648,10 @@ const adsSensVal = document.querySelector('#adsSensVal') as HTMLSpanElement;
 const invertYCheck = document.querySelector('#invertYCheck') as HTMLInputElement;
 const lookWhileAimingCheck = document.querySelector('#lookWhileAimingCheck') as HTMLInputElement;
 const lookWhileFiringCheck = document.querySelector('#lookWhileFiringCheck') as HTMLInputElement;
+const masterVolumeSlider = document.querySelector('#masterVolumeSlider') as HTMLInputElement;
+const masterVolumeValue = document.querySelector('#masterVolumeValue') as HTMLElement;
+const sfxVolumeSlider = document.querySelector('#sfxVolumeSlider') as HTMLInputElement;
+const sfxVolumeValue = document.querySelector('#sfxVolumeValue') as HTMLElement;
 const camAccelSelect = document.querySelector('#camAccelSelect') as HTMLSelectElement;
 const camAccelStrengthSlider = document.querySelector('#camAccelStrengthSlider') as HTMLInputElement;
 const camAccelStrengthVal = document.querySelector('#camAccelStrengthVal') as HTMLSpanElement;
@@ -2705,6 +2709,10 @@ function openSettings(open: boolean) {
     invertYCheck.checked = settings.current.invertY;
     lookWhileAimingCheck.checked = settings.current.lookWhileAiming;
     lookWhileFiringCheck.checked = settings.current.lookWhileFiring;
+    masterVolumeSlider.value = String(Math.round(settings.current.audioMaster * 100));
+    sfxVolumeSlider.value = String(Math.round(settings.current.audioSfx * 100));
+    masterVolumeValue.textContent = `${masterVolumeSlider.value}%`;
+    sfxVolumeValue.textContent = `${sfxVolumeSlider.value}%`;
     camAccelSelect.value = settings.current.cameraAcceleration;
     camAccelStrengthSlider.value = String(settings.current.cameraAccelerationStrength);
     camAccelStrengthVal.textContent = `${settings.current.cameraAccelerationStrength.toFixed(2).replace(/0$/, '')}×`;
@@ -2764,6 +2772,18 @@ showLobbyPage('mission');
 bindAction(settingsClose, () => openSettings(false));
 lookWhileAimingCheck.addEventListener('change', () => settings.update({ lookWhileAiming: lookWhileAimingCheck.checked }));
 lookWhileFiringCheck.addEventListener('change', () => settings.update({ lookWhileFiring: lookWhileFiringCheck.checked }));
+masterVolumeSlider.addEventListener('input', () => {
+  const volume = Number(masterVolumeSlider.value) / 100;
+  settings.update({ audioMaster: volume });
+  masterVolumeValue.textContent = `${Math.round(volume * 100)}%`;
+  survivalSound.setVolumes(settings.current.audioMaster, settings.current.audioSfx);
+});
+sfxVolumeSlider.addEventListener('input', () => {
+  const volume = Number(sfxVolumeSlider.value) / 100;
+  settings.update({ audioSfx: volume });
+  sfxVolumeValue.textContent = `${Math.round(volume * 100)}%`;
+  survivalSound.setVolumes(settings.current.audioMaster, settings.current.audioSfx);
+});
 bindAction(hudCustomizeBtn, () => setHudEditMode(true));
 
 if (playerGenderSelect) {
