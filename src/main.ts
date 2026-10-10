@@ -2781,23 +2781,28 @@ function syncDisplayMode(): void {
   if (displayModeMessage) displayModeMessage.textContent = isLandscapeDisplay()
     ? 'Enter fullscreen to open the island. The run stays paused if fullscreen is exited.'
     : 'Rotate your phone to landscape to continue.';
-  if (enterGameDisplayMode) enterGameDisplayMode.disabled = !isLandscapeDisplay();
+  if (enterGameDisplayMode) enterGameDisplayMode.disabled = false;
 }
 
 async function enterRequiredDisplayMode(): Promise<void> {
-  if (!isLandscapeDisplay()) {
-    syncDisplayMode();
-    return;
-  }
   try {
+    // The tap first grants fullscreen; only then can supported browsers lock orientation.
     if (!document.fullscreenElement) {
       if (!document.documentElement.requestFullscreen) throw new Error('Fullscreen is not supported in this browser.');
       await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
     }
-    try { await (screen.orientation as unknown as { lock?: (orientation: string) => Promise<void> }).lock?.('landscape'); } catch { /* Keep the gate until the device is actually landscape. */ }
+    let orientationLocked = false;
+    try {
+      const orientation = screen.orientation as unknown as { lock?: (orientation: string) => Promise<void> };
+      if (orientation.lock) { await orientation.lock('landscape'); orientationLocked = true; }
+    } catch { /* Some browsers, especially iOS Safari, reject web orientation locking. */ }
     syncDisplayMode();
     if (!document.fullscreenElement && displayModeMessage) {
-      displayModeMessage.textContent = 'Fullscreen was blocked. Use a browser that supports fullscreen, then try again.';
+      displayModeMessage.textContent = 'Fullscreen was blocked. Open this game in a browser that supports fullscreen.';
+    } else if (!isLandscapeDisplay() && displayModeMessage) {
+      displayModeMessage.textContent = orientationLocked
+        ? 'Landscape has been requested. If the phone does not rotate, turn it sideways to continue.'
+        : 'Fullscreen is on. This browser cannot rotate the phone automatically—please turn it sideways.';
     }
   } catch {
     if (displayModeMessage) displayModeMessage.textContent = 'Fullscreen could not start. Try opening this game in a supported browser.';
