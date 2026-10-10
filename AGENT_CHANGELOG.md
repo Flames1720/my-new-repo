@@ -790,3 +790,22 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Remaining work:** Retune exact wildcard balance and unlock rules with playtesting; exercise Redeploy, Quit, pause-settings-resume, wave-100 victory and result XP animation in browser; verify mobile safe-area placement and reduced-motion behavior on a physical phone.
 
 **Next agent:** Continue on this feature branch only. Do not deploy or merge. Run the full survival flow smoke test, then commit/push the implementation if the user wants branch continuity.
+
+
+## 2026-10-10 09:46 +0000 UTC — Manus
+
+**Scope:** Island Outbreak lobby composition and landscape viewport safety.
+
+**Starting point:** `feature/zombie-survival-world-v2` at `031cb0a`.
+
+**Changed:** Reworked the survival lobby into an Island Outbreak-specific operations layout rather than copying unavailable reference-game systems. The lobby now has a top navigation shell for Mission, Field Kit, Wildcards, Records and Settings; a left solo field-operations/records panel; a center tactical island mission board; and a right Challenges, Field Kit and Wildcards panel. The center uses a procedural mission board instead of forcing a character into the hero area. Added navigation handlers for the existing panels and settings modal, connected the records panel to persisted best wave, best time and total kills, and added strict card text containment and landscape-safe modal sizing.
+
+**Verification:**
+- Build: PASS (`npm run build`)
+- Typecheck/lint: PASS (`npm run lint`)
+- Whitespace: PASS (`git diff --check`)
+- Browser: VERIFIED in sandbox landscape viewport (`1280x1100`); captured Mission lobby, Wildcards view and Settings view.
+- Overflow audit: PASS — `bodyHorizontalOverflow: false`, all Wildcard cards have no scroll-width overflow, Settings card bounds are within viewport (`top 10`, `bottom 1070` in an 1100px viewport).
+- Device: NOT VERIFIED on a physical phone.
+
+**Remaining work:** The navigation is intentionally a single-lobby shell with focused scrolling, not separate full-screen pages. Physical Android/iOS testing remains required for safe-area and touch ergonomics.

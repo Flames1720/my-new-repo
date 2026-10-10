@@ -2187,6 +2187,9 @@ const startRunBtn = document.querySelector('#startRunBtn') as HTMLButtonElement 
 const wildcardCollection = document.querySelector('#wildcardCollection') as HTMLDivElement | null;
 const wildcardSlotSummary = document.querySelector('#wildcardSlotSummary') as HTMLElement | null;
 const wildcardHud = document.querySelector('#wildcardHud') as HTMLDivElement | null;
+const lobbyBestWaveMetric = document.querySelector('#lobbyBestWaveMetric') as HTMLElement | null;
+const lobbyBestTimeMetric = document.querySelector('#lobbyBestTimeMetric') as HTMLElement | null;
+const lobbyTotalKillsMetric = document.querySelector('#lobbyTotalKillsMetric') as HTMLElement | null;
 type UpgradeKey = 'health' | 'stamina' | 'damage';
 type WildcardId = 'shockwave' | 'field-medic' | 'quick-hands' | 'scavenger' | 'steady-grip' | 'reinforced-vest' | 'sharpshooter' | 'boss-spoils' | 'threat-reader' | 'endurance';
 type WildcardDefinition = { id: WildcardId; label: string; short: string; description: string; accent: string; cooldown: number; unlocked: boolean };
@@ -2238,6 +2241,9 @@ function announceSurvivalEvent(label: string, cue: 'wave-start' | 'wave-clear' |
 function updateLobbyProgressionUi(): void {
   const level = 1 + Math.floor(survivalMeta.xp / 150);
   if (lobbyProgressionSummary) lobbyProgressionSummary.textContent = `LEVEL ${level} · ${survivalMeta.xp} XP · BEST WAVE ${survivalMeta.bestWave}/100`;
+  if (lobbyBestWaveMetric) lobbyBestWaveMetric.textContent = `${survivalMeta.bestWave} / 100`;
+  if (lobbyBestTimeMetric) lobbyBestTimeMetric.textContent = survivalMeta.bestTimeSeconds ? formatRunTime(survivalMeta.bestTimeSeconds) : '—';
+  if (lobbyTotalKillsMetric) lobbyTotalKillsMetric.textContent = String(survivalMeta.totalKills);
   const costs: Record<UpgradeKey, number> = { health: 120, stamina: 100, damage: 180 };
   const buttons: Record<UpgradeKey, HTMLButtonElement | null> = { health: upgradeHealthBtn, stamina: upgradeStaminaBtn, damage: upgradeDamageBtn };
   const labels: Record<UpgradeKey, string> = { health: 'HEALTH +10', stamina: 'STAMINA +15', damage: 'DAMAGE +5%' };
@@ -2259,7 +2265,7 @@ function saveSurvivalMeta(): void {
 const wildcardCooldowns: Partial<Record<WildcardId, number>> = {};
 let wildcardButtons: HTMLButtonElement[] = [];
 let reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-const formatRunTime = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+function formatRunTime(seconds: number): string { return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`; }
 function availableWildcardSlots(): number { return 1 + (1 < 2 ? 1 : 0) + (1 + Math.floor(survivalMeta.xp / 150) >= 5 ? 1 : 0); }
 function wildcardDefinition(id: WildcardId): WildcardDefinition { return WILDCARDS.find(card => card.id === id) || WILDCARDS[0]; }
 function showWildcardPulse(card: WildcardDefinition): void {
@@ -2425,6 +2431,7 @@ bindAction(mapClose, () => minimap.setFullMap(false));
 
 // Settings Modal Wiring
 const settingsBtn = document.querySelector('#settingsBtn') as HTMLButtonElement;
+const lobbyOptionsBtn = document.querySelector('#lobbyOptionsBtn') as HTMLButtonElement | null;
 const settingsOverlay = document.querySelector('#settingsOverlay') as HTMLDivElement;
 const settingsClose = document.querySelector('#settingsClose') as HTMLButtonElement;
 const sensXSlider = document.querySelector('#sensXSlider') as HTMLInputElement;
@@ -2523,6 +2530,14 @@ bindAction(settingsBtn, () => {
     document.body.classList.add('survival-paused');
   }
   openSettings(true);
+});
+if (lobbyOptionsBtn) bindAction(lobbyOptionsBtn, () => openSettings(true));
+document.querySelectorAll<HTMLButtonElement>('[data-lobby-focus]').forEach(button => {
+  bindAction(button, () => {
+    document.querySelectorAll<HTMLButtonElement>('[data-lobby-focus]').forEach(item => item.classList.toggle('active', item === button));
+    const target = document.getElementById(button.dataset.lobbyFocus || '');
+    target?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
+  });
 });
 bindAction(settingsClose, () => openSettings(false));
 bindAction(hudCustomizeBtn, () => setHudEditMode(true));

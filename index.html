@@ -123,16 +123,38 @@
             </g>
             <g class="stalkerEyes"><circle cx="168" cy="101" r="3.4"/><circle cx="211" cy="99" r="3.4"/></g>
           </svg>
-        </div>
+      </div>
+        <nav class="lobbyNav" aria-label="Lobby navigation">
+          <button class="active" type="button" data-lobby-focus="lobbyMissionBoard">MISSION</button>
+          <button type="button" data-lobby-focus="lobbyFieldKit">FIELD KIT</button>
+          <button type="button" data-lobby-focus="lobbyWildcardsPanel">WILDCARDS</button>
+          <button type="button" data-lobby-focus="lobbyRecords">RECORDS</button>
+          <button id="lobbyOptionsBtn" type="button">SETTINGS</button>
+          <span class="lobbyNavSpacer"></span><span class="lobbyCurrency">◉ 2,900</span><span class="lobbyLevel">LV 1</span>
+        </nav>
         <header class="lobbyTopline">
           <div class="lobbyMark"><span class="lobbyMarkGlyph">IO</span><span>ISLAND OUTBREAK<small>FIELD OPERATIONS</small></span></div>
           <div class="lobbySignal"><i></i> ISLAND SIGNAL <strong>LIVE</strong></div>
         </header>
         <main class="lobbyStage">
+          <aside class="lobbyPartyPanel" aria-label="Field operations" id="lobbyRecords">
+            <div class="lobbyPanelTitle"><span>FIELD OPERATIONS</span><small>SOLO DEPLOYMENT</small></div>
+            <div class="lobbyOperator active"><span class="operatorAvatar">IO</span><span><strong id="lobbyOperatorName">EXPLORER</strong><small>LEVEL 1 · ACTIVE</small></span><b>●</b></div>
+            <div class="lobbyOperator"><span class="operatorAvatar operatorGhost">+</span><span><strong>OPEN SLOT</strong><small>SOLO RUN</small></span><b>—</b></div>
+            <div class="lobbyPartyDivider"></div>
+            <div class="lobbyPanelMetric"><span>BEST WAVE</span><strong id="lobbyBestWaveMetric">0 / 100</strong></div>
+            <div class="lobbyPanelMetric"><span>BEST TIME</span><strong id="lobbyBestTimeMetric">—</strong></div>
+            <div class="lobbyPanelMetric"><span>TOTAL KILLS</span><strong id="lobbyTotalKillsMetric">0</strong></div>
+            <div class="lobbyOpsNote"><i></i><span>ISLAND SIGNAL<br><strong>CONNECTED</strong></span></div>
+          </aside>
           <section class="lobbyHero">
             <p class="lobbyEyebrow"><span>01</span> · LAST KNOWN SAFE REGION</p>
+            <div class="lobbyMissionBoard" id="lobbyMissionBoard" aria-label="Current island mission">
+              <div class="missionBoardGrid"></div><div class="missionPulse"></div><span class="missionPin pinHome">⌂</span><span class="missionPin pinThreat">!</span><span class="missionRoute"></span>
+              <div class="missionBoardLabels"><span>HOMESTEAD</span><span>INFECTED ACTIVITY</span><span>RIVERWOOD SECTOR</span></div>
+            </div>
             <h1 id="lobbyTitle">ISLAND<br><em>OUTBREAK</em></h1>
-            <p class="lobbyTagline">No evac. No backup.<br><strong>Make it to the next dawn.</strong></p>
+            <p class="lobbyTagline">HOLD THE SANCTUARY<br><strong>Survive the next 100 waves.</strong></p>
             <div class="lobbyQuickStats" aria-label="Mission parameters">
               <div><strong>100</strong><span>WAVES</span></div>
               <div><strong>04</strong><span>FIRST WAVE</span></div>
@@ -140,7 +162,8 @@
             </div>
             <p id="lobbyLastRun" class="lobbyLastRun">NO RUN RECORDED</p>
           </section>
-          <aside class="lobbyDeploy">
+          <aside class="lobbyDeploy" id="lobbyFieldKit">
+            <section class="lobbyChallenges" aria-label="Challenges"><div class="challengeTabs"><strong>CHALLENGES</strong><span>EVENT</span></div><div class="challengeRow"><span>FIRST CONTACT</span><b>0 / 5</b><i><em></em></i></div><div class="challengeRow"><span>HOLD THE LINE</span><b>0 / 2</b><i><em></em></i></div><small>Complete a run objective to earn XP and unlock field cards.</small></section>
             <div class="lobbySectionHead"><span>FIELD KIT</span><small>SELECT LOADOUT</small></div>
             <div id="lobbyWeaponCards" class="lobbyWeaponCards" role="radiogroup" aria-label="Starting weapon">
               <button class="lobbyWeaponPick active" type="button" role="radio" aria-checked="true" data-lobby-weapon="pistol"><span class="weaponCardIcon pistolIcon">P</span><span class="weaponCardCopy"><strong>P9 TACTICAL</strong><small>SIDEARM · STEADY</small></span><span class="weaponCardSelect">●</span></button>
@@ -156,7 +179,7 @@
                 <button id="upgradeDamageBtn" type="button">+5% DAMAGE <small>180 XP</small></button>
               </div>
             </section>
-            <section class="lobbyWildcards" aria-label="Wildcards">
+            <section class="lobbyWildcards" id="lobbyWildcardsPanel" aria-label="Wildcards">
               <div class="lobbySectionHead"><span>WILDCARDS</span><small id="wildcardSlotSummary">2 ACTIVE SLOTS</small></div>
               <p class="wildcardIntro">Equip active field cards before deployment. Each equipped card adds one ready button in the run.</p>
               <div id="wildcardCollection" class="wildcardCollection"></div>
