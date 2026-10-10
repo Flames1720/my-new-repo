@@ -2531,81 +2531,33 @@ bindAction(upgradeBtn, () => {
   say(`🎉 Home upgraded to ${HOME_UPGRADE_COSTS[nextLevel].title}!`);
 });
 
-// Fullscreen with graceful fallback for iframes
-const displayModeGate = document.querySelector('#displayModeGate') as HTMLDivElement | null;
-const enterGameDisplayMode = document.querySelector('#enterGameDisplayMode') as HTMLButtonElement | null;
-let orientationLockActive = false;
+// Simple fullscreen control: visible in normal mode, hidden while fullscreen,
+// and restored automatically when the browser exits fullscreen.
+const fullscreenBtn = document.querySelector('#fullscreenBtn') as HTMLButtonElement | null;
 
-async function enterImmersiveLandscape() {
-  // Browsers require a real user gesture for fullscreen. This button is the
-  // deliberate first-touch entry point, so request fullscreen before locking.
-  let fullscreenEntered = false;
-  try {
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-      await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
-      fullscreenEntered = !!document.fullscreenElement;
-    } else {
-      fullscreenEntered = !!document.fullscreenElement;
-    }
-  } catch {
-    // Continue with the landscape-only CSS gate when native fullscreen is blocked.
-  }
-
-  try {
-    const orientation = screen.orientation as ScreenOrientation & {
-      lock?: (value: string) => Promise<void>;
-    };
-    if (orientation?.lock && fullscreenEntered) {
-      await orientation.lock('landscape');
-      orientationLockActive = true;
-    }
-  } catch {
-    // iOS and some browser contexts reject orientation locking. The portrait
-    // gate still prevents portrait gameplay and asks the player to rotate.
-    orientationLockActive = false;
-  }
-
-  document.body.classList.add('display-mode-ready');
-  window.dispatchEvent(new Event('resize'));
-  if (!fullscreenEntered) {
-    say('Rotate to landscape. Fullscreen is unavailable in this browser view.');
-  } else if (!orientationLockActive) {
-    say('Fullscreen enabled. Rotate your phone to landscape if needed.');
-  }
+function syncFullscreenButton() {
+  const isFullscreen = !!document.fullscreenElement;
+  document.body.classList.toggle('native-fullscreen', isFullscreen);
+  if (fullscreenBtn) fullscreenBtn.hidden = isFullscreen;
 }
 
-if (enterGameDisplayMode) {
-  enterGameDisplayMode.addEventListener('click', () => {
-    void enterImmersiveLandscape();
-  });
-}
-
-// If the player exits fullscreen using the browser/system gesture, return to
-// the entry gate rather than silently continuing in a cramped browser viewport.
-document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement && document.body.classList.contains('display-mode-ready')) {
-    document.body.classList.remove('display-mode-ready');
-  }
-});
-
-const fullscreenBtn = document.querySelector('#fullscreenBtn') as HTMLButtonElement;
 async function toggleFullscreen() {
   try {
     if (document.fullscreenElement) {
       await document.exitFullscreen();
-      say('Exit fullscreen');
     } else if (document.documentElement.requestFullscreen) {
-      await document.documentElement.requestFullscreen();
-      say('Fullscreen mode');
+      await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
     } else {
-      throw new Error('Native fullscreen not available');
+      say('Fullscreen is not supported in this browser.');
     }
   } catch {
-    const isSim = document.body.classList.toggle('simulated-fullscreen');
-    say(isSim ? '⛶ Fullscreen view enabled' : '⛶ Standard view');
+    say('Fullscreen could not be enabled. Try opening the game in your browser.');
   }
 }
-bindAction(fullscreenBtn, toggleFullscreen);
+
+if (fullscreenBtn) bindAction(fullscreenBtn, toggleFullscreen);
+document.addEventListener('fullscreenchange', syncFullscreenButton);
+syncFullscreenButton();
 
 // --- WORLD SURVEY: AUTHORITATIVE TOPOLOGY + HYDROLOGY DIAGNOSTICS ---
 let surveyWasFog: THREE.Scene['fog'] = gameplayFog;
