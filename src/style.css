@@ -1762,7 +1762,8 @@ body.hud-edit-mode #hudEditorOverlay,
 body.hud-edit-mode #hudEditorOverlay.show {
   display: block !important;
   visibility: visible !important;
-  pointer-events: auto !important;
+  /* Let taps pass through to the movable HUD controls outside the floating panel. */
+  pointer-events: none !important;
   z-index: 2147483000 !important;
 }
 body.hud-edit-mode #hudEditorPanel {
