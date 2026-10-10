@@ -2280,6 +2280,7 @@ function saveSurvivalMeta(): void {
 }
 
 const wildcardCooldowns: Partial<Record<WildcardId, number>> = {};
+const flippedWildcardCards = new Set<WildcardId>();
 let wildcardButtons: HTMLButtonElement[] = [];
 let reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 function formatRunTime(seconds: number): string { return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`; }
@@ -2306,12 +2307,14 @@ function renderWildcards(): void {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = `wildcardCard${equipped ? ' equipped' : ''}${unlocked ? '' : ' locked'}`;
+      button.classList.toggle('flipped', flippedWildcardCards.has(card.id));
       button.style.setProperty('--wildcard-accent', card.accent);
       button.disabled = !unlocked;
       button.setAttribute('aria-pressed', String(equipped));
       button.innerHTML = `<span class="wildcardFace wildcardFront"><span class="wildcardArt wildcardArt-${card.id}" aria-hidden="true"><b>${unlocked ? card.short.slice(0, 3) : '×'}</b><i></i><em></em></span><strong>${card.label}</strong><small>${unlocked ? card.description : 'Unlock through progression'}</small><i>${equipped ? 'EQUIPPED' : unlocked ? 'TAP TO INSPECT' : 'LOCKED'}</i></span><span class="wildcardFace wildcardBack"><span class="wildcardBackEyebrow">FIELD CARD · ${unlocked ? 'READY TO REVIEW' : 'SEALED'}</span><strong>${card.label}</strong><small>${unlocked ? card.description : 'Reach a higher level to unlock this card.'}</small><span class="wildcardBackRule"></span><i>${equipped ? 'TAP AGAIN TO REMOVE' : unlocked ? 'TAP AGAIN TO EQUIP' : 'LOCKED'}</i></span>`;
       if (unlocked) button.addEventListener('click', () => {
-        if (!button.classList.contains('flipped')) { button.classList.add('flipped'); return; }
+        if (!button.classList.contains('flipped')) { button.classList.add('flipped'); flippedWildcardCards.add(card.id); return; }
+        flippedWildcardCards.delete(card.id);
         if (equipped) survivalMeta.equippedWildcards = survivalMeta.equippedWildcards.filter(value => value !== card.id);
         else if (survivalMeta.equippedWildcards.length < slots) survivalMeta.equippedWildcards = [...survivalMeta.equippedWildcards, card.id];
         else { say(`UNLOCKED SLOTS FULL · ${slots} MAX`); return; }
