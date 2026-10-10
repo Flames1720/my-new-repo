@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clamp } from './terrain';
 import { createWeaponRig, type SurvivalWeaponId, type WeaponRig, SURVIVAL_WEAPON_REGISTRY } from './survival-weapons';
 import { survivalSound } from './survival-audio';
+import { settings } from './settings';
 export type { SurvivalWeaponId } from './survival-weapons';
 export type SurvivalPickupKind = 'ammo' | 'medkit';
 
@@ -408,7 +409,7 @@ export class ZombieSurvivalSystem {
   activateAudio(): void {
     // Call only from a real key/pointer interaction so mobile browsers can unlock Web Audio.
     survivalSound.init();
-    survivalSound.setVolumes(0.72, 0.82);
+    survivalSound.setVolumes(settings.current.audioMaster, settings.current.audioSfx);
   }
 
   setAmbientEnabled(enabled: boolean): void {
