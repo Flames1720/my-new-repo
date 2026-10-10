@@ -3119,10 +3119,14 @@ function jump() {
 
 function triggerSlide() {
   if (!survival?.enabled || survival.isDead || player.swimming || !player.onGround || slideCooldown > 0) return;
-  const stickSprint = joyActive && Math.hypot(joy.x, joy.y) >= 0.78;
+  const stickMagnitude = joyActive ? Math.hypot(joy.x, joy.y) : 0;
+  const stickSprint = stickMagnitude >= 0.55;
   const sprinting = keys.has('shift') || sprintToggle || stickSprint;
   const currentSpeed = Math.hypot(player.velocity.x, player.velocity.z);
-  if (!sprinting && currentSpeed < 5.2) {
+  // Touch players often cannot hold a sprint modifier while steering and tapping
+  // an action button. A deliberate movement vector or existing run speed is enough
+  // to initiate the slide; a stationary tap remains safely rejected.
+  if (!sprinting && currentSpeed < 3.2) {
     say('SPRINT TO SLIDE');
     return;
   }

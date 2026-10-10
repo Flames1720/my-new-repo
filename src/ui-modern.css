@@ -966,3 +966,9 @@ body.survival-hit #target::before, body.survival-hit #target::after { background
   .settingsCard { width: calc(100vw - 20px) !important; max-height: calc(100dvh - 20px) !important; }
   .settingsBody { grid-template-columns: 1fr; max-height: calc(100dvh - 86px); }
 }
+
+body.survival-mode #slideBtn {
+  z-index: 52 !important;
+  pointer-events: auto !important;
+  touch-action: none !important;
+}
