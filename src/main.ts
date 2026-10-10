@@ -2378,6 +2378,14 @@ function announceSurvivalEvent(label: string, cue: 'wave-start' | 'wave-clear' |
 function updateLobbyProgressionUi(): void {
   const level = 1 + Math.floor(survivalMeta.xp / 150);
   if (lobbyProgressionSummary) lobbyProgressionSummary.textContent = `LEVEL ${level} · ${survivalMeta.xp} XP · BEST WAVE ${survivalMeta.bestWave}/100`;
+  const homeLevel = document.querySelector('#lobbyHomeLevel');
+  const homeXp = document.querySelector('#lobbyHomeXp');
+  const homeWave = document.querySelector('#lobbyHomeWave');
+  const navLevel = document.querySelector('#lobbyNavLevel');
+  if (homeLevel) homeLevel.textContent = `LEVEL ${level}`;
+  if (homeXp) homeXp.textContent = `${survivalMeta.xp} XP`;
+  if (homeWave) homeWave.textContent = `BEST WAVE ${survivalMeta.bestWave}`;
+  if (navLevel) navLevel.textContent = `LV ${level}`;
   if (lobbyBestWaveMetric) lobbyBestWaveMetric.textContent = `${survivalMeta.bestWave} / 100`;
   if (lobbyBestTimeMetric) lobbyBestTimeMetric.textContent = survivalMeta.bestTimeSeconds ? formatRunTime(survivalMeta.bestTimeSeconds) : '—';
   if (lobbyTotalKillsMetric) lobbyTotalKillsMetric.textContent = String(survivalMeta.totalKills);
@@ -2673,13 +2681,26 @@ bindAction(settingsBtn, () => {
   openSettings(true);
 });
 if (lobbyOptionsBtn) bindAction(lobbyOptionsBtn, () => openSettings(true));
-document.querySelectorAll<HTMLButtonElement>('[data-lobby-focus]').forEach(button => {
-  bindAction(button, () => {
-    document.querySelectorAll<HTMLButtonElement>('[data-lobby-focus]').forEach(item => item.classList.toggle('active', item === button));
-    const target = document.getElementById(button.dataset.lobbyFocus || '');
-    target?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
-  });
-});
+// Lobby navigation switches actual panels, preserving all existing data and handlers.
+const lobbyStage = document.querySelector('.lobbyStage') as HTMLElement | null;
+const lobbyNavButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-lobby-page]'));
+const lobbyPanels = Array.from(document.querySelectorAll<HTMLElement>('[data-lobby-panel]'));
+function showLobbyPage(page: string): void {
+  for (const button of lobbyNavButtons) {
+    const active = button.dataset.lobbyPage === page;
+    button.classList.toggle('active', active);
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  }
+  for (const panel of lobbyPanels) {
+    const active = panel.dataset.lobbyPanel === page;
+    panel.classList.toggle('active', active);
+    panel.setAttribute('aria-hidden', String(!active));
+  }
+  if (lobbyStage) lobbyStage.scrollTop = 0;
+}
+lobbyNavButtons.forEach(button => bindAction(button, () => showLobbyPage(button.dataset.lobbyPage || 'mission')));
+showLobbyPage('mission');
 bindAction(settingsClose, () => openSettings(false));
 lookWhileAimingCheck.addEventListener('change', () => settings.update({ lookWhileAiming: lookWhileAimingCheck.checked }));
 lookWhileFiringCheck.addEventListener('change', () => settings.update({ lookWhileFiring: lookWhileFiringCheck.checked }));
