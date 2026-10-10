@@ -639,3 +639,8 @@ body.display-mode-ready #displayModeGate { display: none; }
   .displayModeCard h1 { margin: 8px 0; }
   .displayModeFootnote { margin-top: 9px; }
 }
+
+
+/* Fullscreen is an optional one-tap action, never a blocking entry screen. */
+#displayModeGate { display: none !important; }
+body.native-fullscreen #fullscreenBtn { display: none !important; }
