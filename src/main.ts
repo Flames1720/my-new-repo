@@ -2154,6 +2154,12 @@ const survivalWave = document.querySelector('#survivalWave') as HTMLSpanElement 
 const survivalZombies = document.querySelector('#survivalZombies') as HTMLSpanElement | null;
 const survivalDeathOverlay = document.querySelector('#survivalDeathOverlay') as HTMLDivElement | null;
 const survivalRestartBtn = document.querySelector('#survivalRestartBtn') as HTMLButtonElement | null;
+const survivalPauseBtn = document.querySelector('#survivalPauseBtn') as HTMLButtonElement | null;
+const survivalPauseOverlay = document.querySelector('#survivalPauseOverlay') as HTMLDivElement | null;
+const resumeRunBtn = document.querySelector('#resumeRunBtn') as HTMLButtonElement | null;
+const restartPausedRunBtn = document.querySelector('#restartPausedRunBtn') as HTMLButtonElement | null;
+const leaveSurvivalBtn = document.querySelector('#leaveSurvivalBtn') as HTMLButtonElement | null;
+let survivalPaused = false;
 const survivalLobby = document.querySelector('#survivalLobby') as HTMLDivElement | null;
 const lobbyWeaponSelect = document.querySelector('#lobbyWeaponSelect') as HTMLSelectElement | null;
 const lobbyLastRun = document.querySelector('#lobbyLastRun') as HTMLParagraphElement | null;
@@ -3163,6 +3169,10 @@ function setSurvivalEnabled(enabled: boolean) {
     }
     target.style.display = 'grid';
   } else {
+    survivalPaused = false;
+    survivalPauseOverlay?.classList.remove('show');
+    document.body.classList.remove('survival-paused');
+    releaseSurvivalInputs();
     survival.setEnabled(false);
     document.body.classList.remove('aim-active');
     mode = modeBeforeSurvival;
@@ -3365,8 +3375,25 @@ function recordSurvivalRun(result: 'OVERRUN' | 'VICTORY') {
 if (upgradeHealthBtn) bindAction(upgradeHealthBtn, () => purchaseSurvivalUpgrade('health'));
 if (upgradeStaminaBtn) bindAction(upgradeStaminaBtn, () => purchaseSurvivalUpgrade('stamina'));
 if (upgradeDamageBtn) bindAction(upgradeDamageBtn, () => purchaseSurvivalUpgrade('damage'));
-if (startRunBtn) bindAction(startRunBtn, () => {
-  const selectedWeapon = (lobbyWeaponSelect?.value || 'pistol') as SurvivalWeaponId;
+
+function releaseSurvivalInputs() {
+  // A pause/background transition must not leave a held fire, ADS, or movement input behind.
+  keys.clear();
+  keyboardKeys.clear();
+  pointerKeys.clear();
+  joy.x = 0;
+  joy.y = 0;
+  joyActive = false;
+  joyPointer = null;
+  survival?.setFireHeld(false);
+  survival?.setAim(false);
+  document.body.classList.remove('aim-active');
+}
+
+function beginSurvivalRun(selectedWeapon: SurvivalWeaponId) {
+  survivalPaused = false;
+  survivalPauseOverlay?.classList.remove('show');
+  document.body.classList.remove('survival-paused');
   survival.restart();
   lastMetaKills = 0;
   lastMetaWave = 0;
@@ -3377,7 +3404,28 @@ if (startRunBtn) bindAction(startRunBtn, () => {
   setSurvivalEnabled(true);
   survival.beginPreparation(12);
   survivalLobby?.classList.remove('show');
+}
+
+if (startRunBtn) bindAction(startRunBtn, () => {
+  const selectedWeapon = (lobbyWeaponSelect?.value || 'pistol') as SurvivalWeaponId;
+  beginSurvivalRun(selectedWeapon);
 });
+
+if (survivalPauseBtn) bindAction(survivalPauseBtn, () => {
+  if (!survival?.enabled || survival.isDead || survivalPaused || survivalLobby?.classList.contains('show')) return;
+  survivalPaused = true;
+  releaseSurvivalInputs();
+  survivalPauseOverlay?.classList.add('show');
+  document.body.classList.add('survival-paused');
+});
+if (resumeRunBtn) bindAction(resumeRunBtn, () => {
+  survivalPaused = false;
+  survivalPauseOverlay?.classList.remove('show');
+  document.body.classList.remove('survival-paused');
+});
+if (restartPausedRunBtn) bindAction(restartPausedRunBtn, () => beginSurvivalRun(survival.weapon));
+if (leaveSurvivalBtn) bindAction(leaveSurvivalBtn, () => setSurvivalEnabled(false));
+
 document.body.classList.add('survival-mode');
 survivalLobby?.classList.add('show');
 
@@ -3889,7 +3937,7 @@ function loop() {
     return;
   }
 
-  const lobbyOpen = !!survivalLobby?.classList.contains('show');
+  const lobbyOpen = !!survivalLobby?.classList.contains('show') || survivalPaused;
   if (lobbyOpen) {
     lobbyRenderAccumulator += dt;
     if (!lobbyHasRendered || lobbyRenderAccumulator >= 0.25) {
@@ -3911,5 +3959,11 @@ document.addEventListener('visibilitychange', () => {
   clock.getDelta();
   lobbyHasRendered = false;
   lobbyRenderAccumulator = 0;
+  if (document.hidden && survival?.enabled && !survival.isDead && !survivalPaused) {
+    survivalPaused = true;
+    releaseSurvivalInputs();
+    survivalPauseOverlay?.classList.add('show');
+    document.body.classList.add('survival-paused');
+  }
 });
 loop();
