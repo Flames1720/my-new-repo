@@ -885,3 +885,42 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Fix:** Explicitly restore pointer-event handling, visibility, touch behavior, and a high stacking order for the HUD editor overlay, panel, and its buttons/selects/sliders while HUD edit mode is active. This prevents the isolated editor backdrop/layering from intercepting Save & close, Reset, Collapse/Expand, and Close controls.
 
 **Verification:** Source patch committed and preview deployment requested. Physical-device tap test is still required.
+
+## 2026-10-10 17:54 +01:00 — Claude / Claude Sonnet 5.5 — mobile perf: incremental chunk streaming (`chunk-queue-1`)
+
+**Scope:** Mobile frame-time spikes and duplicated world resources, driven by the Android capture in `livelogs.md`.
+
+**Starting point:** `feature/zombie-survival-world-v2` at `64664e2` ("Replace mobile performance live logs"). `src/main.ts` base blob `1163ec83`. `main` untouched. NOT committed or pushed by this agent: the GitHub connector in the session can only write whole files, and no local checkout or network was available. Delivered as a patch/zip instead.
+
+**Inspected:** `livelogs.md` (24 five-second windows, exported 16:41Z); `src/main.ts` (`Chunks.build/stream`, `disposeWorldObjects`, `update()`, `loop()`, diagnostics sampling, `buildTree/buildRock`); `src/zombie-survival.ts` (spawn, LOS, fire, dispose). NOT inspected: `index.html`, `src/style.css`, `src/environment-assets.ts`, `src/weather.ts`, `src/settlement.ts`.
+
+**Evidence from the capture (the 24 windows reproduce the reported 14.8 FPS / 329.9 ms worst / ~28 ms render / ~13 ms sim / ~1,390 geometries):**
+- 10 of 10 windows with `simulationMaxMs` > 100 also had a chunk stream. Median `simulationMaxMs`: 125.3 with a stream vs 21.4 without. Mean worst frame: 241 ms vs 142 ms. Each boundary crossing cost 89-240 ms (`chunkStreamMaxMs`).
+- Cause in code: `Chunks.stream()` built every missing chunk and every LOD1->LOD0 upgrade synchronously inside one `update()` call (~16 builds per straight crossing).
+- Streaming does NOT explain the steady-state problem. Windows with no stream still averaged 15.6 FPS, p95 ~104 ms, ~49 of ~78 frames over 50 ms. Mean frame 69.3 ms vs `simulationAvg` 12.8 + `renderAvg` 28.3 leaves ~28 ms/frame not covered by JS timers (GPU/compositor/long tasks; 453 long tasks in 120 s).
+- `renderAvgMs` correlates with triangles (r=0.60) more than draw calls (r=0.46), n=24. Weak evidence; not a root cause.
+
+**Changed (`src/main.ts` only):**
+1. `Chunks.streamQueued()` + `Chunks.pumpBuilds(budgetMs)`: unloading stays immediate; missing/upgraded chunks are queued nearest-first and built under a per-frame budget (5 ms low-power, 8 ms otherwise, always >=1 chunk so the queue drains). Entries are re-validated against the latest player chunk when processed; an LOD upgrade replaces the old chunk atomically so there are no holes. The synchronous `stream()` is unchanged and still used for initial load, respawn, `rebuildAll()` and survey exit (it also clears the queue). Chunk build internals (terrain, water, roads, collision, hydrology) were NOT touched.
+2. One shared road material (previously one per chunk) and shared stump/rubble geometry+material (previously new per stump/rubble, also in `hitResource`), excluded from `disposeWorldObjects`.
+3. Fruit on asset trees: one shared sphere geometry and one material per colour (previously 5 new geometries + 1 material per fruit tree), and fruit are no longer added on LOD1+ chunks (0.18 m spheres, sub-pixel at that distance). This one is a visible LOD change. The figures behind it are a code-derived estimate (~45 fruit trees, ~225 meshes); the log has no per-kind breakdown.
+4. Instrumentation (NEW, absent from the 16:33Z session): `chunkPumpAvgMs/MaxMs/Count`, `chunkQueueDepth`, `perfBuildTag: 'chunk-queue-1'`. NOTE: `chunkStream*` now times only unload + queue; chunk building is in `chunkPump*`. Do not compare `chunkStream*` across the old and new sessions directly.
+
+**Verification:**
+- Build: NOT RUN (no network/dependencies in the session)
+- Typecheck: NOT RUN. Only syntax-level (`ts.transpileModule`: 0 diagnostics) and an identifier-level `tsc` comparison (same 23 missing-typings errors before and after, none on new identifiers). This is not a real typecheck.
+- Runtime/browser: NOT VERIFIED
+- Device: NOT VERIFIED
+- Patch applies cleanly to the exact base blob `1163ec83` and reproduces the edited file byte-for-byte.
+
+**Important findings:**
+- No performance improvement is claimed. Expected: far fewer >100 ms frames; modest average-FPS change (streaming windows were ~1 FPS slower than non-streaming ones). The ~15 FPS steady state is untouched.
+- With radius 5 on low-power, LOD2 is never used (`dist <= 5` is LOD1).
+- `preserveDrawingBuffer: true` on the renderer is a plausible contributor to the unaccounted ~28 ms but is unproven; it is only needed if something reads the canvas after the frame.
+
+**Remaining work:**
+- Build + typecheck, then a 120 s Android capture with the same route. Compare `worstFrameMs`, `p95FrameMs`, `slowFramesOver50ms`, and `simulationMaxMs` in windows where `chunkPumpCount` > 0. Watch for visible pop-in at the ring edge and for tree/rock/aim-target delay after a crossing.
+- A/B candidates (one change per capture): `chunkRadius` 4 in Settings (121 -> 81 chunks, no code change); `preserveDrawingBuffer: false`; pixel ratio 1.0.
+- `src/zombie-survival.ts` (not changed): per-zombie geometry/material creation, and `hasLineOfSight` running every frame inside attack range before the cooldown check (reordering the checks is behaviour-preserving).
+
+**Next agent:** Apply the patch on `feature/zombie-survival-world-v2`, run `npm run lint && npm run build`, and fix any type errors before testing on device. Do not merge to `main`.
