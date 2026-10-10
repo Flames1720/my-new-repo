@@ -60,6 +60,12 @@ type Save = {
 const IS_TOUCH_DEVICE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 const LOW_POWER_MODE = IS_TOUCH_DEVICE || (navigator.hardwareConcurrency || 4) <= 4;
 const SAVE_KEY = 'virtual-family-core-v2';
+// Per-frame time budget for incremental chunk building (perf: chunk-queue-1).
+// A straight boundary crossing queues ~16 builds (11 new LOD1 + 5 LOD1->LOD0 upgrades)
+// and cost 89-240 ms in the Android capture, i.e. roughly 6-15 ms per chunk (derived, not
+// timed per chunk). A 5 ms budget therefore builds about one chunk per frame on low power.
+const CHUNK_BUILD_BUDGET_LOW_MS = 5;
+const CHUNK_BUILD_BUDGET_MS = 8;
 
 const angleLerp = (a: number, b: number, t: number) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * Math.min(1, t);
 
@@ -122,10 +128,13 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
   if (assetTree) {
     tintTreeForOutbreak(assetTree);
     const def = RESOURCE_DEFS[kind];
-    if (kind === 'fruit') {
-      const fruitMat = new THREE.MeshStandardMaterial({ color: def.fruitColor ?? 0xcc4433, roughness: 0.6 });
+    // Fruit were 5 meshes with a fresh geometry each plus a fresh material per tree.
+    // Share one geometry/material, and skip them on LOD1+ chunks where a 0.18 m
+    // sphere is under one pixel at that distance. (chunk-queue-1)
+    if (kind === 'fruit' && lod === 0) {
+      const fruitMat = getSharedFruitMaterial(def.fruitColor ?? 0xcc4433);
       for (let f = 0; f < 5; f++) {
-        const fruit = new THREE.Mesh(new THREE.SphereGeometry(0.09, 5, 4), fruitMat);
+        const fruit = new THREE.Mesh(sharedFruitGeometry, fruitMat);
         const a = f * ((Math.PI * 2) / 5);
         fruit.position.set(Math.cos(a) * 1.05, 2.2 + Math.sin(f * 1.7) * 0.28, Math.sin(a) * 1.05);
         assetTree.add(fruit);
@@ -841,11 +850,33 @@ function triggerFireCast() {
   say('Fire bolt');
 }
 
+// Resources every chunk used to re-create (one road material per chunk, one
+// geometry + material per stump/rubble). They are identical, so build them once
+// and exclude them from chunk disposal. Perf change: chunk-queue-1.
+const sharedRoadMaterial = new THREE.MeshStandardMaterial({ color: 0x3d4348, roughness: 1 });
+const sharedStumpGeometry = new THREE.CylinderGeometry(0.2, 0.26, 0.3, 6);
+const sharedStumpMaterial = new THREE.MeshStandardMaterial({ color: 0x5c4028 });
+const sharedRubbleGeometry = new THREE.CylinderGeometry(0.28, 0.36, 0.14, 6);
+const sharedRubbleMaterial = new THREE.MeshStandardMaterial({ color: 0x5a5d60 });
+const sharedFruitGeometry = new THREE.SphereGeometry(0.09, 5, 4);
+const sharedFruitMaterials = new Map<number, THREE.MeshStandardMaterial>();
+const sharedWorldGeometries = new Set<THREE.BufferGeometry>([sharedStumpGeometry, sharedRubbleGeometry, sharedFruitGeometry]);
+const sharedWorldMaterials = new Set<THREE.Material>([sharedRoadMaterial, sharedStumpMaterial, sharedRubbleMaterial]);
+function getSharedFruitMaterial(color: number): THREE.MeshStandardMaterial {
+  let material = sharedFruitMaterials.get(color);
+  if (!material) {
+    material = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
+    sharedFruitMaterials.set(color, material);
+    sharedWorldMaterials.add(material);
+  }
+  return material;
+}
+
 function disposeWorldObjects(root: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
   root.traverse(o => {
     if (!(o instanceof THREE.Mesh)) return;
-    if (!environmentAssets.isSharedGeometry(o.geometry) && !geometries.has(o.geometry)) {
+    if (!sharedWorldGeometries.has(o.geometry) && !environmentAssets.isSharedGeometry(o.geometry) && !geometries.has(o.geometry)) {
       geometries.add(o.geometry);
       o.geometry.dispose();
     }
@@ -856,6 +887,7 @@ function disposeWorldObjects(root: THREE.Object3D) {
         material !== terrainMaterial &&
         material !== waterfallMaterial &&
         material !== springMaterial &&
+        !sharedWorldMaterials.has(material) &&
         !environmentAssets.isSharedMaterial(material) &&
         !materials.has(material)
       ) {
@@ -873,6 +905,16 @@ class Chunks {
   aimTargets = new Set<THREE.Object3D>();
   cameraBlockers = new Set<THREE.Object3D>();
   homeLevel: HomeLevel = 1;
+  // Incremental streaming (perf: chunk-queue-1). Boundary crossings used to build
+  // every missing/upgraded chunk inside one frame (measured 90-240 ms per crossing).
+  // They are now queued nearest-first and built under a small per-frame time budget.
+  private streamQueue: { x: number; z: number }[] = [];
+  private streamCx = 0;
+  private streamCz = 0;
+  private streamRadius = 0;
+  get pendingBuilds() {
+    return this.streamQueue.length;
+  }
 
   private indexChunk(g: THREE.Group) {
     const targets: THREE.Object3D[] = [], blockers: THREE.Object3D[] = [];
@@ -977,7 +1019,7 @@ class Chunks {
     ground.name = 'terrain';
     g.add(ground);
 
-    const roadMat = new THREE.MeshStandardMaterial({ color: 0x3d4348, roughness: 1 });
+    const roadMat = sharedRoadMaterial;
 
     // Roads
     for (let k = -WORLD_RADIUS; k <= WORLD_RADIUS; k++) {
@@ -1212,7 +1254,7 @@ class Chunks {
           const at = entry.includes('@') ? Number(entry.split('@')[1]) : 0;
           const elapsed = (Date.now() - at) / 1000;
           if (elapsed < def.regrowSeconds) {
-            const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.3, 6), new THREE.MeshStandardMaterial({ color: 0x5c4028 }));
+            const stump = new THREE.Mesh(sharedStumpGeometry, sharedStumpMaterial);
             stump.name = `stump-${i}`;
             stump.position.set(tx, terrainHeightAt(tx, tz) + 0.15, tz);
             g.add(stump);
@@ -1249,7 +1291,7 @@ class Chunks {
         const name = `rock-${i}`;
         const entry = removed.find(e => e === name || e.startsWith(name + '@'));
         if (entry) {
-          const rubble = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 0.14, 6), new THREE.MeshStandardMaterial({ color: 0x5a5d60 }));
+          const rubble = new THREE.Mesh(sharedRubbleGeometry, sharedRubbleMaterial);
           rubble.name = `rubble-${i}`;
           rubble.position.set(tx, terrainHeightAt(tx, tz) + 0.07, tz);
           g.add(rubble);
@@ -1283,6 +1325,9 @@ class Chunks {
   }
 
   stream(px: number, pz: number) {
+    // Synchronous path (initial load, respawn, rebuildAll, survey exit): builds
+    // everything now, so any queued work is obsolete.
+    this.streamQueue.length = 0;
     const cx = this.coord(px), cz = this.coord(pz);
     const configuredRadius = settings.current.chunkRadius;
     // Mobile diagnostics showed rendering/submission is more expensive than simulation.
@@ -1316,6 +1361,73 @@ class Chunks {
         }
       }
     }
+  }
+
+  private lodForDistance(dist: number) {
+    return dist <= 2 ? 0 : dist <= 5 ? 1 : 2;
+  }
+
+  // Steady-state streaming used while the player walks. Unloading stays immediate
+  // (cheap); building is deferred to pumpBuilds() so no single frame pays for a
+  // whole row/column of chunks. Same radius and LOD rules as stream().
+  streamQueued(px: number, pz: number) {
+    const cx = this.coord(px), cz = this.coord(pz);
+    const configuredRadius = settings.current.chunkRadius;
+    const radius = LOW_POWER_MODE ? Math.min(configuredRadius, 5) : configuredRadius;
+    this.streamCx = cx;
+    this.streamCz = cz;
+    this.streamRadius = radius;
+
+    for (const [k, g] of this.loaded) {
+      const [a, b] = k.split(',').map(Number);
+      if (Math.abs(a - cx) > radius || Math.abs(b - cz) > radius) {
+        this.releaseChunk(g);
+        world.remove(g);
+        this.loaded.delete(k);
+      }
+    }
+
+    const minX = Math.max(-WORLD_RADIUS, cx - radius), maxX = Math.min(WORLD_RADIUS, cx + radius);
+    const minZ = Math.max(-WORLD_RADIUS, cz - radius), maxZ = Math.min(WORLD_RADIUS, cz + radius);
+    const queue: { x: number; z: number; dist: number }[] = [];
+    for (let x = minX; x <= maxX; x++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        const dist = Math.max(Math.abs(x - cx), Math.abs(z - cz));
+        const existing = this.loaded.get(this.key(x, z));
+        if (!existing || existing.userData.lod > this.lodForDistance(dist)) queue.push({ x, z, dist });
+      }
+    }
+    // Nearest first; ties broken by true distance so the chunk under/ahead of the player wins.
+    queue.sort((a, b) => a.dist - b.dist || Math.hypot(a.x - cx, a.z - cz) - Math.hypot(b.x - cx, b.z - cz));
+    this.streamQueue = queue.map(({ x, z }) => ({ x, z }));
+  }
+
+  // Builds queued chunks until budgetMs is spent. At least one chunk is built per
+  // call when work is pending, so the queue always drains. Entries are re-validated
+  // against the latest player chunk, because the player may have moved on.
+  pumpBuilds(budgetMs: number) {
+    if (!this.streamQueue.length) return 0;
+    const startedAt = performance.now();
+    let built = 0;
+    let head = 0;
+    while (head < this.streamQueue.length) {
+      const { x, z } = this.streamQueue[head++];
+      const dist = Math.max(Math.abs(x - this.streamCx), Math.abs(z - this.streamCz));
+      if (dist > this.streamRadius) continue;
+      const lod = this.lodForDistance(dist);
+      const key = this.key(x, z), existing = this.loaded.get(key);
+      if (existing && existing.userData.lod <= lod) continue;
+      if (existing) {
+        this.releaseChunk(existing);
+        world.remove(existing);
+        this.loaded.delete(key);
+      }
+      this.build(x, z, lod);
+      built++;
+      if (performance.now() - startedAt >= budgetMs) break;
+    }
+    this.streamQueue.splice(0, head);
+    return built;
   }
 
   async surveyAll(active: boolean, onProgress?: (done: number, total: number) => void) {
@@ -3213,7 +3325,7 @@ function hitResource(obj: THREE.Object3D) {
     g.remove(obj);
 
     if (def.family === 'tree') {
-      const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.3, 6), new THREE.MeshStandardMaterial({ color: 0x5c4028 }));
+      const stump = new THREE.Mesh(sharedStumpGeometry, sharedStumpMaterial);
       stump.name = obj.name.replace('tree-', 'stump-');
       stump.position.copy(obj.position);
       stump.position.y += 0.15;
@@ -3221,7 +3333,7 @@ function hitResource(obj: THREE.Object3D) {
       stump.receiveShadow = true;
       g.add(stump);
     } else {
-      const rubble = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 0.14, 6), new THREE.MeshStandardMaterial({ color: 0x5a5d60 }));
+      const rubble = new THREE.Mesh(sharedRubbleGeometry, sharedRubbleMaterial);
       rubble.name = obj.name.replace('rock-', 'rubble-');
       rubble.position.copy(obj.position);
       rubble.position.y += 0.07;
@@ -3758,7 +3870,7 @@ const cameraBlockerObjects: THREE.Object3D[] = [];
 const cameraHits: THREE.Intersection[] = [];
 let cameraProbeTimer = 0, cameraClearance = camDistance;
 
-type DiagnosticCostKey = 'simulation' | 'render' | 'survivalUpdate' | 'aimQuery' | 'chunkStream';
+type DiagnosticCostKey = 'simulation' | 'render' | 'survivalUpdate' | 'aimQuery' | 'chunkStream' | 'chunkPump';
 type DiagnosticCost = { totalMs: number; maxMs: number; count: number };
 type OutbreakDiagnosticsWindow = Window & { __islandOutbreakPerfEnabled?: boolean };
 const newDiagnosticCost = (): DiagnosticCost => ({ totalMs: 0, maxMs: 0, count: 0 });
@@ -3783,6 +3895,7 @@ const diagnosticFrameWindow: {
     survivalUpdate: newDiagnosticCost(),
     aimQuery: newDiagnosticCost(),
     chunkStream: newDiagnosticCost(),
+    chunkPump: newDiagnosticCost(),
   },
 };
 let diagnosticMeasureFrame = false;
@@ -4056,10 +4169,15 @@ function update(dt: number) {
   const cx = chunks.coord(p.x), cz = chunks.coord(p.z);
   if (cx !== lastCx || cz !== lastCz) {
     const streamStartedAt = diagnosticFrameWindow.active ? performance.now() : 0;
-    chunks.stream(p.x, p.z);
+    chunks.streamQueued(p.x, p.z);
     if (streamStartedAt) recordDiagnosticCost('chunkStream', performance.now() - streamStartedAt);
     lastCx = cx;
     lastCz = cz;
+  }
+  if (chunks.pendingBuilds) {
+    const pumpStartedAt = diagnosticFrameWindow.active ? performance.now() : 0;
+    chunks.pumpBuilds(LOW_POWER_MODE ? CHUNK_BUILD_BUDGET_LOW_MS : CHUNK_BUILD_BUDGET_MS);
+    if (pumpStartedAt) recordDiagnosticCost('chunkPump', performance.now() - pumpStartedAt);
   }
 
   if (player.swimming !== wasSwimming) {
@@ -4402,6 +4520,13 @@ function loop() {
         chunkStreamAvgMs: diagnosticCostSummary('chunkStream').avgMs,
         chunkStreamMaxMs: diagnosticCostSummary('chunkStream').maxMs,
         chunkStreamCount: diagnosticCostSummary('chunkStream').samples,
+        // Added in chunk-queue-1; absent from the pre-change session in livelogs.md.
+        // chunkStream* now times only the unload + queue step. Chunk building is timed here.
+        chunkPumpAvgMs: diagnosticCostSummary('chunkPump').avgMs,
+        chunkPumpMaxMs: diagnosticCostSummary('chunkPump').maxMs,
+        chunkPumpCount: diagnosticCostSummary('chunkPump').samples,
+        chunkQueueDepth: chunks.pendingBuilds,
+        perfBuildTag: 'chunk-queue-1',
         drawCalls: renderer.info.render.calls,
         triangles: renderer.info.render.triangles,
         points: renderer.info.render.points,
