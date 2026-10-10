@@ -556,7 +556,9 @@
     <script>
       (() => {
         const KEY = 'island-outbreak-diagnostics-v1', MAX = 120;
-        let enabled = true, frames = 0, windowStart = performance.now(), lastFrame = windowStart, frameMs = [], slowFrames = 0, longTasks = 0;
+        let enabled = true, frames = 0, windowStart = performance.now(), lastFrame = windowStart, frameMs = [], slowFrames = 0, longTasks = 0, latestGamePerformance = null;
+        window.__islandOutbreakPerfEnabled = enabled;
+        addEventListener('island-outbreak-performance', e => { latestGamePerformance = e.detail || null; });
         const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
         const write = rows => { try { localStorage.setItem(KEY, JSON.stringify(rows.slice(-MAX))); } catch {} };
         const log = (type, data = {}) => { if (!enabled && type !== 'logging') return; const rows = read(); rows.push({ t: new Date().toISOString(), ms: Math.round(performance.now()), type, ...data }); write(rows); };
@@ -574,7 +576,7 @@
           if (now - windowStart >= 5000) {
             if (enabled) {
               const sorted = frameMs.slice().sort((a,b) => a-b), avg = frameMs.length ? frameMs.reduce((a,b) => a+b,0) / frameMs.length : 0;
-              log('performance-sample', { fps: Math.round(frames * 1000 / Math.max(1, now-windowStart)), avgFrameMs: Math.round(avg*10)/10, worstFrameMs: Math.round((sorted[sorted.length-1]||0)*10)/10, p95FrameMs: Math.round((sorted[Math.min(sorted.length-1,Math.floor(sorted.length*.95))]||0)*10)/10, slowFramesOver50ms: slowFrames, longTasksSinceStart: longTasks, drawCalls: null, triangles: null, note: 'Draw calls/triangles require renderer instrumentation; unavailable in this logger.', bodyStates: ['survival-mode','survival-paused','hud-edit-mode','aim-active','native-fullscreen','display-mode-ready'].filter(c => document.body.classList.contains(c)) });
+              log('performance-sample', { fps: Math.round(frames * 1000 / Math.max(1, now-windowStart)), avgFrameMs: Math.round(avg*10)/10, worstFrameMs: Math.round((sorted[sorted.length-1]||0)*10)/10, p95FrameMs: Math.round((sorted[Math.min(sorted.length-1,Math.floor(sorted.length*.95))]||0)*10)/10, slowFramesOver50ms: slowFrames, longTasksSinceStart: longTasks, drawCalls: latestGamePerformance?.drawCalls ?? null, triangles: latestGamePerformance?.triangles ?? null, simulationAvgMs: latestGamePerformance?.simulationAvgMs ?? null, simulationMaxMs: latestGamePerformance?.simulationMaxMs ?? null, renderAvgMs: latestGamePerformance?.renderAvgMs ?? null, renderMaxMs: latestGamePerformance?.renderMaxMs ?? null, rendererGeometries: latestGamePerformance?.geometries ?? null, rendererTextures: latestGamePerformance?.textures ?? null, canvas: latestGamePerformance ? latestGamePerformance.canvasWidth + 'x' + latestGamePerformance.canvasHeight : null, pixelRatio: latestGamePerformance?.pixelRatio ?? null, gamePerformance: latestGamePerformance, bodyStates: ['survival-mode','survival-paused','hud-edit-mode','aim-active','native-fullscreen','display-mode-ready'].filter(c => document.body.classList.contains(c)) });
             }
             frames=0; frameMs=[]; slowFrames=0; windowStart=now;
           }
@@ -586,9 +588,9 @@
           if (!body || document.getElementById('diagnosticsPanel')) return;
           const panel = document.createElement('section'); panel.id='diagnosticsPanel';
           panel.style.cssText='margin:18px 0 8px;padding:14px;border:1px solid #40544a;border-radius:10px;background:#0b1412;color:#e8f0e9';
-          panel.innerHTML='<h4 style="margin:0 0 6px;font-size:13px">BACKGROUND DIAGNOSTICS</h4><p style="margin:0 0 10px;font-size:12px;opacity:.8">Last 120 entries stored on this device. FPS/frame timing and UI state are recorded. Draw-call and triangle counts are unavailable until renderer instrumentation is added.</p><label style="display:flex;gap:8px;align-items:center;font-size:12px;margin-bottom:10px"><input id="diagnosticsEnabled" type="checkbox" checked> Record diagnostics</label><div style="display:flex;gap:8px;flex-wrap:wrap"><button id="diagnosticsCopy" type="button">COPY LOGS</button><button id="diagnosticsClear" type="button">CLEAR LOGS</button></div><p id="diagnosticsStatus" aria-live="polite" style="font-size:11px;margin:8px 0 0;opacity:.8">Logs are stored locally on this device.</p>';
+          panel.innerHTML='<h4 style="margin:0 0 6px;font-size:13px">BACKGROUND DIAGNOSTICS</h4><p style="margin:0 0 10px;font-size:12px;opacity:.8">Last 120 entries stored on this device. FPS/frame timing, simulation cost, renderer timings, draw calls, triangles, geometry and texture counts are recorded during active gameplay.</p><label style="display:flex;gap:8px;align-items:center;font-size:12px;margin-bottom:10px"><input id="diagnosticsEnabled" type="checkbox" checked> Record diagnostics</label><div style="display:flex;gap:8px;flex-wrap:wrap"><button id="diagnosticsCopy" type="button">COPY LOGS</button><button id="diagnosticsClear" type="button">CLEAR LOGS</button></div><p id="diagnosticsStatus" aria-live="polite" style="font-size:11px;margin:8px 0 0;opacity:.8">Logs are stored locally on this device.</p>';
           body.appendChild(panel); const status=panel.querySelector('#diagnosticsStatus');
-          panel.querySelector('#diagnosticsEnabled').addEventListener('change',e=>{ enabled=e.target.checked; log('logging',{enabled}); status.textContent=enabled?'Recording enabled.':'Recording paused.'; });
+          panel.querySelector('#diagnosticsEnabled').addEventListener('change',e=>{ enabled=e.target.checked; window.__islandOutbreakPerfEnabled=enabled; log('logging',{enabled}); status.textContent=enabled?'Recording enabled.':'Recording paused.'; });
           panel.querySelector('#diagnosticsCopy').addEventListener('click',async()=>{
             const report=JSON.stringify({exportedAt:new Date().toISOString(),device:device(),logs:read()},null,2);
             try { await navigator.clipboard.writeText(report); status.textContent='Copied. Paste the report into ChatGPT.'; }
