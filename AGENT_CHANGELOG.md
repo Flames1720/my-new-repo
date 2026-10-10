@@ -862,3 +862,19 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Changed:** Lowered the deliberate-movement threshold to 3.2 velocity or 0.55 joystick magnitude while retaining grounded, non-swimming and cooldown guards. Added explicit `z-index`, `pointer-events` and `touch-action` rules for the Slide button so tapping it while another pointer controls movement is supported.
 
 **Verification:** `npm run lint`, `npm run build` and `git diff --check` all passed. Physical-device multitouch verification remains pending.
+
+## 2026-10-10 14:26 +0000 UTC — ChatGPT
+
+**Scope:** Mobile performance diagnostics for Island Outbreak active gameplay.
+
+**Changed:** Added frame-cost instrumentation to the active gameplay loop. While background diagnostics are enabled, it records average and maximum simulation-update time and render time over roughly five-second windows, plus Three.js draw calls, triangles, points, lines, geometry/texture counts, scene top-level child count, renderer pixel ratio and canvas resolution. The Settings diagnostics export now includes those values alongside FPS/frame-time and long-task measurements. Turning diagnostics off also turns off the per-frame timing instrumentation. Existing screenshot rendering and preserveDrawingBuffer behavior are unchanged.
+
+**Verification:**
+- GitHub Actions type-check: PASS.
+- GitHub Actions production build: PASS.
+- Vercel preview for the instrumentation commit: READY — https://island-outbreak-79d7gwnoc-flames-projects-5a93c7bd.vercel.app
+- Physical-device performance comparison: NOT YET VERIFIED; the next step is a repeatable mobile survival run and export of the new logs.
+
+**Important limitation:** This change measures bottlenecks; it is not itself a performance optimization. No rendering settings, world radius, zombie cap or gameplay behavior were altered based on assumptions.
+
+**Next step:** Repeat the same gameplay scenario on the same phone with diagnostics enabled, then compare simulation time against render time and renderer complexity before applying a targeted optimization.
