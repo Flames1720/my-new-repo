@@ -1,12 +1,12 @@
-name: Zombie survival integration checks
+name: Zombie survival release checks
 
 on:
   push:
     branches:
-      - feature/world-integrated-zombie-survival
+      - feature/zombie-survival-world-v2
   pull_request:
     branches:
-      - integration/character-world-foundation
+      - main
 
 permissions:
   contents: read
