@@ -1,3 +1,8 @@
+## 2026-10-10 — Survival HUD cleanup
+
+- Hid the general resource inventory/hotbar while survival mode is active, keeping its resource counts out of the FPS combat HUD. It returns outside survival mode.
+- Renderer optimizations remain deferred until phone diagnostics establish a baseline.
+
 ## 2026-10-10 — HUD editor and responsive survival cards
 
 - Fixed `bindAction` so buttons inside the HUD editor remain clickable while HUD edit mode is active.
