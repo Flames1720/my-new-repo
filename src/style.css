@@ -1843,3 +1843,6 @@ body.hud-edit-mode #survivalLobby {
   .wildcardCollection { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
   .wildcardCard { min-height: 0 !important; }
 }
+
+/* Survival runs use the FPS HUD; the sandbox/resource hotbar is not actionable there. */
+body.survival-mode #inventory { display: none !important; }
