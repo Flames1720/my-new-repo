@@ -749,3 +749,11 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Animation opportunities found while reviewing this branch:** zombies already have procedural locomotion/arm swings, hit flashes and shrink/fade deaths; loot already floats and rotates; weapon rigs already recoil/reload/flash. The largest remaining gaps are authored boss wind-up/impact/shockwave; stronger sanctuary final collapse/relocation; pickup collection pull-in; distinct hit-stagger/knockback; and richer shell/hand weapon handling. See README's Animation follow-ups section.
 
 **Review note:** Keep this work on the requested feature branch; do not merge to `main`. Preserve PR #8 as the review path. Physical Android/iOS QA is still required.
+
+## 2026-10-10 08:08 +01:00 — mobile WebView gate hardening
+
+**Observed from the user's phone screenshot:** the page is portrait, displays the gate as normal white-page content, and leaks the HUD beneath it. This is not the intended appearance; external CSS did not appear to apply in that embedded mobile browser.
+
+**Changed:** `index.html` now carries a minimal inline critical style for the entry gate, a portrait rotation animation, and a rule that hides and disables all other body layers until `.display-mode-ready`. This preserves the essential safety gate even if the app's stylesheet request fails. The updated app was built and is served for mobile review as a static Vite production preview on port 4173, rather than the development server on port 3000.
+
+**Verification:** production build passed; local and public HTML/CSS requests returned HTTP 200; the production preview rendered the styled gate and the fullscreen deployment lobby in the browser. Actual phone/WebView retest is still required; use the production preview link supplied in the handoff.

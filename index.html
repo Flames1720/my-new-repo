@@ -9,6 +9,33 @@
     <meta name="description" content="Survive 100 waves on a ruined island. Fight evolving infected, hold safe zones, and build your loadout." />
     <meta property="og:title" content="Island Outbreak · Zombie Survival" />
     <meta property="og:description" content="First-person open-world zombie survival prototype with procedural terrain, weapons, loot, and safe zones." />
+    <style id="critical-display-gate">
+      html, body { width: 100%; height: 100%; min-height: 100%; margin: 0; overflow: hidden; background: #07100f; }
+      body { color: #edf3eb; font-family: system-ui, -apple-system, sans-serif; }
+      #displayModeGate { position: fixed !important; inset: 0 !important; z-index: 2147483647 !important; display: flex !important; align-items: center; justify-content: center; box-sizing: border-box; overflow: auto; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: radial-gradient(ellipse at 50% 42%, #14231d, #07100f 70%); text-align: center; }
+      body:not(.display-mode-ready) > :not(#displayModeGate) { visibility: hidden !important; pointer-events: none !important; }
+      body.display-mode-ready #displayModeGate { display: none !important; }
+      #displayModeGate .displayModeCard { box-sizing: border-box; width: min(520px, 100%); max-height: 100%; overflow: auto; padding: clamp(24px, 5vw, 48px); border: 1px solid #456351; border-radius: 4px 20px; background: linear-gradient(145deg, #111d1b, #080e0f); box-shadow: 0 30px 90px #000a; }
+      #displayModeGate .displayModeEyebrow { color: #83bd95; font-size: 9px; font-weight: 900; letter-spacing: .22em; }
+      #displayModeGate h1 { margin: 16px 0; color: #f3f2e9; font-size: clamp(28px, 5vw, 42px); line-height: 1; letter-spacing: -.045em; }
+      #displayModeGate p { max-width: 34ch; margin: 0 auto 18px; color: #b5c5ba; font-size: 13px; line-height: 1.55; }
+      #displayModeGate .displayModeFootnote { margin-top: 18px; color: #819087; font-size: 8px; letter-spacing: .18em; }
+      #displayModeGate #enterGameDisplayMode { min-height: 50px; min-width: 230px; display: inline-flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 8px; padding: 0 18px; border: 1px solid #79c591; border-radius: 3px 12px; background: linear-gradient(100deg, #1d7548, #194d3a); color: #effff1; font: 900 10px system-ui, sans-serif; letter-spacing: .14em; }
+      #displayModeGate #enterGameDisplayMode:disabled { opacity: .42; }
+      #displayModeGate .rotatePhoneAnimation, #displayModeGate .displayModeLandscapeHint { display: none; }
+      @keyframes criticalPhoneTurn { 0%, 12% { transform: rotate(0); } 48%, 70% { transform: rotate(90deg); } 90%, 100% { transform: rotate(0); } }
+      @media (orientation: portrait) {
+        #displayModeGate .displayModeCard { width: min(460px, 100%); }
+        #displayModeGate .rotatePhoneAnimation { position: relative; width: 140px; height: 115px; display: flex; align-items: center; justify-content: center; margin: 12px auto; }
+        #displayModeGate .rotatePhoneDevice { position: relative; width: 48px; height: 82px; border: 3px solid #a8d7b0; border-radius: 10px; background: linear-gradient(140deg, #325b45, #101817); animation: criticalPhoneTurn 2.8s ease-in-out infinite; }
+        #displayModeGate .rotatePhoneSpeaker { position: absolute; top: 4px; left: 50%; width: 12px; height: 3px; border-radius: 3px; background: #82c691; transform: translateX(-50%); }
+        #displayModeGate .rotatePhoneScreen { position: absolute; inset: 12px 4px; border-radius: 3px; background: linear-gradient(145deg, #497754, #173e30 55%, #825532); }
+        #displayModeGate .rotatePhoneHome { position: absolute; bottom: 4px; left: 50%; width: 5px; height: 5px; border: 1px solid #82c691; border-radius: 50%; transform: translateX(-50%); }
+        #displayModeGate .rotatePhoneArrow { position: absolute; top: 0; right: 5px; color: #b1e4b9; font-size: 25px; }
+        #displayModeGate .displayModeLandscapeHint { display: block; color: #d3e7d7; font-size: 10px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+        #displayModeGate .displayModeFullscreenHint, #displayModeGate #enterGameDisplayMode, #displayModeGate .displayModeFootnote { display: none !important; }
+      }
+    </style>
   </head>
   <body>
     <div id="displayModeGate" role="dialog" aria-modal="true" aria-labelledby="displayModeTitle">
