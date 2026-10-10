@@ -1,3 +1,13 @@
+## 2026-10-10 — HUD editor and responsive survival cards
+
+- Fixed `bindAction` so buttons inside the HUD editor remain clickable while HUD edit mode is active.
+- Added an explicit Cancel button. HUD layout is snapshotted on editor entry; Cancel restores the saved local layout and reapplies it, while Save & close keeps the edits.
+- HUD edit mode now visually suppresses the pause overlay and survival lobby while the editor is open, allowing the editor to receive taps. Their existing visibility returns when edit mode exits.
+- Reworked wildcard cards toward the requested 9:16 flashcard format: portrait cards, compact front/name, hidden front description, clamped back description, and flip state retained across re-renders.
+- Added landscape-specific death-card layout with bounded height, scrolling fallback, safe-area padding, and two-column content.
+- Replaced the visually ambiguous safe-zone triangle with a clear arrowhead and stem while retaining its rotation.
+- Validation status: changes are on the feature branch only. No TypeScript/Vite build or real-device interaction test has been run yet. The requested wood/apple counter cleanup and renderer-level performance optimization remain to be verified.
+
 ## 2026-10-10 — Island Outbreak diagnostics groundwork
 
 - Added a bounded, local-only background diagnostics logger in `index.html`.
