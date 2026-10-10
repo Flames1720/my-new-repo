@@ -1,3 +1,11 @@
+## 2026-10-10 — Restore in-game Copy Logs controls on the active working branch
+
+- Restored the Background Diagnostics panel inside Settings on `feature/zombie-survival-world-v2`, alongside the current HUD editor work.
+- Added Copy Logs and Clear Logs actions, with a clipboard fallback that exposes the selected JSON report if Android/browser clipboard access is blocked.
+- Captures a bounded local report with device context, performance samples, runtime errors/rejections, visibility changes, and relevant UI actions. No backend transmission is performed.
+- This consolidates the missing diagnostics UI into the same working branch as the HUD fixes; do not create another issue branch.
+- Validation: source-level insertion checked against the existing diagnostics script. A build and actual phone interaction still need verification.
+
 # AGENT_CHANGELOG.md — Multi-Agent Handoff Log
 
 This is the chronological handoff record for meaningful AI-agent work. It complements git history by recording reasoning, verification, discoveries, unresolved issues and what the next agent needs to know.
