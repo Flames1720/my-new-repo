@@ -552,6 +552,56 @@
     <!-- Photo Mode Toast Notification -->
     <div id="photoToast"></div>
 
+    <script>
+      (() => {
+        const KEY = 'island-outbreak-diagnostics-v1', MAX = 120;
+        let enabled = true, frames = 0, windowStart = performance.now(), lastFrame = windowStart, frameMs = [], slowFrames = 0, longTasks = 0;
+        const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } };
+        const write = rows => { try { localStorage.setItem(KEY, JSON.stringify(rows.slice(-MAX))); } catch {} };
+        const log = (type, data = {}) => { if (!enabled && type !== 'logging') return; const rows = read(); rows.push({ t: new Date().toISOString(), ms: Math.round(performance.now()), type, ...data }); write(rows); };
+        const device = () => ({ userAgent: navigator.userAgent, cores: navigator.hardwareConcurrency || null, deviceMemoryGB: navigator.deviceMemory || null, screen: screen.width + 'x' + screen.height, viewport: innerWidth + 'x' + innerHeight, dpr: devicePixelRatio || 1, online: navigator.onLine, visibility: document.visibilityState });
+        log('session-start', device());
+        addEventListener('error', e => log('error', { message: String(e.message || 'unknown error').slice(0, 300), source: String(e.filename || '').split('/').pop(), line: e.lineno || null }));
+        addEventListener('unhandledrejection', e => log('unhandled-rejection', { message: String(e.reason?.message || e.reason || 'unknown rejection').slice(0, 300) }));
+        addEventListener('visibilitychange', () => log('visibility', { state: document.visibilityState }));
+        addEventListener('orientationchange', () => log('orientation', device()));
+        if ('PerformanceObserver' in window) { try { new PerformanceObserver(list => { longTasks += list.getEntries().length; }).observe({ type: 'longtask', buffered: true }); } catch {} }
+        const sample = now => {
+          frames++; const dt = now - lastFrame;
+          if (dt > 0 && dt < 1000) { frameMs.push(dt); if (dt > 50) slowFrames++; }
+          lastFrame = now;
+          if (now - windowStart >= 5000) {
+            if (enabled) {
+              const sorted = frameMs.slice().sort((a,b) => a-b), avg = frameMs.length ? frameMs.reduce((a,b) => a+b,0) / frameMs.length : 0;
+              log('performance-sample', { fps: Math.round(frames * 1000 / Math.max(1, now-windowStart)), avgFrameMs: Math.round(avg*10)/10, worstFrameMs: Math.round((sorted[sorted.length-1]||0)*10)/10, p95FrameMs: Math.round((sorted[Math.min(sorted.length-1,Math.floor(sorted.length*.95))]||0)*10)/10, slowFramesOver50ms: slowFrames, longTasksSinceStart: longTasks, drawCalls: null, triangles: null, note: 'Draw calls/triangles require renderer instrumentation; unavailable in this logger.', bodyStates: ['survival-mode','survival-paused','hud-edit-mode','aim-active','native-fullscreen','display-mode-ready'].filter(c => document.body.classList.contains(c)) });
+            }
+            frames=0; frameMs=[]; slowFrames=0; windowStart=now;
+          }
+          requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+        const addSettingsPanel = () => {
+          const body = document.querySelector('#settingsOverlay .settingsBody');
+          if (!body || document.getElementById('diagnosticsPanel')) return;
+          const panel = document.createElement('section'); panel.id='diagnosticsPanel';
+          panel.style.cssText='margin:18px 0 8px;padding:14px;border:1px solid #40544a;border-radius:10px;background:#0b1412;color:#e8f0e9';
+          panel.innerHTML='<h4 style="margin:0 0 6px;font-size:13px">BACKGROUND DIAGNOSTICS</h4><p style="margin:0 0 10px;font-size:12px;opacity:.8">Last 120 entries stored on this device. FPS/frame timing and UI state are recorded. Draw-call and triangle counts are unavailable until renderer instrumentation is added.</p><label style="display:flex;gap:8px;align-items:center;font-size:12px;margin-bottom:10px"><input id="diagnosticsEnabled" type="checkbox" checked> Record diagnostics</label><div style="display:flex;gap:8px;flex-wrap:wrap"><button id="diagnosticsCopy" type="button">COPY LOGS</button><button id="diagnosticsClear" type="button">CLEAR LOGS</button></div><p id="diagnosticsStatus" aria-live="polite" style="font-size:11px;margin:8px 0 0;opacity:.8">Logs are stored locally on this device.</p>';
+          body.appendChild(panel); const status=panel.querySelector('#diagnosticsStatus');
+          panel.querySelector('#diagnosticsEnabled').addEventListener('change',e=>{ enabled=e.target.checked; log('logging',{enabled}); status.textContent=enabled?'Recording enabled.':'Recording paused.'; });
+          panel.querySelector('#diagnosticsCopy').addEventListener('click',async()=>{
+            const report=JSON.stringify({exportedAt:new Date().toISOString(),device:device(),logs:read()},null,2);
+            try { await navigator.clipboard.writeText(report); status.textContent='Copied. Paste the report into ChatGPT.'; }
+            catch { const area=document.createElement('textarea'); area.value=report; area.style.cssText='position:fixed;inset:10px;width:90%;height:70%;z-index:2147483647;background:#fff;color:#111'; document.body.appendChild(area); area.focus(); area.select(); const ok=document.execCommand('copy'); status.textContent=ok?'Copied. Paste the report into ChatGPT.':'Copy was blocked; select and copy the report shown.'; if(ok) area.remove(); }
+          });
+          panel.querySelector('#diagnosticsClear').addEventListener('click',()=>{ try{localStorage.removeItem(KEY)}catch{} log('logs-cleared'); status.textContent='Logs cleared; recording continues.'; });
+        };
+        new MutationObserver(addSettingsPanel).observe(document.documentElement,{childList:true,subtree:true});
+        addEventListener('DOMContentLoaded',addSettingsPanel);
+        document.addEventListener('click',e=>{ const el=e.target instanceof Element?e.target.closest('button'):null; if(el && /settings|hud|resume|pause|restart|leave|save|cancel|close/i.test((el.id||'')+' '+el.textContent)) log('ui-action',{id:el.id||null,label:(el.textContent||'').trim().slice(0,60),bodyStates:['survival-mode','survival-paused','hud-edit-mode'].filter(c=>document.body.classList.contains(c))}); },true);
+        setInterval(()=>{ if(enabled) log('state-sample',{bodyStates:['survival-mode','survival-paused','hud-edit-mode','aim-active','native-fullscreen','display-mode-ready'].filter(c=>document.body.classList.contains(c)),viewport:innerWidth+'x'+innerHeight,dpr:devicePixelRatio||1}); },5000);
+        addEventListener('pagehide',()=>log('session-end',{...device(),totalMs:Math.round(performance.now())}));
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
