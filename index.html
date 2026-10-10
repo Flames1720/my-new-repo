@@ -254,7 +254,7 @@
 	      <div class="settingsCard">
 	        <div class="settingsHeader">
 	          <div class="settingsTitleBlock"><span class="settingsEyebrow">FIELD CONTROL / CONFIGURATION</span><h3>GAMEPLAY & CONTROLS</h3></div>
-	          <nav class="settingsTabs" aria-label="Settings categories"><button class="active" type="button">GENERAL</button><button type="button">GRAPHICS</button><button type="button">AUDIO</button><button type="button">CONTROLS</button><button type="button">GAMEPLAY</button></nav>
+	          <nav class="settingsTabs" aria-label="Settings categories"><button class="active" type="button" data-settings-tab="controls">CONTROLS</button><button type="button" data-settings-tab="graphics">GRAPHICS / AUDIO</button><button type="button" data-settings-tab="player">PLAYER</button><button type="button" data-settings-tab="diagnostics">DIAGNOSTICS</button></nav>
 	          <button id="settingsClose">✕</button>
 	        </div>
         <div class="settingsBody">
@@ -407,6 +407,20 @@
               <option value="balanced">Balanced LOD (Optimized Hills)</option>
               <option value="fast">Fast LOD (Battery Saver)</option>
             </select>
+          </div>
+          <div class="settingGroup" data-settings-section="graphics">
+            <div class="settingLabel"><span>Game music</span></div>
+            <p class="settingNote">Lobby and gameplay music controls will be added after audio tracks are supplied. Existing game sounds remain available.</p>
+          </div>
+          <div class="settingGroup" data-settings-section="diagnostics">
+            <div class="settingLabel"><span>Performance diagnostics</span></div>
+            <p class="settingNote">Start a capture, return to your run, then check or copy the readings here. Samples update every 5 seconds; capture stops automatically after 2 minutes.</p>
+            <div class="settingsDiagnosticActions">
+              <button id="diagnosticCaptureBtn" type="button">START CAPTURE</button>
+              <button id="diagnosticCopyBtn" type="button">COPY RESULTS</button>
+              <button id="diagnosticClearBtn" type="button">CLEAR</button>
+            </div>
+            <pre id="diagnosticReadout" aria-live="polite">Capture not started.</pre>
           </div>
         </div>
       </div>
