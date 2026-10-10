@@ -1,12 +1,34 @@
-# Virtual Family Core — Wildlife World
+# Open World Zombie Survival — Prototype
 
-A single-player survival-world prototype built with Three.js. The game uses a seeded, traversable plane with procedural biomes, terrain, roads, a home, harvestable resources, and wildlife. The visual direction is an original low-poly adventure style: readable, approachable forms with a few blocky-survival cues, without copying Minecraft assets.
+A single-player first-person zombie-survival shooter built on the existing Three.js world. The procedural terrain, rivers, roads, homestead, settlement, collision and world map remain the foundation; survival mode adds firearms, hostile infected, loot, safe zones and a landscape FPS HUD. The world stays lightweight and mobile-first rather than replacing the environment with a separate flat shooter arena.
+
+## Zombie survival gameplay
+
+- **Survival entry:** the game opens only after the player enters fullscreen in landscape. Exiting fullscreen brings the gate back; an active run pauses rather than continuing behind browser chrome.
+- **Deployment lobby:** full-screen field-operations staging screen with a selectable loadout, compact persistent-upgrade controls, and a slowly moving infected silhouette in the background.
+- **Mobile controls:** use the left virtual stick to move and drag the right side to look. `SHOOT` fires, hold `AIM` to aim down sights, `RELOAD` reloads, and the ↻ control cycles between the pistol, shotgun and rifle. `RUN`, `JUMP`, and `USE` continue using the world controls.
+- **Desktop controls:** `WASD` moves, mouse look turns, left mouse fires, right mouse aims, `R` reloads, `1`/`2`/`3` switch weapons, and `Z` toggles survival mode.
+- **World-aware encounters:** hostiles spawn on leaving the safe homestead or settlement. They use the current world's ground-height, water and occupancy callbacks instead of a second map.
+- **Safe zones:** the homestead and settlement have animated green forcefields with a pulsing dome, ascending energy bands and moving perimeter lights; the effect warns amber while a zone weakens. Player damage is suppressed inside them, nearby infected retreat, and spawn points avoid the sanctuary. The tactical minimap and full map show boundaries and live hostile positions.
+- **Combat loop:** ammo magazines and reserve ammunition, weapon-specific cadence and spread, hitscan hit detection, headshot multipliers, weapon recoil, muzzle flashes, reload motion, hit/miss screen feedback, impacts, zombie damage/death, ammo drops and medkits. Fire at Will's procedural Web Audio effects provide weapon reports, reload clicks, hit confirmations, zombie noises, pickups and low-health heartbeat without downloading sound files.
+- **Scope:** this is a local single-player prototype. Multiplayer, persistent survival inventory, imported animated zombie models and device-level gameplay verification are not claimed as finished.
+- **Integration notes:** see [`docs/ZOMBIE_SURVIVAL_INTEGRATION.md`](docs/ZOMBIE_SURVIVAL_INTEGRATION.md) for the scene boundaries and known limitations.
+
+## Animation follow-ups
+
+The current branch already has procedural infected walk/attack motion, hit flashes, death shrink/fade, floating/rotating loot, weapon recoil/reload/muzzle flash, and day/night/world-life motion. The highest-value remaining animation work is:
+
+1. Give hits distinct stagger/knockback reactions and make boss slams telegraph, impact, and send a visible shockwave rather than snapping directly into the attack pose.
+2. Give wave start/end, sanctuary collapse/relocation, death, and successful wave-100 completion more authored transitions; safe-zone weakening is animated, but its final break and relocation are not yet a large set piece.
+3. Add a small pickup collection effect (pull-in/snap plus HUD confirmation); loot currently floats and rotates before proximity collection.
+4. Add richer first-person weapon handling—shell ejection, hand motion and weapon-specific recovery—on top of the existing rig recoil, reload, flash and new reticle feedback.
 
 ## Character and water
 
 - **Selectable low-poly characters:** Settings → **Character Model** offers the Quaternius Adventurer, Quaternius Animated Human, Quaternius Animated Woman, the 274 KB Kenney Adventurer, the user-supplied Mixamo Walker, and the original custom model. The Quaternius Adventurer is the default; it is a skinned 1.9 MB GLB with 24 embedded clips. The choice is saved locally, and models are lazy-loaded so only the selected character is active.
 - **Natural movement:** the animator resolves each model's own idle, walk, run, jump, wave, or interaction clips where available. Walking and running stay separate, motion transitions cross-fade, and root translation remains controlled by game physics. Rigs without a jump clip retain the procedural airborne pose; models without a swim clip get a baseline-relative, blended breaststroke and alternating kick that does not accumulate joint drift. The procedural adventurer remains visible while a model loads or if a file fails.
 - **Asset provenance:** the three Quaternius models sourced from Poly Pizza are CC0; the Kenney model is CC0 and includes Kenney's license file. The Mixamo Walker and original custom model were supplied by the repository owner, and their licenses are not asserted as CC0. Source details are recorded in `public/models/characters/ASSET_CREDITS.md`.
+- **Character action foundation:** the default Adventurer exposes animation-only `playAction('attack' | 'cast' | 'hit' | 'death')` and `hasAction()` APIs. Attack, hit and death use verified embedded clips; `cast` uses an interaction fallback until a spell-specific rig is piloted. The full inventory and cleanup evidence are in [`docs/CHARACTER_ASSET_AUDIT.md`](docs/CHARACTER_ASSET_AUDIT.md), and reusable primitive VFX are in `src/magic-effects.ts`.
 - **Carved lake basins:** freshwater lakes depress the underlying terrain rather than sitting on grass. Water coverage is based on the carved basin floor and clipped to the shoreline, preventing dry holes inside submerged basins and square patches over land. Sloped banks transition to sand and silt-colored lakebeds, with depth reflected in the animated surface.
 - **Swimming:** enter a sufficiently deep lake to float near the waterline. Movement is slower and eases into/out of motion; buoyancy keeps the character near the surface by default. Rise above the waterline or dive below it, with underwater camera fog when the view is submerged.
 - **Touch support:** the existing virtual stick handles swimming movement. The **JUMP** button becomes **RISE**, and a **DIVE** button appears while swimming.

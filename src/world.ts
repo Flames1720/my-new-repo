@@ -434,6 +434,12 @@ function hydrologyRainfallAt(x: number, z: number): number {
   return clamp(rain * runoffBias, 0.08, 0.98);
 }
 
+function applyOuterCoast(h: number, x: number, z: number): number {
+  const edgeT = clamp((Math.hypot(x, z) - 208) / 40, 0, 1);
+  const edgeBlend = edgeT * edgeT * (3 - 2 * edgeT);
+  return Math.max(0.2, h + (0.2 - h) * edgeBlend);
+}
+
 function hydrologyBaseElevationAt(x: number, z: number): number {
   let h = rawTerrainHeightAt(x, z);
 
@@ -442,7 +448,7 @@ function hydrologyBaseElevationAt(x: number, z: number): number {
   if (nearHome(x, z)) h = Math.max(h, HOME_BASE_HEIGHT + 0.65);
   if (nearVillage(x, z)) h = Math.max(h, VILLAGE_BASE_HEIGHT + 0.65);
 
-  return h;
+  return applyOuterCoast(h, x, z);
 }
 
 function buildHydrology(): HydrologyGrid {
@@ -997,6 +1003,9 @@ function shoreWeight(grid: HydrologyGrid, gx: number, gz: number): number {
 // Pure hydrology lookup. Must never call terrainHeightAt(): the carve depends
 // on it, and waterDepthAt depends on the carved terrain.
 function waterColumnAt(x: number, z: number): WaterColumn | null {
+  // Guaranteed outer ocean ring: this keeps the finite play space an island even
+  // where the procedural mountain field would otherwise rise above sea level.
+  if (Math.hypot(x, z) >= 248) return { surface: WATER_LEVEL, depth: WATER_LEVEL - 0.2, shore: 1, ocean: true };
   if (nearHome(x, z) || nearVillage(x, z)) return null;
 
   const grid = hydrologyGrid();
@@ -1007,18 +1016,8 @@ function waterColumnAt(x: number, z: number): WaterColumn | null {
     return { surface: WATER_LEVEL, depth: 0, shore: 1, ocean: true };
   }
 
-  // Nearest-cell classification stays authoritative (no leakage across dry
-  // ridges); only scalar fields are interpolated inside the classified body.
-  if (grid.lakeMask[cell.i]) {
-    const surface = Math.max(WATER_LEVEL, bilinear(grid.filledElevation, gx, gz));
-    const depth = bilinearWeighted(grid.waterDepth, grid.waterPresence, gx, gz);
-    return {
-      surface,
-      depth: Math.min(Math.max(0, depth), Math.max(0, surface - 0.2)),
-      shore: shoreWeight(grid, gx, gz),
-      ocean: false,
-    };
-  }
+  // Large inland lakes are disabled in zombie survival; keep narrow rivers/streams.
+  if (grid.lakeMask[cell.i]) return null;
 
   if (grid.channelStrength[cell.i] > 0.02 && grid.waterPresence[cell.i] > 0.001) {
     const surface = bilinearWeighted(grid.waterSurface, grid.waterPresence, gx, gz);
@@ -1226,30 +1225,12 @@ export function waterFlowAt(x: number, z: number): {
 // ============================================================================
 
 export function geologicalBasinDepressionAt(x: number, z: number): number {
-  // These are geological depressions; the hydrology solver decides whether
-  // they become lakes.
-  const basins = [
-    { x: -85, z: -65, radius: 44, depth: 6.2 },
-    { x: 150, z: 58, radius: 30, depth: 3.8 },
-  ];
-
-  let depression = 0;
-  for (const basin of basins) {
-    const d = Math.hypot(x - basin.x, z - basin.z);
-    if (d >= basin.radius) continue;
-
-    const t = 1 - d / basin.radius;
-    const smooth = t * t * (3 - 2 * t);
-    depression = Math.max(depression, smooth * basin.depth);
-  }
-
-  // Broad continental shelf: the playable land naturally meets open ocean
-  // instead of ending in a vertical square-world wall.
+  // Zombie survival has no large inland lake basins: keep the interior land
+  // continuous and reserve the broad water body for the island's outer coast.
   const radial = Math.hypot(x, z);
   const coastT = clamp((radial - 242) / 78, 0, 1);
   const shelf = coastT * coastT * (3 - 2 * coastT) * 5.8;
-
-  return depression + shelf;
+  return shelf;
 }
 
 export function rawTerrainHeightAt(x: number, z: number): number {
@@ -1278,7 +1259,9 @@ function terrainBaseHeightAt(x: number, z: number): number {
     ground = ground + (VILLAGE_BASE_HEIGHT - ground) * (t * t * (3 - 2 * t) * 0.7);
   }
 
-  return Math.max(0.2, ground);
+  // Use the same outer-coast adjustment as hydrology so river surfaces, water
+  // depth and collision remain aligned as the terrain falls into the ocean.
+  return applyOuterCoast(ground, x, z);
 }
 
 export function terrainHeightAt(x: number, z: number): number {
@@ -1295,7 +1278,8 @@ export function waterDepthAt(x: number, z: number): number {
   if (!col) return 0;
 
   if (col.ocean) {
-    return Math.max(0, WATER_LEVEL - terrainBaseHeightAt(x, z));
+    // Ocean depth follows the same terrain surface used for collision and rendering.
+    return Math.max(0, WATER_LEVEL - terrainHeightAt(x, z));
   }
 
   // Depth is measured against the SAME carved terrain the mesh, colouring and

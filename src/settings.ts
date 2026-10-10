@@ -3,9 +3,13 @@ import type { SettingsState } from './types';
 const SETTINGS_KEY = 'world-wildlife-settings-v1';
 
 export const defaultSettings: SettingsState = {
-  sensitivityX: 1.0,
-  sensitivityY: 1.0,
+  sensitivityX: 180,
+  sensitivityY: 100,
+  adsSensitivity: 0.5,
   invertY: false,
+  cameraAcceleration: 'fixed',
+  cameraAccelerationStrength: 0.65,
+  cameraAccelerationThreshold: 1.0,
   graphics: 'high',
   weatherMode: 'dynamic',
   chunkRadius: 6,
@@ -29,6 +33,26 @@ class SettingsManager {
       if (raw) {
         const parsed = JSON.parse(raw);
         this.current = { ...defaultSettings, ...parsed };
+        // Migrate older multiplier-based camera settings into degree-based values.
+        if (typeof parsed.sensitivityX !== 'number' || parsed.sensitivityX <= 3) {
+          this.current.sensitivityX = defaultSettings.sensitivityX;
+        }
+        if (typeof parsed.sensitivityY !== 'number' || parsed.sensitivityY <= 3) {
+          this.current.sensitivityY = defaultSettings.sensitivityY;
+        }
+        if (!Number.isFinite(this.current.adsSensitivity)) this.current.adsSensitivity = defaultSettings.adsSensitivity;
+        this.current.adsSensitivity = Math.max(0.25, Math.min(1, this.current.adsSensitivity));
+        if (!['fixed', 'distance', 'speed'].includes(this.current.cameraAcceleration)) {
+          this.current.cameraAcceleration = defaultSettings.cameraAcceleration;
+        }
+        if (!Number.isFinite(this.current.cameraAccelerationStrength)) {
+          this.current.cameraAccelerationStrength = defaultSettings.cameraAccelerationStrength;
+        }
+        this.current.cameraAccelerationStrength = Math.max(0, Math.min(2, this.current.cameraAccelerationStrength));
+        if (!Number.isFinite(this.current.cameraAccelerationThreshold)) {
+          this.current.cameraAccelerationThreshold = defaultSettings.cameraAccelerationThreshold;
+        }
+        this.current.cameraAccelerationThreshold = Math.max(0.5, Math.min(2, this.current.cameraAccelerationThreshold));
       }
     } catch {
       this.current = { ...defaultSettings };

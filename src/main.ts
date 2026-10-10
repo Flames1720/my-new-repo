@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import './style.css';
-import type { Mode, EmoteKind, HomeLevel, ResourceKind, ResourceDef, PlayerProfile, Species, CharacterModelId } from './types';
+import './ui-modern.css';
+import type { Mode, EmoteKind, HomeLevel, ResourceKind, ResourceDef, PlayerProfile, CharacterModelId } from './types';
 import {
   SEED,
   SIZE,
@@ -34,14 +35,16 @@ import {
   lerp,
 } from './terrain';
 import { isCharacterModelId, PLAYER_CHARACTER_MODELS, PlayerCharacter } from './character';
+import { createMagicBurst, disposeMagicEffect, MagicProjectileEffect, type MagicElement } from './magic-effects';
 import { WeatherSystem } from './weather';
 import { buildHome, buildVillage, buildBridge, HOME_UPGRADE_COSTS } from './settlement';
-import { WildlifeSystem, isSharedAnimalAsset, speciesColor, SPECIES_NAME, SPECIES_ICON } from './fauna';
 import { MinimapSystem } from './minimap';
 import { settings } from './settings';
 import { WorldSurvey, type SurveyView } from './survey';
 import { voxelWorld, buildVoxelWorldVolumeMesh, buildVoxelWorldWaterVolumeMesh, type VoxelEdit } from './voxel';
 import { environmentAssets } from './environment-assets';
+import { ZombieSurvivalSystem, type SurvivalStatus, type SurvivalWeaponId } from './zombie-survival';
+import { survivalSound } from './survival-audio';
 
 type Save = {
   version: 2;
@@ -49,7 +52,6 @@ type Save = {
   camera: { yaw: number; pitch: number; distance: number };
   changes: Record<string, string[]>;
   inventory: Record<string, number>;
-  wildlifeTrust?: Record<string, number>;
   worldTime?: number;
   homeLevel?: HomeLevel;
   voxelEdits?: VoxelEdit[];
@@ -63,11 +65,11 @@ const angleLerp = (a: number, b: number, t: number) => a + Math.atan2(Math.sin(b
 
 // --- RESOURCE DEFINITIONS ---
 const RESOURCE_DEFS: Record<ResourceKind, ResourceDef> = {
-  oak: { family: 'tree', hitsToFell: 3, regrowSeconds: 180, colliderRadius: 0.72, yieldItem: 'Wood', yieldQty: [2, 4], trunkColor: 0x694b35, crownColor: 0x3d7148 },
-  ancient_oak: { family: 'tree', hitsToFell: 6, regrowSeconds: 320, colliderRadius: 1.45, yieldItem: 'Wood', yieldQty: [6, 12], bonusItem: 'Fruit', bonusQty: [2, 5], trunkColor: 0x513824, crownColor: 0x2e5c38 },
-  pine: { family: 'tree', hitsToFell: 2, regrowSeconds: 140, colliderRadius: 0.6, yieldItem: 'Pine Wood', yieldQty: [1, 3], trunkColor: 0x5b4330, crownColor: 0x2e5c3e },
-  fruit: { family: 'tree', hitsToFell: 4, regrowSeconds: 220, colliderRadius: 0.72, yieldItem: 'Wood', yieldQty: [1, 3], bonusItem: 'Fruit', bonusQty: [2, 5], trunkColor: 0x6b4a32, crownColor: 0x4a7a3f, fruitColor: 0xcc4433 },
-  palm: { family: 'tree', hitsToFell: 3, regrowSeconds: 200, colliderRadius: 0.55, yieldItem: 'Palm Wood', yieldQty: [1, 2], trunkColor: 0x8a6a3f, crownColor: 0x4f8a3d },
+  oak: { family: 'tree', hitsToFell: 3, regrowSeconds: 180, colliderRadius: 0.72, yieldItem: 'Wood', yieldQty: [2, 4], trunkColor: 0x625b48, crownColor: 0x505744 },
+  ancient_oak: { family: 'tree', hitsToFell: 6, regrowSeconds: 320, colliderRadius: 1.45, yieldItem: 'Wood', yieldQty: [6, 12], bonusItem: 'Fruit', bonusQty: [2, 5], trunkColor: 0x4c473b, crownColor: 0x41493b },
+  pine: { family: 'tree', hitsToFell: 2, regrowSeconds: 140, colliderRadius: 0.6, yieldItem: 'Pine Wood', yieldQty: [1, 3], trunkColor: 0x514b40, crownColor: 0x3f493c },
+  fruit: { family: 'tree', hitsToFell: 4, regrowSeconds: 220, colliderRadius: 0.72, yieldItem: 'Wood', yieldQty: [1, 3], bonusItem: 'Fruit', bonusQty: [2, 5], trunkColor: 0x625744, crownColor: 0x545b43, fruitColor: 0x8c4338 },
+  palm: { family: 'tree', hitsToFell: 3, regrowSeconds: 200, colliderRadius: 0.55, yieldItem: 'Palm Wood', yieldQty: [1, 2], trunkColor: 0x74664d, crownColor: 0x545c43 },
   rock: { family: 'rock', hitsToFell: 3, regrowSeconds: Infinity, colliderRadius: 0.55, yieldItem: 'Stone', yieldQty: [2, 4], rockColor: 0x8c8f93 },
   boulder: { family: 'rock', hitsToFell: 6, regrowSeconds: Infinity, colliderRadius: 0.95, yieldItem: 'Stone', yieldQty: [5, 9], bonusItem: 'Ore', bonusQty: [1, 2], rockColor: 0x6f7378 },
 };
@@ -95,9 +97,30 @@ function pickTreeKind(cx: number, cz: number, i: number, tx: number, tz: number)
   return 'oak';
 }
 
+const ruinedTreeMaterials = new WeakSet<THREE.Material>();
+const ruinedFoliageTint = new THREE.Color(0x565b48);
+const ruinedBarkTint = new THREE.Color(0x655a4a);
+
+function tintTreeForOutbreak(root: THREE.Group): void {
+  root.traverse(object => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      if (ruinedTreeMaterials.has(material)) continue;
+      const color = (material as THREE.MeshStandardMaterial).color;
+      if (color instanceof THREE.Color) {
+        if (color.g > color.r * 1.08 && color.g > color.b * 1.04) color.lerp(ruinedFoliageTint, 0.58);
+        else if (color.r > color.g && color.g > color.b) color.lerp(ruinedBarkTint, 0.22);
+      }
+      ruinedTreeMaterials.add(material);
+    }
+  });
+}
+
 function buildTree(kind: ResourceKind, lod: number): THREE.Group {
   const assetTree = environmentAssets.createTree(kind, lod);
   if (assetTree) {
+    tintTreeForOutbreak(assetTree);
     const def = RESOURCE_DEFS[kind];
     if (kind === 'fruit') {
       const fruitMat = new THREE.MeshStandardMaterial({ color: def.fruitColor ?? 0xcc4433, roughness: 0.6 });
@@ -423,9 +446,9 @@ terrainMaterial.onBeforeCompile = shader => {
 
 // --- SCENE SETUP ---
 const scene = new THREE.Scene();
-const skyColor = new THREE.Color(0x9fc7df);
+const skyColor = new THREE.Color(0x82877f);
 scene.background = skyColor;
-scene.fog = new THREE.Fog(0x9fc7df, 140, 950);
+scene.fog = new THREE.Fog(0x82877f, 105, 700);
 const gameplayFog = scene.fog;
 
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 1200);
@@ -436,9 +459,9 @@ renderer.shadowMap.enabled = !LOW_POWER_MODE;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.querySelector('#game')!.appendChild(renderer.domElement);
 
-const hemisphere = new THREE.HemisphereLight(0xdceeff, 0x405044, 2.2);
+const hemisphere = new THREE.HemisphereLight(0xb6b8a9, 0x302f2b, 1.65);
 scene.add(hemisphere);
-const sun = new THREE.DirectionalLight(0xfff0d0, 3.0);
+const sun = new THREE.DirectionalLight(0xcac2a4, 2.4);
 sun.position.set(35, 70, 25);
 sun.castShadow = !LOW_POWER_MODE;
 sun.shadow.mapSize.set(LOW_POWER_MODE ? 512 : 1024, LOW_POWER_MODE ? 512 : 1024);
@@ -522,11 +545,11 @@ function createDistantHorizon(): THREE.Mesh {
 const distantHorizonMesh = createDistantHorizon();
 scene.add(distantHorizonMesh);
 
-const daySky = new THREE.Color(0x9fc7df);
-const nightSky = new THREE.Color(0x182436);
-const twilightSky = new THREE.Color(0xc78b76);
+const daySky = new THREE.Color(0x82877f);
+const nightSky = new THREE.Color(0x111923);
+const twilightSky = new THREE.Color(0x8e584b);
 const underwaterFogColor = new THREE.Color(0x15566b);
-const rainySky = new THREE.Color(0x566775);
+const rainySky = new THREE.Color(0x41494c);
 
 let skyTimer = 0;
 let underwater = false;
@@ -553,8 +576,8 @@ function updateSky(dt: number, rainDim: number, lightningFlash: number) {
   if (scene.fog) {
     const fog = scene.fog as THREE.Fog;
     fog.color.copy(underwater ? underwaterFogColor : skyColor);
-    fog.near = underwater ? 1.5 : rainDim > 0.5 ? 40 : 130;
-    fog.far = underwater ? 22 : rainDim > 0.5 ? 240 : 950;
+    fog.near = underwater ? 1.5 : rainDim > 0.5 ? 35 : 100;
+    fog.far = underwater ? 22 : rainDim > 0.5 ? 220 : 700;
   }
 
   hemisphere.intensity = (0.45 + daylight * 1.65) * (1 - rainDim * 0.4) + lightningFlash * 1.2;
@@ -593,22 +616,30 @@ function updateSky(dt: number, rainDim: number, lightningFlash: number) {
   starMat.opacity = clamp((1 - daylight * 1.4) * 0.88 - rainDim * 0.75, 0, 0.88);
 }
 
-// --- GEOGRAPHICAL HIGH-MOUNTAIN CLOUD & MIST DECK ---
-// Clouds intersect mountain ranges, letting high summits soar above the cloud deck
+// --- SCATTERED HIGH CLOUDS ---
+// Separated overlapping puffs replace the opaque-looking world-sized sheet.
 const cloudDeckGroup = new THREE.Group();
-cloudDeckGroup.name = 'mountain-cloud-deck';
+cloudDeckGroup.name = 'scattered-sky-clouds';
 const cloudDeckMat = new THREE.MeshBasicMaterial({
-  color: 0xe8f0f5,
-  transparent: true,
-  opacity: 0.28,
-  depthWrite: false,
-  side: THREE.DoubleSide,
+  color: 0xf4f8fc, transparent: true, opacity: 0.20, depthWrite: false, fog: false,
 });
-const cloudDeckGeo = new THREE.PlaneGeometry(850, 850, 16, 16);
-const cloudDeckMesh = new THREE.Mesh(cloudDeckGeo, cloudDeckMat);
-cloudDeckMesh.rotation.x = -Math.PI / 2;
-cloudDeckMesh.position.set(0, 105.0, 0);
-cloudDeckGroup.add(cloudDeckMesh);
+const cloudPuffGeo = new THREE.SphereGeometry(1, LOW_POWER_MODE ? 7 : 10, LOW_POWER_MODE ? 5 : 7);
+for (let i = 0; i < 11; i++) {
+  const cluster = new THREE.Group();
+  const angle = i * 2.399963;
+  const radius = 125 + ((i * 71) % 245);
+  cluster.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+  cluster.rotation.y = angle * 0.7;
+  for (let p = 0, count = 3 + (i % 3); p < count; p++) {
+    const puff = new THREE.Mesh(cloudPuffGeo, cloudDeckMat);
+    const spread = p === 0 ? 0 : 9 + ((i * 7 + p * 11) % 15);
+    const a = p * 2.4 + i * 0.53;
+    puff.position.set(Math.cos(a) * spread, (p % 2) * 1.8, Math.sin(a) * spread);
+    puff.scale.set(13 + ((i * 5 + p * 7) % 19), 4.5 + ((i + p * 3) % 5), 8 + ((i * 3 + p * 9) % 13));
+    cluster.add(puff);
+  }
+  cloudDeckGroup.add(cluster);
+}
 scene.add(cloudDeckGroup);
 
 const world = new THREE.Group(), actors = new THREE.Group();
@@ -673,14 +704,148 @@ if (settings.current.characterModel !== initialCharacterModel) {
 }
 const player = new PlayerCharacter(LOW_POWER_MODE, initialCharacterModel);
 actors.add(player.root);
+// The starting lobby and survival mode are first-person: don't render the avatar
+// in the menu while the world waits for the player to begin.
+player.root.visible = false;
 
-let fauna: WildlifeSystem | null = null;
+type ImpactEffect = { object: THREE.Group; age: number; lifetime: number };
+type BurnEffect = { object: THREE.Group; root: THREE.Group; age: number; lifetime: number };
+const fireProjectiles: MagicProjectileEffect[] = [];
+const impactEffects: ImpactEffect[] = [];
+const burnEffects: BurnEffect[] = [];
+const combatTargetMarker = new THREE.Mesh(
+  new THREE.RingGeometry(0.34, 0.46, 20),
+  new THREE.MeshBasicMaterial({ color: 0xff5533, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+);
+combatTargetMarker.name = 'combat-target-marker';
+combatTargetMarker.rotation.x = -Math.PI / 2;
+combatTargetMarker.visible = false;
+scene.add(combatTargetMarker);
+
+function setEffectOpacity(root: THREE.Object3D, opacity: number) {
+  root.traverse(object => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      material.transparent = true;
+      material.opacity = opacity;
+    }
+  });
+}
+
+function spawnMagicImpact(element: MagicElement, position: THREE.Vector3, radius = 0.42) {
+  const object = createMagicBurst(element, radius);
+  object.position.copy(position);
+  impactEffects.push({ object, age: 0, lifetime: element === 'fire' ? 0.42 : 0.28 });
+  scene.add(object);
+}
+
+function spawnFireImpact(position: THREE.Vector3) {
+  spawnMagicImpact('fire', position);
+}
+
+function spawnBurnEffect(root: THREE.Group) {
+  const object = createMagicBurst('fire', 0.32);
+  burnEffects.push({ object, root, age: 0, lifetime: 3.0 });
+  scene.add(object);
+}
+
+function spawnFireProjectile(directionOverride?: THREE.Vector3) {
+  const origin = player.root.position.clone();
+  const direction = directionOverride?.clone() ?? new THREE.Vector3(Math.sin(player.root.rotation.y), 0, Math.cos(player.root.rotation.y));
+  direction.y = 0;
+  direction.normalize();
+  origin.y += player.swimming ? 0.35 : 1.15;
+  origin.addScaledVector(direction, 0.65);
+  const projectile = new MagicProjectileEffect('fire', origin, direction, 9, 1.15);
+  fireProjectiles.push(projectile);
+  scene.add(projectile.object);
+}
+
+function updateMagicEffects(dt: number) {
+  for (let i = fireProjectiles.length - 1; i >= 0; i--) {
+    const projectile = fireProjectiles[i];
+    const previous = projectile.object.position.clone();
+    const alive = projectile.update(dt);
+    const p = projectile.object.position;
+    const terrainImpact = p.y <= terrainHeightAt(p.x, p.z) + 0.12;
+    if (!alive || terrainImpact) {
+      if (terrainImpact) spawnFireImpact(p);
+      scene.remove(projectile.object);
+      projectile.dispose();
+      fireProjectiles.splice(i, 1);
+    } else if (waterAt(p.x, p.z) && p.y <= waterSurfaceAt(p.x, p.z) + 0.1) {
+      spawnFireImpact(previous);
+      scene.remove(projectile.object);
+      projectile.dispose();
+      fireProjectiles.splice(i, 1);
+    }
+  }
+
+  for (let i = impactEffects.length - 1; i >= 0; i--) {
+    const effect = impactEffects[i];
+    effect.age += dt;
+    const progress = clamp(effect.age / effect.lifetime, 0, 1);
+    effect.object.scale.setScalar(0.55 + progress * 1.65);
+    setEffectOpacity(effect.object, 0.9 * (1 - progress));
+    if (progress >= 1) {
+      scene.remove(effect.object);
+      disposeMagicEffect(effect.object);
+      impactEffects.splice(i, 1);
+    }
+  }
+
+  for (let i = burnEffects.length - 1; i >= 0; i--) {
+    const effect = burnEffects[i];
+    effect.age += dt;
+    effect.object.position.copy(effect.root.position);
+    effect.object.position.y += 0.75;
+    const progress = clamp(effect.age / effect.lifetime, 0, 1);
+    effect.object.scale.setScalar(0.65 + Math.sin(effect.age * 18) * 0.08 + progress * 0.55);
+    setEffectOpacity(effect.object, 0.78 * (1 - progress));
+    if (progress >= 1 || !effect.root.parent) {
+      scene.remove(effect.object);
+      disposeMagicEffect(effect.object);
+      burnEffects.splice(i, 1);
+    }
+  }
+}
+
+function performMelee(kind: 'attack' | 'punch' | 'kick') {
+  const target = getAimTarget(true, true);
+  if (!player.playAction(kind)) return;
+  const damage = kind === 'attack' ? 32 : kind === 'kick' ? 26 : 22;
+  say(kind === 'attack' ? 'Sword slash' : kind === 'kick' ? 'Round kick' : 'Fast punch');
+}
+
+function triggerSwordAttack() {
+  performMelee('attack');
+}
+
+function triggerPunch() {
+  performMelee('punch');
+}
+
+function triggerKick() {
+  performMelee('kick');
+}
+
+function triggerFireCast() {
+  if (!player.playAction('cast')) return;
+  const target = getAimTarget(true, true);
+  const origin = player.root.position.clone().setY(player.root.position.y + (player.swimming ? 0.35 : 1.15));
+  const direction = target
+    ? target.position.clone().add(new THREE.Vector3(0, 0.75, 0)).sub(origin).normalize()
+    : new THREE.Vector3(Math.sin(player.root.rotation.y), 0, Math.cos(player.root.rotation.y));
+  spawnFireProjectile(direction);
+  say('Fire bolt');
+}
 
 function disposeWorldObjects(root: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
   root.traverse(o => {
     if (!(o instanceof THREE.Mesh)) return;
-    if (!isSharedAnimalAsset(o.geometry) && !environmentAssets.isSharedGeometry(o.geometry) && !geometries.has(o.geometry)) {
+    if (!environmentAssets.isSharedGeometry(o.geometry) && !geometries.has(o.geometry)) {
       geometries.add(o.geometry);
       o.geometry.dispose();
     }
@@ -691,7 +856,6 @@ function disposeWorldObjects(root: THREE.Object3D) {
         material !== terrainMaterial &&
         material !== waterfallMaterial &&
         material !== springMaterial &&
-        !isSharedAnimalAsset(material) &&
         !environmentAssets.isSharedMaterial(material) &&
         !materials.has(material)
       ) {
@@ -777,9 +941,9 @@ class Chunks {
     // mesh can display, creating apparent raised riverbank ledges.
     const segs =
       lod === 0
-        ? (LOW_POWER_MODE ? 16 : lodSetting === 'ultra' ? 32 : 16)
+        ? (LOW_POWER_MODE ? 24 : lodSetting === 'ultra' ? 64 : lodSetting === 'balanced' ? 40 : 24)
         : lod === 1
-        ? 16
+        ? 20
         : 8;
     const terrain = new THREE.PlaneGeometry(SIZE, SIZE, segs, segs);
     terrain.rotateX(-Math.PI / 2);
@@ -1101,8 +1265,6 @@ class Chunks {
       }
     }
 
-    fauna?.spawnChunk(cx, cz, lod, g);
-
     // Spawn Home in (0,0) chunk
     if (cx === 0 && cz === 0) {
       const isDoorOpen = (this.changes['0,0'] || []).includes('door-open');
@@ -1127,7 +1289,6 @@ class Chunks {
     for (const [k, g] of this.loaded) {
       const [a, b] = k.split(',').map(Number);
       if (Math.abs(a - cx) > radius || Math.abs(b - cz) > radius) {
-        fauna?.removeChunk(k);
         this.releaseChunk(g);
         world.remove(g);
         this.loaded.delete(k);
@@ -1145,7 +1306,6 @@ class Chunks {
         if (!existing) {
           this.build(x, z, lod);
         } else if (existing.userData.lod > lod) {
-          fauna?.removeChunk(key);
           this.releaseChunk(existing);
           world.remove(existing);
           this.loaded.delete(key);
@@ -1171,7 +1331,6 @@ class Chunks {
           if (!this.loaded.has(key)) this.build(x, z, 0);
           else if (this.loaded.get(key)?.userData.lod !== 0) {
             const old = this.loaded.get(key)!;
-            fauna?.removeChunk(key);
             this.releaseChunk(old);
             world.remove(old);
             this.loaded.delete(key);
@@ -1276,7 +1435,6 @@ function saveNow() {
     camera: { yaw: camYaw, pitch: camPitch, distance: camDistance },
     changes: chunks.changes,
     inventory,
-    wildlifeTrust: fauna?.trust ?? save.wildlifeTrust ?? {},
     worldTime,
     homeLevel: chunks.homeLevel,
     voxelEdits: voxelWorld.edits(),
@@ -1295,8 +1453,10 @@ function physicalGroundHeightAt(x: number, z: number): number {
 
 // --- INPUTS & CONTROLS ---
 const keys = new Set<string>();
+let survival: ZombieSurvivalSystem;
 const keyboardKeys = new Set<string>();
 const pointerKeys = new Map<string, Set<number>>();
+let hudEditMode = false;
 
 function syncKeyState(key: string) {
   if (keyboardKeys.has(key) || (pointerKeys.get(key)?.size ?? 0) > 0) keys.add(key);
@@ -1310,13 +1470,26 @@ function isInteractiveTarget(target: EventTarget | null) {
 addEventListener('keydown', e => {
   const key = e.key.toLowerCase();
   if (isInteractiveTarget(e.target)) return;
+  if (survival?.enabled) survival.activateAudio();
   keyboardKeys.add(key);
   syncKeyState(key);
   if (key === ' ' || key.startsWith('arrow')) e.preventDefault();
   if (key === 'f') mode = 'fpp';
-  if (key === 'c') mode = 'tpp';
+  if (key === 'c' && !survival?.enabled) mode = 'tpp';
+  if (!e.repeat && key === 'c' && survival?.enabled) triggerSlide();
   if (!e.repeat && key === 'e') interact();
-  if (!e.repeat && key === 'b') toggleEmoteBar();
+  if (!e.repeat && key === 'q' && !survival?.enabled) triggerSwordAttack();
+  if (!e.repeat && key === 'z') setSurvivalEnabled(!survival.enabled);
+  if (!e.repeat && key === 'x' && !survival?.enabled) triggerKick();
+  if (!e.repeat && key === 'v' && !survival?.enabled) player.playAction('roll') && say('Dodge roll');
+  if (!e.repeat && key === 'r') {
+    if (survival?.enabled) survival.reload();
+    else triggerFireCast();
+  }
+  if (!e.repeat && key === '1' && survival?.enabled) survival.switchWeapon('pistol');
+  if (!e.repeat && key === '2' && survival?.enabled) survival.switchWeapon('shotgun');
+  if (!e.repeat && key === '3' && survival?.enabled) survival.switchWeapon('rifle');
+  if (!e.repeat && key === 'b' && !survival?.enabled) toggleEmoteBar();
   if (!e.repeat && key === 'p') togglePhotoMode();
 });
 addEventListener('keyup', e => {
@@ -1334,6 +1507,16 @@ let surveyLastMidY = 0;
 let surveyMoved = false;
 const gameDom = renderer.domElement;
 
+let lookGestureDistance = 0;
+let lastLookMoveAt = 0;
+
+function beginLookGesture(clientX: number, clientY: number) {
+  lastX = clientX;
+  lastY = clientY;
+  lookGestureDistance = 0;
+  lastLookMoveAt = performance.now();
+}
+
 function onLookMove(clientX: number, clientY: number) {
   const dx = clientX - lastX;
   const dy = clientY - lastY;
@@ -1346,12 +1529,45 @@ function onLookMove(clientX: number, clientY: number) {
   lastX = clientX;
   lastY = clientY;
 
-  const sensX = settings.current.sensitivityX;
-  const sensY = settings.current.sensitivityY;
-  const invertY = settings.current.invertY ? -1 : 1;
+  const now = performance.now();
+  const elapsed = Math.max(0.008, (now - (lastLookMoveAt || now - 16)) / 1000);
+  lastLookMoveAt = now;
+  lookGestureDistance += Math.hypot(dx, dy);
 
-  targetYaw -= dx * 0.008 * sensX;
-  targetPitch = clamp(targetPitch - dy * 0.006 * sensY * invertY, -1.2, 0.95);
+  const touchLookRect = IS_TOUCH_DEVICE ? lookZone.getBoundingClientRect() : null;
+  const lookWidth = Math.max(1, touchLookRect && touchLookRect.width > 0 ? touchLookRect.width : window.innerWidth);
+  const lookHeight = Math.max(1, touchLookRect && touchLookRect.height > 0 ? touchLookRect.height : window.innerHeight);
+  const accelerationMode = settings.current.cameraAcceleration;
+  const accelerationStrength = Math.max(0, Math.min(2, settings.current.cameraAccelerationStrength));
+  const accelerationThreshold = Math.max(0.5, Math.min(2, settings.current.cameraAccelerationThreshold));
+  let acceleration = 1;
+  if (accelerationMode === 'distance') {
+    const distanceFactor = clamp(
+      lookGestureDistance / Math.max(100, lookWidth * 0.76 * accelerationThreshold),
+      0,
+      1
+    );
+    acceleration += accelerationStrength * distanceFactor;
+  } else if (accelerationMode === 'speed') {
+    const speedPxPerSecond = Math.hypot(dx, dy) / elapsed;
+    acceleration += accelerationStrength * clamp(speedPxPerSecond / (1100 * accelerationThreshold), 0, 1);
+  }
+
+  const adsMultiplier = survival?.enabled && keys.has('aim') ? settings.current.adsSensitivity : 1;
+  const sensX = settings.current.sensitivityX * adsMultiplier;
+  const sensY = settings.current.sensitivityY * adsMultiplier;
+  const invertY = settings.current.invertY ? -1 : 1;
+  // Sensitivity is degrees per swipe spanning the active look zone (right half on touch, viewport on desktop).
+  // Separate pointer IDs let the left thumb move while another finger looks,
+  // aims, shoots or taps ADS without cancelling either gesture.
+  // Drag direction follows the thumb: swipe left turns the view left, swipe right turns right.
+  // Vertical look is deliberately gentler to make fine aiming and looking around controllable on mobile.
+  targetYaw -= (dx / lookWidth) * (sensX * Math.PI / 180) * acceleration;
+  targetPitch = clamp(
+    targetPitch - (dy / lookHeight) * (sensY * 0.7 * Math.PI / 180) * invertY * acceleration,
+    -1.15,
+    1.15
+  );
 }
 
 gameDom.addEventListener('pointerdown', e => {
@@ -1368,8 +1584,7 @@ gameDom.addEventListener('pointerdown', e => {
     return;
   }
   pointer = e.pointerId;
-  lastX = e.clientX;
-  lastY = e.clientY;
+  beginLookGesture(e.clientX, e.clientY);
   gameDom.setPointerCapture(e.pointerId);
 });
 gameDom.addEventListener('pointermove', e => {
@@ -1426,7 +1641,9 @@ gameDom.addEventListener('wheel', e => {
   targetDistance = clamp(targetDistance + e.deltaY * 0.008, 2.2, 13);
 }, { passive: false });
 
-// Virtual Joystick for Mobile
+// Full left half: dynamic touch-following movement joystick.
+// Its anchor appears exactly where the thumb lands, then follows that pointer only.
+const leftMoveZone = document.querySelector('#leftMoveZone') as HTMLElement;
 const stick = document.querySelector('#stick') as HTMLElement;
 const knob = document.querySelector('#knob') as HTMLElement;
 let joy = { x: 0, y: 0 }, joyActive = false, joyPointer: number | null = null;
@@ -1438,25 +1655,29 @@ const moveJoy = (e: PointerEvent) => {
   const cy = r.top + r.height / 2;
   let x = e.clientX - cx, y = e.clientY - cy;
   const l = Math.hypot(x, y);
-  const m = 44;
-  if (l > m) {
+  const m = Math.min(48, r.width * 0.43);
+  if (l > m && l > 0) {
     x = (x / l) * m;
     y = (y / l) * m;
   }
-  joy = { x: x / m, y: y / m };
+  joy = l > 0 ? { x: x / m, y: y / m } : { x: 0, y: 0 };
   knob.style.transform = `translate(${x}px,${y}px)`;
 };
 
-stick.addEventListener('pointerdown', e => {
+leftMoveZone.addEventListener('pointerdown', e => {
+  if (hudEditMode || joyPointer !== null || (e.pointerType === 'mouse' && !IS_TOUCH_DEVICE)) return;
   e.preventDefault();
   e.stopPropagation();
-  if (joyPointer !== null) return;
   joyPointer = e.pointerId;
   joyActive = true;
-  stick.setPointerCapture(e.pointerId);
+  stick.style.left = `${e.clientX}px`;
+  stick.style.top = `${e.clientY}px`;
+  stick.style.bottom = 'auto';
+  stick.classList.add('active');
+  leftMoveZone.setPointerCapture(e.pointerId);
   moveJoy(e);
 });
-stick.addEventListener('pointermove', moveJoy);
+leftMoveZone.addEventListener('pointermove', moveJoy);
 const endJoy = (e: PointerEvent) => {
   if (joyPointer !== e.pointerId) return;
   e.preventDefault();
@@ -1465,10 +1686,11 @@ const endJoy = (e: PointerEvent) => {
   joyActive = false;
   joy = { x: 0, y: 0 };
   knob.style.transform = 'translate(0,0)';
+  stick.classList.remove('active');
 };
-stick.addEventListener('pointerup', endJoy);
-stick.addEventListener('pointercancel', endJoy);
-stick.addEventListener('lostpointercapture', endJoy);
+leftMoveZone.addEventListener('pointerup', endJoy);
+leftMoveZone.addEventListener('pointercancel', endJoy);
+leftMoveZone.addEventListener('lostpointercapture', endJoy);
 
 // Mobile Look Zone (Right screen drag)
 const lookZone = document.querySelector('#lookZone') as HTMLElement;
@@ -1478,8 +1700,7 @@ lookZone.addEventListener('pointerdown', e => {
   e.preventDefault();
   e.stopPropagation();
   lookPointer = e.pointerId;
-  lastX = e.clientX;
-  lastY = e.clientY;
+  beginLookGesture(e.clientX, e.clientY);
   lookZone.setPointerCapture(e.pointerId);
 });
 lookZone.addEventListener('pointermove', e => {
@@ -1497,17 +1718,24 @@ lookZone.addEventListener('lostpointercapture', endLook);
 
 function bindAction(el: HTMLElement, fn: () => void) {
   const stopPointerEvent = (e: Event) => e.stopPropagation();
-  el.addEventListener('pointerdown', stopPointerEvent);
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Activate on touch-down so a four-finger player can trigger reload, weapon swap
+    // or a skill while another finger keeps aiming, moving or firing.
+    if (!document.body.classList.contains('hud-edit-mode')) fn();
+  });
   el.addEventListener('pointerup', stopPointerEvent);
   el.addEventListener('pointercancel', stopPointerEvent);
   el.addEventListener('click', e => {
     e.preventDefault();
     e.stopPropagation();
-    fn();
+    // Keep keyboard/switch-device activation; pointer taps already fired on pointerdown.
+    if ((e as MouseEvent).detail === 0 && !document.body.classList.contains('hud-edit-mode')) fn();
   });
 }
 
-function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void) {
+function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void, onRelease?: () => void) {
   const heldPointers = new Set<number>();
   const down = (e: PointerEvent) => {
     e.preventDefault();
@@ -1528,19 +1756,360 @@ function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void) {
     keyPointers?.delete(e.pointerId);
     if (!keyPointers?.size) pointerKeys.delete(key);
     syncKeyState(key);
+    if (!keys.has(key)) onRelease?.();
   };
   el.addEventListener('pointerdown', down);
   el.addEventListener('pointerup', up);
   el.addEventListener('pointercancel', up);
   el.addEventListener('lostpointercapture', up);
 }
+// --- DRAGGABLE SURVIVAL HUD LAYOUT ---
+type HudLayoutItem = { x: number; y: number; size: number; opacity: number };
+const HUD_LAYOUT_KEY = 'zombie-survival-hud-v1';
+const HUD_DEFAULTS: Record<string, HudLayoutItem> = {
+  shoot: { x: 10, y: 23, size: 66, opacity: 0.68 },
+  ads: { x: 88, y: 24, size: 48, opacity: 0.62 },
+  jump: { x: 92, y: 72, size: 46, opacity: 0.56 },
+  slide: { x: 72, y: 72, size: 46, opacity: 0.58 },
+  reload: { x: 80, y: 81, size: 44, opacity: 0.56 },
+  weapon: { x: 52, y: 80, size: 44, opacity: 0.68 },
+  use: { x: 69, y: 55, size: 46, opacity: 0.62 },
+  skill: { x: 60, y: 58, size: 46, opacity: 0.78 },
+  'wildcard-1': { x: 36, y: 82, size: 46, opacity: 0.72 },
+  'wildcard-2': { x: 45, y: 82, size: 46, opacity: 0.72 },
+  'wildcard-3': { x: 54, y: 82, size: 46, opacity: 0.72 },
+};
+const HUD_PRESETS: Record<'four' | 'three' | 'thumbs', Record<string, { x: number; y: number }>> = {
+  four: {
+    shoot: { x: 10, y: 23 }, ads: { x: 88, y: 24 }, jump: { x: 92, y: 72 },
+    slide: { x: 72, y: 72 }, reload: { x: 80, y: 81 }, weapon: { x: 52, y: 80 }, use: { x: 69, y: 55 }, skill: { x: 60, y: 58 },
+  },
+  three: {
+    shoot: { x: 10, y: 25 }, ads: { x: 87, y: 43 }, jump: { x: 91, y: 69 },
+    slide: { x: 76, y: 70 }, reload: { x: 79, y: 82 }, weapon: { x: 52, y: 80 }, use: { x: 69, y: 56 }, skill: { x: 60, y: 58 },
+  },
+  thumbs: {
+    shoot: { x: 87, y: 78 }, ads: { x: 85, y: 56 }, jump: { x: 94, y: 64 },
+    slide: { x: 76, y: 65 }, reload: { x: 75, y: 83 }, weapon: { x: 52, y: 80 }, use: { x: 67, y: 55 }, skill: { x: 60, y: 58 },
+  },
+};
+const hudEditorOverlay = document.querySelector('#hudEditorOverlay') as HTMLDivElement;
+const hudEditorPanel = document.querySelector('#hudEditorPanel') as HTMLElement;
+const hudEditorMinimize = document.querySelector('#hudEditorMinimize') as HTMLButtonElement;
+const hudPresetSelect = document.querySelector('#hudPresetSelect') as HTMLSelectElement;
+const hudSelectedName = document.querySelector('#hudSelectedName') as HTMLSpanElement;
+const hudSizeSlider = document.querySelector('#hudSizeSlider') as HTMLInputElement;
+const hudSizeVal = document.querySelector('#hudSizeVal') as HTMLSpanElement;
+const hudOpacitySlider = document.querySelector('#hudOpacitySlider') as HTMLInputElement;
+const hudOpacityVal = document.querySelector('#hudOpacityVal') as HTMLSpanElement;
+let hudTouchButtons = Array.from(document.querySelectorAll<HTMLElement>('#touch [data-hud-id]'));
+let hudLayout: Record<string, HudLayoutItem> = Object.fromEntries(
+  Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }])
+);
+let selectedHudItem: HTMLElement | null = null;
+let hudDrag: { pointerId: number; el: HTMLElement; offsetX: number; offsetY: number } | null = null;
 
-// Touch buttons
-bindAction(document.querySelector('#modeBtn') as HTMLButtonElement, () => (mode = mode === 'tpp' ? 'fpp' : 'tpp'));
+function clampHudItem(item: HudLayoutItem): HudLayoutItem {
+  return {
+    x: clamp(item.x, 4, 96),
+    y: clamp(item.y, 6, 94),
+    size: clamp(item.size, 34, 100),
+    opacity: clamp(item.opacity, 0.15, 1),
+  };
+}
+function applyHudItem(el: HTMLElement) {
+  const id = el.dataset.hudId;
+  if (!id || !hudLayout[id]) return;
+  const item = clampHudItem(hudLayout[id]);
+  hudLayout[id] = item;
+  el.style.setProperty('--hud-x', `${item.x}%`);
+  el.style.setProperty('--hud-y', `${item.y}%`);
+  el.style.setProperty('--hud-size', `${item.size}px`);
+  el.style.setProperty('--hud-opacity', String(item.opacity));
+}
+function saveHudLayout() {
+  try { localStorage.setItem(HUD_LAYOUT_KEY, JSON.stringify(hudLayout)); } catch {}
+}
+window.addEventListener('pagehide', saveHudLayout);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveHudLayout();
+});
+window.addEventListener('resize', () => hudTouchButtons.forEach(applyHudItem));
+function loadHudLayout() {
+  try {
+    const raw = localStorage.getItem(HUD_LAYOUT_KEY);
+    if (raw) {
+      const stored = JSON.parse(raw) as Record<string, Partial<HudLayoutItem>>;
+      for (const [id, defaults] of Object.entries(HUD_DEFAULTS)) {
+        const value = stored[id];
+        if (!value) continue;
+        hudLayout[id] = clampHudItem({
+          x: Number.isFinite(value.x) ? Number(value.x) : defaults.x,
+          y: Number.isFinite(value.y) ? Number(value.y) : defaults.y,
+          size: Number.isFinite(value.size) ? Number(value.size) : defaults.size,
+          opacity: Number.isFinite(value.opacity) ? Number(value.opacity) : defaults.opacity,
+        });
+      }
+    }
+  } catch {
+    hudLayout = Object.fromEntries(Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }]));
+  }
+  hudTouchButtons.forEach(applyHudItem);
+}
+function selectHudItem(el: HTMLElement) {
+  selectedHudItem?.classList.remove('hud-selected');
+  selectedHudItem = el;
+  el.classList.add('hud-selected');
+  const id = el.dataset.hudId || 'control';
+  const name = id === 'ads' ? 'ADS / AIM' : id.toUpperCase();
+  hudSelectedName.textContent = name;
+  const item = hudLayout[id] || HUD_DEFAULTS[id];
+  hudSizeSlider.value = String(item.size);
+  hudSizeVal.textContent = `${item.size} px`;
+  hudOpacitySlider.value = String(Math.round(item.opacity * 100 / 5) * 5);
+  hudOpacityVal.textContent = `${Math.round(item.opacity * 100)}%`;
+}
+function applyHudPreset(preset: 'four' | 'three' | 'thumbs') {
+  for (const [id, position] of Object.entries(HUD_PRESETS[preset])) {
+    const current = hudLayout[id] || HUD_DEFAULTS[id];
+    hudLayout[id] = clampHudItem({ ...current, ...position });
+  }
+  hudTouchButtons.forEach(applyHudItem);
+  hudPresetSelect.value = preset;
+  saveHudLayout();
+}
+function setHudEditMode(active: boolean) {
+  hudEditMode = active;
+  document.body.classList.toggle('hud-edit-mode', active);
+  hudEditorOverlay.classList.toggle('show', active);
+  hudEditorPanel.classList.remove('collapsed');
+  hudEditorMinimize.textContent = '−';
+  hudDrag = null;
+  if (active) {
+    if (!survival?.enabled) setSurvivalEnabled(true);
+    openSettings(false);
+    const first = hudTouchButtons.find(el => el.dataset.hudId === 'shoot') || hudTouchButtons[0];
+    if (first) selectHudItem(first);
+    say('Drag HUD controls to move them. Use the sliders to resize and fade them.');
+  } else {
+    selectedHudItem?.classList.remove('hud-selected');
+    selectedHudItem = null;
+    saveHudLayout();
+  }
+}
+loadHudLayout();
+
+// Move the HUD editor by dragging its title bar; save the position on this device.
+const HUD_EDITOR_POSITION_KEY = 'zombie-survival-hud-editor-position-v1';
+const hudEditorHeader = hudEditorPanel.querySelector('.hudEditorHeader') as HTMLElement;
+function loadHudEditorPosition() {
+  try {
+    const raw = localStorage.getItem(HUD_EDITOR_POSITION_KEY);
+    if (!raw) return;
+    const pos = JSON.parse(raw) as { left?: number; top?: number };
+    if (Number.isFinite(pos.left) && Number.isFinite(pos.top)) {
+      hudEditorPanel.style.left = `${clamp(Number(pos.left), 2, 98)}%`;
+      hudEditorPanel.style.top = `${clamp(Number(pos.top), 2, 98)}%`;
+      hudEditorPanel.style.bottom = 'auto';
+      hudEditorPanel.style.transform = 'translate(-50%, 0)';
+    }
+  } catch {}
+}
+function saveHudEditorPosition() {
+  const rect = hudEditorPanel.getBoundingClientRect();
+  try {
+    localStorage.setItem(HUD_EDITOR_POSITION_KEY, JSON.stringify({
+      left: clamp((rect.left + rect.width / 2) / Math.max(1, window.innerWidth) * 100, 2, 98),
+      top: clamp(rect.top / Math.max(1, window.innerHeight) * 100, 2, 98),
+    }));
+  } catch {}
+}
+let panelDrag: { pointerId: number; startX: number; startY: number; left: number; top: number } | null = null;
+loadHudEditorPosition();
+hudEditorHeader.style.cursor = 'move';
+hudEditorHeader.style.touchAction = 'none';
+hudEditorHeader.addEventListener('pointerdown', event => {
+  if ((event.target as HTMLElement).closest('button')) return;
+  const rect = hudEditorPanel.getBoundingClientRect();
+  panelDrag = {
+    pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+    left: (rect.left + rect.width / 2) / Math.max(1, window.innerWidth) * 100,
+    top: rect.top / Math.max(1, window.innerHeight) * 100,
+  };
+  try { hudEditorHeader.setPointerCapture(event.pointerId); } catch {}
+  event.preventDefault();
+});
+hudEditorHeader.addEventListener('pointermove', event => {
+  if (!panelDrag || event.pointerId !== panelDrag.pointerId) return;
+  const left = clamp(panelDrag.left + (event.clientX - panelDrag.startX) / Math.max(1, window.innerWidth) * 100, 2, 98);
+  const top = clamp(panelDrag.top + (event.clientY - panelDrag.startY) / Math.max(1, window.innerHeight) * 100, 2, 98);
+  hudEditorPanel.style.left = `${left}%`;
+  hudEditorPanel.style.top = `${top}%`;
+  hudEditorPanel.style.bottom = 'auto';
+  hudEditorPanel.style.transform = 'translate(-50%, 0)';
+  event.preventDefault();
+});
+const finishPanelDrag = (event: PointerEvent) => {
+  if (!panelDrag || event.pointerId !== panelDrag.pointerId) return;
+  panelDrag = null;
+  saveHudEditorPosition();
+};
+hudEditorHeader.addEventListener('pointerup', finishPanelDrag);
+hudEditorHeader.addEventListener('pointercancel', finishPanelDrag);
+window.addEventListener('resize', () => {
+  if (hudEditorPanel.style.top) saveHudEditorPosition();
+});
+
+document.addEventListener('pointerdown', event => {
+  if (!hudEditMode) return;
+  const target = event.target instanceof HTMLElement
+    ? event.target.closest<HTMLElement>('#touch [data-hud-id]')
+    : null;
+  if (!target) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  selectHudItem(target);
+  const rect = target.getBoundingClientRect();
+  hudDrag = {
+    pointerId: event.pointerId,
+    el: target,
+    offsetX: event.clientX - (rect.left + rect.width / 2),
+    offsetY: event.clientY - (rect.top + rect.height / 2),
+  };
+  try { target.setPointerCapture(event.pointerId); } catch {}
+}, true);
+document.addEventListener('pointermove', event => {
+  if (!hudEditMode || !hudDrag || event.pointerId !== hudDrag.pointerId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const rect = touchControls.getBoundingClientRect();
+  const x = clamp(((event.clientX - hudDrag.offsetX - rect.left) / Math.max(1, rect.width)) * 100, 4, 96);
+  const y = clamp(((event.clientY - hudDrag.offsetY - rect.top) / Math.max(1, rect.height)) * 100, 6, 94);
+  const id = hudDrag.el.dataset.hudId!;
+  hudLayout[id] = clampHudItem({ ...hudLayout[id], x, y });
+  applyHudItem(hudDrag.el);
+  hudPresetSelect.value = 'custom';
+}, true);
+document.addEventListener('pointerup', event => {
+  if (!hudEditMode || !hudDrag || event.pointerId !== hudDrag.pointerId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  hudDrag = null;
+  saveHudLayout();
+}, true);
+document.addEventListener('pointercancel', event => {
+  if (!hudDrag || event.pointerId !== hudDrag.pointerId) return;
+  hudDrag = null;
+  saveHudLayout();
+}, true);
+document.addEventListener('click', event => {
+  if (!hudEditMode) return;
+  const target = event.target instanceof HTMLElement ? event.target.closest('#touch [data-hud-id]') : null;
+  if (target) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+  }
+}, true);
+hudSizeSlider.addEventListener('input', () => {
+  if (!selectedHudItem) return;
+  const id = selectedHudItem.dataset.hudId!;
+  hudLayout[id].size = Number(hudSizeSlider.value);
+  hudSizeVal.textContent = `${hudLayout[id].size} px`;
+  applyHudItem(selectedHudItem);
+  hudPresetSelect.value = 'custom';
+  saveHudLayout();
+});
+hudOpacitySlider.addEventListener('input', () => {
+  if (!selectedHudItem) return;
+  const id = selectedHudItem.dataset.hudId!;
+  hudLayout[id].opacity = Number(hudOpacitySlider.value) / 100;
+  hudOpacityVal.textContent = `${hudOpacitySlider.value}%`;
+  applyHudItem(selectedHudItem);
+  hudPresetSelect.value = 'custom';
+  saveHudLayout();
+});
+hudPresetSelect.addEventListener('change', () => {
+  if (hudPresetSelect.value === 'four' || hudPresetSelect.value === 'three' || hudPresetSelect.value === 'thumbs') {
+    applyHudPreset(hudPresetSelect.value);
+    if (selectedHudItem) selectHudItem(selectedHudItem);
+  }
+});
+bindAction(hudEditorMinimize, () => {
+  const collapsed = hudEditorPanel.classList.toggle('collapsed');
+  hudEditorMinimize.textContent = collapsed ? '+' : '−';
+  hudEditorMinimize.setAttribute('aria-label', collapsed ? 'Expand HUD editor' : 'Collapse HUD editor');
+});
+bindAction(document.querySelector('#hudEditorClose') as HTMLButtonElement, () => setHudEditMode(false));
+bindAction(document.querySelector('#hudSaveBtn') as HTMLButtonElement, () => setHudEditMode(false));
+bindAction(document.querySelector('#hudResetBtn') as HTMLButtonElement, () => {
+  hudLayout = Object.fromEntries(Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }]));
+  hudTouchButtons.forEach(applyHudItem);
+  hudPresetSelect.value = 'four';
+  saveHudLayout();
+  const first = hudTouchButtons.find(el => el.dataset.hudId === 'shoot') || hudTouchButtons[0];
+  if (first) selectHudItem(first);
+});
+
+
+// Touch buttons. Survival mode reuses the same joystick/look zones but swaps fantasy actions for FPS actions.
+bindAction(document.querySelector('#modeBtn') as HTMLButtonElement, () => {
+  if (survival?.enabled) {
+    say('First-person view is fixed in survival mode');
+    return;
+  }
+  mode = mode === 'tpp' ? 'fpp' : 'tpp';
+});
+bindAction(document.querySelector('#attackBtn') as HTMLButtonElement, triggerSwordAttack);
+bindAction(document.querySelector('#punchBtn') as HTMLButtonElement, triggerPunch);
+bindAction(document.querySelector('#kickBtn') as HTMLButtonElement, triggerKick);
+bindAction(document.querySelector('#castBtn') as HTMLButtonElement, () => survival?.enabled ? survival.fire() : triggerFireCast());
+bindHoldAction(document.querySelector('#shootBtn') as HTMLButtonElement, 'shoot', () => survival?.enabled && survival.fire());
+bindAction(document.querySelector('#skillBtn') as HTMLButtonElement, () => survival?.enabled && survival.activateSkill());
+const adsButton = document.querySelector('#aimBtn') as HTMLButtonElement;
+bindHoldAction(adsButton, 'aim', () => {
+  document.body.classList.add('aim-active');
+  adsButton.setAttribute('aria-pressed', 'true');
+}, () => {
+  document.body.classList.remove('aim-active');
+  adsButton.setAttribute('aria-pressed', 'false');
+});
+bindAction(document.querySelector('#reloadBtn') as HTMLButtonElement, () => survival?.enabled && survival.reload());
 bindHoldAction(document.querySelector('#jumpBtn') as HTMLButtonElement, ' ', jump);
+bindAction(document.querySelector('#slideBtn') as HTMLButtonElement, triggerSlide);
 bindHoldAction(document.querySelector('#diveBtn') as HTMLButtonElement, 'control');
 bindAction(document.querySelector('#runBtn') as HTMLButtonElement, () => (sprintToggle = !sprintToggle));
 bindAction(document.querySelector('#interactBtn') as HTMLButtonElement, interact);
+
+// Mouse fire and right-click aim on desktop; mobile uses the pointer-captured HUD buttons.
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'mouse' || isInteractiveTarget(e.target) || !survival?.enabled || survey.isActive) return;
+  if (e.button === 0) {
+    e.preventDefault();
+    survival.setFireHeld(true);
+    survival.fire();
+  } else if (e.button === 2) {
+    e.preventDefault();
+    let holders = pointerKeys.get('aim');
+    if (!holders) pointerKeys.set('aim', (holders = new Set()));
+    holders.add(e.pointerId);
+    syncKeyState('aim');
+  }
+});
+window.addEventListener('pointerup', e => {
+  if (e.pointerType !== 'mouse') return;
+  if (e.button === 0) survival?.setFireHeld(false);
+  if (e.button === 2) {
+    const holders = pointerKeys.get('aim');
+    holders?.delete(e.pointerId);
+    if (!holders?.size) pointerKeys.delete('aim');
+    syncKeyState('aim');
+  }
+});
+renderer.domElement.addEventListener('contextmenu', e => {
+  if (survival?.enabled) e.preventDefault();
+});
 
 const emoteBtn = document.querySelector('#emoteBtn') as HTMLButtonElement;
 const emoteBar = document.querySelector('#emoteBar') as HTMLDivElement;
@@ -1570,6 +2139,255 @@ const touchControls = document.querySelector('#touch') as HTMLDivElement;
 const inventoryEl = document.querySelector('#inventory') as HTMLDivElement;
 const compass = document.querySelector('#compass') as HTMLDivElement;
 const waypointBadge = document.querySelector('#waypointBadge') as HTMLDivElement;
+const survivalBtn = document.querySelector('#survivalBtn') as HTMLButtonElement | null;
+const survivalHud = document.querySelector('#survivalHud') as HTMLDivElement | null;
+const survivalZoneStatus = document.querySelector('#survivalZoneStatus') as HTMLSpanElement | null;
+const survivalHealthText = document.querySelector('#survivalHealthText') as HTMLSpanElement | null;
+const survivalHealthBar = document.querySelector('#survivalHealthBar') as HTMLSpanElement | null;
+const survivalStaminaBar = document.querySelector('#survivalStaminaBar') as HTMLSpanElement | null;
+const survivalSkillButton = document.querySelector('#skillBtn') as HTMLButtonElement | null;
+const safeZoneDirection = document.querySelector('#safeZoneDirection') as HTMLDivElement | null;
+const safeZoneArrowIcon = document.querySelector('#safeZoneArrowIcon') as HTMLSpanElement | null;
+const safeZoneArrowLabel = document.querySelector('#safeZoneArrowLabel') as HTMLSpanElement | null;
+const safeZoneArrowDistance = document.querySelector('#safeZoneArrowDistance') as HTMLElement | null;
+const survivalWeapon = document.querySelector('#survivalWeapon') as HTMLSpanElement | null;
+const survivalAmmo = document.querySelector('#survivalAmmo') as HTMLSpanElement | null;
+const survivalReserve = document.querySelector('#survivalReserve') as HTMLSpanElement | null;
+const survivalKills = document.querySelector('#survivalKills') as HTMLSpanElement | null;
+const survivalWave = document.querySelector('#survivalWave') as HTMLSpanElement | null;
+const survivalZombies = document.querySelector('#survivalZombies') as HTMLSpanElement | null;
+const survivalEventBanner = document.querySelector('#survivalEventBanner') as HTMLDivElement | null;
+const survivalDeathOverlay = document.querySelector('#survivalDeathOverlay') as HTMLDivElement | null;
+const survivalRestartBtn = document.querySelector('#survivalRestartBtn') as HTMLButtonElement | null;
+const survivalResultQuitBtn = document.querySelector('#survivalResultQuitBtn') as HTMLButtonElement | null;
+const survivalResultEyebrow = document.querySelector('#survivalResultEyebrow') as HTMLDivElement | null;
+const survivalResultCopy = document.querySelector('#survivalResultCopy') as HTMLParagraphElement | null;
+const survivalResultStats = document.querySelector('#survivalResultStats') as HTMLDivElement | null;
+const survivalRunXp = document.querySelector('#survivalRunXp') as HTMLElement | null;
+const survivalTotalXp = document.querySelector('#survivalTotalXp') as HTMLElement | null;
+const survivalXpBar = document.querySelector('#survivalXpBar') as HTMLElement | null;
+const survivalXpProgress = document.querySelector('#survivalXpProgress') as HTMLElement | null;
+const survivalResultCallout = document.querySelector('#survivalResultCallout') as HTMLElement | null;
+const survivalPauseBtn = document.querySelector('#survivalPauseBtn') as HTMLButtonElement | null;
+const survivalPauseOverlay = document.querySelector('#survivalPauseOverlay') as HTMLDivElement | null;
+const resumeRunBtn = document.querySelector('#resumeRunBtn') as HTMLButtonElement | null;
+const restartPausedRunBtn = document.querySelector('#restartPausedRunBtn') as HTMLButtonElement | null;
+const leaveSurvivalBtn = document.querySelector('#leaveSurvivalBtn') as HTMLButtonElement | null;
+const pauseSettingsBtn = document.querySelector('#pauseSettingsBtn') as HTMLButtonElement | null;
+let survivalPaused = false;
+const survivalLobby = document.querySelector('#survivalLobby') as HTMLDivElement | null;
+const lobbyWeaponSelect = document.querySelector('#lobbyWeaponSelect') as HTMLSelectElement | null;
+const lobbyWeaponCards = document.querySelector('#lobbyWeaponCards') as HTMLDivElement | null;
+const lobbyLastRun = document.querySelector('#lobbyLastRun') as HTMLParagraphElement | null;
+const lobbyProgressionSummary = document.querySelector('#lobbyProgressionSummary') as HTMLDivElement | null;
+const upgradeHealthBtn = document.querySelector('#upgradeHealthBtn') as HTMLButtonElement | null;
+const upgradeStaminaBtn = document.querySelector('#upgradeStaminaBtn') as HTMLButtonElement | null;
+const upgradeDamageBtn = document.querySelector('#upgradeDamageBtn') as HTMLButtonElement | null;
+const startRunBtn = document.querySelector('#startRunBtn') as HTMLButtonElement | null;
+const wildcardCollection = document.querySelector('#wildcardCollection') as HTMLDivElement | null;
+const wildcardSlotSummary = document.querySelector('#wildcardSlotSummary') as HTMLElement | null;
+const wildcardHud = document.querySelector('#wildcardHud') as HTMLDivElement | null;
+const lobbyBestWaveMetric = document.querySelector('#lobbyBestWaveMetric') as HTMLElement | null;
+const lobbyBestTimeMetric = document.querySelector('#lobbyBestTimeMetric') as HTMLElement | null;
+const lobbyTotalKillsMetric = document.querySelector('#lobbyTotalKillsMetric') as HTMLElement | null;
+type UpgradeKey = 'health' | 'stamina' | 'damage';
+type WildcardId = 'shockwave' | 'field-medic' | 'quick-hands' | 'scavenger' | 'steady-grip' | 'reinforced-vest' | 'sharpshooter' | 'boss-spoils' | 'threat-reader' | 'endurance';
+type WildcardDefinition = { id: WildcardId; label: string; short: string; description: string; accent: string; cooldown: number; unlocked: boolean };
+const WILDCARDS: WildcardDefinition[] = [
+  { id: 'shockwave', label: 'SHOCKWAVE RELAY', short: 'PULSE', description: 'Push back nearby infected.', accent: '#f59e0b', cooldown: 18, unlocked: true },
+  { id: 'field-medic', label: 'FIELD MEDIC', short: 'MEDIC', description: 'Recover a capped burst of HP.', accent: '#4ade80', cooldown: 24, unlocked: true },
+  { id: 'quick-hands', label: 'QUICK HANDS', short: 'HANDS', description: 'Reload faster for a short window.', accent: '#38bdf8', cooldown: 22, unlocked: false },
+  { id: 'scavenger', label: 'SCAVENGER', short: 'SCAV', description: 'Pull extra value from field drops.', accent: '#a3e635', cooldown: 26, unlocked: false },
+  { id: 'steady-grip', label: 'STEADY GRIP', short: 'GRIP', description: 'Tighten the next firing window.', accent: '#c084fc', cooldown: 20, unlocked: false },
+  { id: 'reinforced-vest', label: 'REINFORCED VEST', short: 'VEST', description: 'Briefly harden against damage.', accent: '#94a3b8', cooldown: 28, unlocked: false },
+  { id: 'sharpshooter', label: 'SHARPSHOOTER', short: 'SCOPE', description: 'Prime a precise hit window.', accent: '#f472b6', cooldown: 20, unlocked: false },
+  { id: 'boss-spoils', label: 'BOSS SPOILS', short: 'SPOILS', description: 'Increase the next elite reward.', accent: '#fb7185', cooldown: 35, unlocked: false },
+  { id: 'threat-reader', label: 'THREAT READER', short: 'SCAN', description: 'Reveal nearby infected pressure.', accent: '#22d3ee', cooldown: 16, unlocked: false },
+  { id: 'endurance', label: 'ENDURANCE', short: 'ENDURE', description: 'Restore a portion of sprint stamina.', accent: '#facc15', cooldown: 20, unlocked: false },
+];
+type SurvivalMetaState = { xp: number; bestWave: number; bestTimeSeconds: number; totalRuns: number; totalKills: number; upgrades: Record<UpgradeKey, number>; waveClearCounts: Record<string, number>; unlockedWildcards: WildcardId[]; equippedWildcards: WildcardId[] };
+const SURVIVAL_META_KEY = 'island-outbreak-meta-v1';
+function loadSurvivalMeta(): SurvivalMetaState {
+  const fallback: SurvivalMetaState = { xp: 0, bestWave: 0, bestTimeSeconds: 0, totalRuns: 0, totalKills: 0, upgrades: { health: 0, stamina: 0, damage: 0 }, waveClearCounts: {}, unlockedWildcards: ['shockwave', 'field-medic'], equippedWildcards: ['shockwave', 'field-medic'] };
+  try {
+    const raw = localStorage.getItem(SURVIVAL_META_KEY);
+    if (!raw) {
+      fallback.bestWave = Number(localStorage.getItem('island-outbreak-best-wave') || 0);
+      return fallback;
+    }
+    const parsed = JSON.parse(raw) as Partial<SurvivalMetaState>;
+    const unlocked = Array.isArray(parsed.unlockedWildcards) ? parsed.unlockedWildcards.filter(id => WILDCARDS.some(card => card.id === id)) as WildcardId[] : fallback.unlockedWildcards;
+    const equipped = Array.isArray(parsed.equippedWildcards) ? parsed.equippedWildcards.filter(id => unlocked.includes(id)).slice(0, 3) as WildcardId[] : fallback.equippedWildcards;
+    return { ...fallback, ...parsed, bestTimeSeconds: Number(parsed.bestTimeSeconds) || 0, upgrades: { ...fallback.upgrades, ...(parsed.upgrades || {}) }, waveClearCounts: parsed.waveClearCounts || {}, unlockedWildcards: unlocked.length ? unlocked : fallback.unlockedWildcards, equippedWildcards: equipped.length ? equipped : fallback.equippedWildcards };
+  } catch { return fallback; }
+}
+let survivalMeta = loadSurvivalMeta();
+let lastMetaKills = 0;
+let lastMetaWave = 0;
+let lastSurvivalState: SurvivalStatus | null = null;
+let runResultShown = false;
+let runStartXp = survivalMeta.xp;
+let lastEventWave = 0;
+let lastPrepAnnouncement = -1;
+function announceSurvivalEvent(label: string, cue: 'wave-start' | 'wave-clear' | 'boss-warning' | 'level-up' | 'game-over'): void {
+  if (survivalEventBanner) {
+    survivalEventBanner.textContent = label;
+    survivalEventBanner.classList.remove('show');
+    if (!reducedMotion) void survivalEventBanner.offsetWidth;
+    survivalEventBanner.classList.add('show');
+  }
+  survivalSound.playCue(cue);
+}
+function updateLobbyProgressionUi(): void {
+  const level = 1 + Math.floor(survivalMeta.xp / 150);
+  if (lobbyProgressionSummary) lobbyProgressionSummary.textContent = `LEVEL ${level} · ${survivalMeta.xp} XP · BEST WAVE ${survivalMeta.bestWave}/100`;
+  if (lobbyBestWaveMetric) lobbyBestWaveMetric.textContent = `${survivalMeta.bestWave} / 100`;
+  if (lobbyBestTimeMetric) lobbyBestTimeMetric.textContent = survivalMeta.bestTimeSeconds ? formatRunTime(survivalMeta.bestTimeSeconds) : '—';
+  if (lobbyTotalKillsMetric) lobbyTotalKillsMetric.textContent = String(survivalMeta.totalKills);
+  const costs: Record<UpgradeKey, number> = { health: 120, stamina: 100, damage: 180 };
+  const buttons: Record<UpgradeKey, HTMLButtonElement | null> = { health: upgradeHealthBtn, stamina: upgradeStaminaBtn, damage: upgradeDamageBtn };
+  const labels: Record<UpgradeKey, string> = { health: 'HEALTH +10', stamina: 'STAMINA +15', damage: 'DAMAGE +5%' };
+  for (const key of Object.keys(costs) as UpgradeKey[]) {
+    const button = buttons[key];
+    if (!button) continue;
+    const level = survivalMeta.upgrades[key];
+    button.textContent = level >= 5 ? `${key.toUpperCase()} MAXED` : `${labels[key]} · ${costs[key]} XP`;
+    button.disabled = level >= 5 || survivalMeta.xp < costs[key];
+  }
+}
+function saveSurvivalMeta(): void {
+  try { localStorage.setItem(SURVIVAL_META_KEY, JSON.stringify(survivalMeta)); } catch {}
+  try { localStorage.setItem('island-outbreak-best-wave', String(survivalMeta.bestWave)); } catch {}
+  updateLobbyProgressionUi();
+  if (typeof renderWildcards === 'function') renderWildcards();
+}
+
+const wildcardCooldowns: Partial<Record<WildcardId, number>> = {};
+let wildcardButtons: HTMLButtonElement[] = [];
+let reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+function formatRunTime(seconds: number): string { return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`; }
+function availableWildcardSlots(): number { return 1 + (1 < 2 ? 1 : 0) + (1 + Math.floor(survivalMeta.xp / 150) >= 5 ? 1 : 0); }
+function wildcardDefinition(id: WildcardId): WildcardDefinition { return WILDCARDS.find(card => card.id === id) || WILDCARDS[0]; }
+function showWildcardPulse(card: WildcardDefinition): void {
+  document.body.style.setProperty('--wildcard-accent', card.accent);
+  document.body.classList.remove('wildcard-pulse');
+  if (!reducedMotion) void document.body.offsetWidth;
+  document.body.classList.add('wildcard-pulse');
+  window.setTimeout(() => document.body.classList.remove('wildcard-pulse'), reducedMotion ? 30 : 520);
+  survivalSound.playCue('wildcard');
+  say(`${card.label} ACTIVE`);
+}
+function wildcardIsEquipped(id: WildcardId): boolean { return survivalMeta.equippedWildcards.includes(id); }
+function renderWildcards(): void {
+  const slots = availableWildcardSlots();
+  if (wildcardSlotSummary) wildcardSlotSummary.textContent = `${survivalMeta.equippedWildcards.length}/${slots} ACTIVE SLOTS · LEVEL ${1 + Math.floor(survivalMeta.xp / 150)}`;
+  if (wildcardCollection) {
+    wildcardCollection.innerHTML = '';
+    for (const card of WILDCARDS) {
+      const unlocked = survivalMeta.unlockedWildcards.includes(card.id);
+      const equipped = wildcardIsEquipped(card.id);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `wildcardCard${equipped ? ' equipped' : ''}${unlocked ? '' : ' locked'}`;
+      button.style.setProperty('--wildcard-accent', card.accent);
+      button.disabled = !unlocked;
+      button.setAttribute('aria-pressed', String(equipped));
+      button.innerHTML = `<span class="wildcardFace wildcardFront"><span class="wildcardArt wildcardArt-${card.id}" aria-hidden="true"><b>${unlocked ? card.short.slice(0, 3) : '×'}</b><i></i><em></em></span><strong>${card.label}</strong><small>${unlocked ? card.description : 'Unlock through progression'}</small><i>${equipped ? 'EQUIPPED' : unlocked ? 'TAP TO INSPECT' : 'LOCKED'}</i></span><span class="wildcardFace wildcardBack"><span class="wildcardBackEyebrow">FIELD CARD · ${unlocked ? 'READY TO REVIEW' : 'SEALED'}</span><strong>${card.label}</strong><small>${unlocked ? card.description : 'Reach a higher level to unlock this card.'}</small><span class="wildcardBackRule"></span><i>${equipped ? 'TAP AGAIN TO REMOVE' : unlocked ? 'TAP AGAIN TO EQUIP' : 'LOCKED'}</i></span>`;
+      if (unlocked) button.addEventListener('click', () => {
+        if (!button.classList.contains('flipped')) { button.classList.add('flipped'); return; }
+        if (equipped) survivalMeta.equippedWildcards = survivalMeta.equippedWildcards.filter(value => value !== card.id);
+        else if (survivalMeta.equippedWildcards.length < slots) survivalMeta.equippedWildcards = [...survivalMeta.equippedWildcards, card.id];
+        else { say(`UNLOCKED SLOTS FULL · ${slots} MAX`); return; }
+        saveSurvivalMeta();
+        renderWildcards();
+      });
+      wildcardCollection.appendChild(button);
+    }
+  }
+  if (wildcardHud) {
+    wildcardHud.innerHTML = '';
+    wildcardButtons = [];
+    survivalMeta.equippedWildcards.forEach((id, index) => {
+      const card = wildcardDefinition(id);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.id = `wildcardBtn${index + 1}`;
+      button.dataset.hudId = `wildcard-${index + 1}`;
+      button.className = 'wildcardAction';
+      button.style.setProperty('--wildcard-accent', card.accent);
+      button.innerHTML = `<strong>${card.short}</strong><small>READY</small>`;
+      button.title = `${card.label} · ${card.description}`;
+      button.addEventListener('click', () => activateWildcard(id));
+      wildcardHud.appendChild(button);
+      wildcardButtons.push(button);
+    });
+    hudTouchButtons = Array.from(document.querySelectorAll<HTMLElement>('#touch [data-hud-id]'));
+    hudTouchButtons.forEach(applyHudItem);
+  }
+}
+function updateWildcardHud(): void {
+  wildcardButtons.forEach((button, index) => {
+    const id = survivalMeta.equippedWildcards[index];
+    if (!id) return;
+    const remaining = Math.ceil(wildcardCooldowns[id] || 0);
+    button.classList.toggle('recharging', remaining > 0);
+    const small = button.querySelector('small');
+    if (small) small.textContent = remaining > 0 ? `${remaining}s` : 'READY';
+  });
+}
+function activateWildcard(id: WildcardId): void {
+  if (!survival?.enabled || survival.isDead || (wildcardCooldowns[id] || 0) > 0) return;
+  const card = wildcardDefinition(id);
+  let activated = false;
+  if (id === 'shockwave') { survival.activateSkill(); activated = true; }
+  else if (id === 'field-medic') activated = survival.restoreHealth(25);
+  else if (id === 'endurance') { stamina = Math.min(staminaCapacity, stamina + staminaCapacity * 0.45); activated = true; }
+  else { say(`${card.label} IS NOT YET OPERATIONAL`); return; }
+  if (!activated) return;
+  wildcardCooldowns[id] = card.cooldown;
+  showWildcardPulse(card);
+  updateWildcardHud();
+}
+function updateWildcards(dt: number): void {
+  for (const id of Object.keys(wildcardCooldowns) as WildcardId[]) wildcardCooldowns[id] = Math.max(0, (wildcardCooldowns[id] || 0) - dt);
+  updateWildcardHud();
+}
+renderWildcards();
+function purchaseSurvivalUpgrade(key: UpgradeKey): void {
+  const costs: Record<UpgradeKey, number> = { health: 120, stamina: 100, damage: 180 };
+  if (survivalMeta.upgrades[key] >= 5 || survivalMeta.xp < costs[key]) return;
+  survivalMeta.xp -= costs[key];
+  survivalMeta.upgrades[key]++;
+  if (key === 'stamina') {
+    staminaCapacity = 100 + survivalMeta.upgrades.stamina * 15;
+    stamina = staminaCapacity;
+    staminaLocked = false;
+  }
+  survival.setPermanentUpgrades(survivalMeta.upgrades.health, survivalMeta.upgrades.damage);
+  saveSurvivalMeta();
+  say(`${key.toUpperCase()} UPGRADED · PERMANENT`);
+}
+updateLobbyProgressionUi();
+function syncLobbyWeaponCards(): void {
+  lobbyWeaponCards?.querySelectorAll<HTMLButtonElement>('[data-lobby-weapon]').forEach(button => {
+    const selected = button.dataset.lobbyWeapon === lobbyWeaponSelect?.value;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-checked', String(selected));
+    const mark = button.querySelector('.weaponCardSelect');
+    if (mark) mark.textContent = selected ? '●' : '○';
+  });
+}
+if (lobbyWeaponCards && lobbyWeaponSelect) {
+  lobbyWeaponCards.querySelectorAll<HTMLButtonElement>('[data-lobby-weapon]').forEach(button => {
+    bindAction(button, () => {
+      lobbyWeaponSelect.value = button.dataset.lobbyWeapon || 'pistol';
+      syncLobbyWeaponCards();
+    });
+  });
+  lobbyWeaponSelect.addEventListener('change', syncLobbyWeaponCards);
+  syncLobbyWeaponCards();
+}
+const survivalCycleWeapon = document.querySelector('#survivalCycleWeapon') as HTMLButtonElement | null;
 const surveyBtn = document.querySelector('#surveyBtn') as HTMLButtonElement | null;
 const surveyOverlay = document.querySelector('#surveyOverlay') as HTMLDivElement | null;
 const surveyCloseBtn = document.querySelector('#surveyCloseBtn') as HTMLButtonElement | null;
@@ -1579,6 +2397,28 @@ const surveyCaptureBtn = document.querySelector('#surveyCaptureBtn') as HTMLButt
 const surveyCaptureSize = document.querySelector('#surveyCaptureSize') as HTMLSelectElement | null;
 const surveyStatus = document.querySelector('#surveyStatus') as HTMLSpanElement | null;
 const minimapHomeDist = document.querySelector('#minimapHomeDist') as HTMLSpanElement;
+
+if (survivalBtn) bindAction(survivalBtn, () => setSurvivalEnabled(!survival.enabled));
+function cycleSurvivalWeapon() {
+  const order: Array<'pistol' | 'shotgun' | 'rifle'> = ['pistol', 'shotgun', 'rifle'];
+  const index = order.indexOf(survival.weapon);
+  survival.switchWeapon(order[(index + 1) % order.length]);
+}
+if (survivalCycleWeapon) bindAction(survivalCycleWeapon, cycleSurvivalWeapon);
+bindAction(document.querySelector('#weaponSwitchBtn') as HTMLButtonElement, () => {
+  if (survival?.enabled) cycleSurvivalWeapon();
+});
+if (survivalRestartBtn) bindAction(survivalRestartBtn, () => {
+  beginSurvivalRun((lobbyWeaponSelect?.value || survival.weapon || 'pistol') as SurvivalWeaponId);
+});
+if (survivalResultQuitBtn) bindAction(survivalResultQuitBtn, () => {
+  survivalDeathOverlay?.classList.remove('show');
+  setSurvivalEnabled(false);
+  survivalLobby?.classList.add('show');
+  document.body.classList.add('survival-mode');
+  updateLobbyProgressionUi();
+  renderWildcards();
+});
 
 // Mini-Map & Full Map
 const miniCanvas = document.querySelector('#miniCanvas') as HTMLCanvasElement;
@@ -1591,13 +2431,22 @@ bindAction(mapClose, () => minimap.setFullMap(false));
 
 // Settings Modal Wiring
 const settingsBtn = document.querySelector('#settingsBtn') as HTMLButtonElement;
+const lobbyOptionsBtn = document.querySelector('#lobbyOptionsBtn') as HTMLButtonElement | null;
 const settingsOverlay = document.querySelector('#settingsOverlay') as HTMLDivElement;
 const settingsClose = document.querySelector('#settingsClose') as HTMLButtonElement;
 const sensXSlider = document.querySelector('#sensXSlider') as HTMLInputElement;
 const sensYSlider = document.querySelector('#sensYSlider') as HTMLInputElement;
 const sensXVal = document.querySelector('#sensXVal') as HTMLSpanElement;
 const sensYVal = document.querySelector('#sensYVal') as HTMLSpanElement;
+const adsSensSlider = document.querySelector('#adsSensSlider') as HTMLInputElement;
+const adsSensVal = document.querySelector('#adsSensVal') as HTMLSpanElement;
 const invertYCheck = document.querySelector('#invertYCheck') as HTMLInputElement;
+const camAccelSelect = document.querySelector('#camAccelSelect') as HTMLSelectElement;
+const camAccelStrengthSlider = document.querySelector('#camAccelStrengthSlider') as HTMLInputElement;
+const camAccelStrengthVal = document.querySelector('#camAccelStrengthVal') as HTMLSpanElement;
+const camAccelThresholdSlider = document.querySelector('#camAccelThresholdSlider') as HTMLInputElement;
+const camAccelThresholdVal = document.querySelector('#camAccelThresholdVal') as HTMLSpanElement;
+const hudCustomizeBtn = document.querySelector('#hudCustomizeBtn') as HTMLButtonElement;
 const weatherSelect = document.querySelector('#weatherSelect') as HTMLSelectElement;
 const graphicsSelect = document.querySelector('#graphicsSelect') as HTMLSelectElement;
 const outfitSelect = document.querySelector('#outfitSelect') as HTMLSelectElement | null;
@@ -1629,14 +2478,30 @@ function updateProfileUI() {
   }
 }
 
+function updateAccelerationControlsUI() {
+  const active = camAccelSelect.value !== 'fixed';
+  camAccelStrengthSlider.disabled = !active;
+  camAccelThresholdSlider.disabled = !active;
+  camAccelStrengthVal.style.opacity = active ? '1' : '.45';
+  camAccelThresholdVal.style.opacity = active ? '1' : '.45';
+}
+
 function openSettings(open: boolean) {
   settingsOverlay.classList.toggle('show', open);
   if (open) {
     sensXSlider.value = String(settings.current.sensitivityX);
     sensYSlider.value = String(settings.current.sensitivityY);
-    sensXVal.textContent = `${settings.current.sensitivityX.toFixed(1)}x`;
-    sensYVal.textContent = `${settings.current.sensitivityY.toFixed(1)}x`;
+    adsSensSlider.value = String(Math.round(settings.current.adsSensitivity * 100));
+    adsSensVal.textContent = `${Math.round(settings.current.adsSensitivity * 100)}%`;
+    sensXVal.textContent = `${Math.round(settings.current.sensitivityX)}°`;
+    sensYVal.textContent = `${Math.round(settings.current.sensitivityY)}°`;
     invertYCheck.checked = settings.current.invertY;
+    camAccelSelect.value = settings.current.cameraAcceleration;
+    camAccelStrengthSlider.value = String(settings.current.cameraAccelerationStrength);
+    camAccelStrengthVal.textContent = `${settings.current.cameraAccelerationStrength.toFixed(2).replace(/0$/, '')}×`;
+    camAccelThresholdSlider.value = String(settings.current.cameraAccelerationThreshold);
+    camAccelThresholdVal.textContent = `${settings.current.cameraAccelerationThreshold.toFixed(1)}×`;
+    updateAccelerationControlsUI();
     weatherSelect.value = settings.current.weatherMode;
     graphicsSelect.value = settings.current.graphics;
     if (outfitSelect && settings.current.characterOutfit) {
@@ -1657,8 +2522,25 @@ function openSettings(open: boolean) {
     if (playerRoleSelect) playerRoleSelect.value = playerProfile.role;
   }
 }
-bindAction(settingsBtn, () => openSettings(true));
+bindAction(settingsBtn, () => {
+  if (survival?.enabled && !survivalPaused && !survival.isDead) {
+    survivalPaused = true;
+    releaseSurvivalInputs();
+    survivalPauseOverlay?.classList.add('show');
+    document.body.classList.add('survival-paused');
+  }
+  openSettings(true);
+});
+if (lobbyOptionsBtn) bindAction(lobbyOptionsBtn, () => openSettings(true));
+document.querySelectorAll<HTMLButtonElement>('[data-lobby-focus]').forEach(button => {
+  bindAction(button, () => {
+    document.querySelectorAll<HTMLButtonElement>('[data-lobby-focus]').forEach(item => item.classList.toggle('active', item === button));
+    const target = document.getElementById(button.dataset.lobbyFocus || '');
+    target?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
+  });
+});
 bindAction(settingsClose, () => openSettings(false));
+bindAction(hudCustomizeBtn, () => setHudEditMode(true));
 
 if (playerGenderSelect) {
   playerGenderSelect.addEventListener('change', () => {
@@ -1697,56 +2579,7 @@ if (playerRoleSelect) {
   });
 }
 
-// Living Ecosystem Sanctuary Census Modal
-const ecoBtn = document.querySelector('#ecoBtn') as HTMLButtonElement | null;
-const ecoOverlay = document.querySelector('#ecoOverlay') as HTMLDivElement | null;
-const ecoClose = document.querySelector('#ecoClose') as HTMLButtonElement | null;
-const ecoCensusList = document.querySelector('#ecoCensusList') as HTMLDivElement | null;
-const ecoTotalCount = document.querySelector('#ecoTotalCount') as HTMLSpanElement | null;
-const ecoExtinctCount = document.querySelector('#ecoExtinctCount') as HTMLSpanElement | null;
-
-function renderEcoCensus() {
-  if (!fauna || !ecoCensusList) return;
-  const census = fauna.speciesCensus();
-  let totalAnimals = 0;
-  let extinctSpecies = 0;
-
-  ecoCensusList.innerHTML = Object.entries(census)
-    .map(([sp, data]) => {
-      const s = sp as Species;
-      totalAnimals += data.total;
-      if (data.total === 0) extinctSpecies++;
-      return `
-        <div class="ecoRow">
-          <div class="ecoRowTitle">
-            <span>${SPECIES_ICON[s]}</span>
-            <span>${SPECIES_NAME[s]}</span>
-          </div>
-          <div class="ecoRowStats">
-            <span>♂ ${data.males}</span>
-            <span>♀ ${data.females}</span>
-            <span>🐣 ${data.babies}</span>
-            <span>Total: <b>${data.total}</b></span>
-            <span class="ecoStatusTag ${data.status.replace(/\s+/g, '-')}">${data.status}</span>
-          </div>
-        </div>
-      `;
-    })
-    .join('');
-
-  if (ecoTotalCount) ecoTotalCount.textContent = `Total Fauna: ${totalAnimals}`;
-  if (ecoExtinctCount) ecoExtinctCount.textContent = extinctSpecies > 0 ? `🚨 ${extinctSpecies} Extinct!` : `🌿 Balance: Healthy`;
-}
-
-if (ecoBtn) {
-  bindAction(ecoBtn, () => {
-    renderEcoCensus();
-    ecoOverlay?.classList.add('show');
-  });
-}
-if (ecoClose) {
-  bindAction(ecoClose, () => ecoOverlay?.classList.remove('show'));
-}
+// Wildlife sanctuary UI is intentionally disabled in zombie survival.
 
 if (outfitSelect) {
   outfitSelect.addEventListener('change', () => {
@@ -1772,15 +2605,34 @@ if (lodSelect) {
 sensXSlider.addEventListener('input', () => {
   const v = parseFloat(sensXSlider.value);
   settings.update({ sensitivityX: v });
-  sensXVal.textContent = `${v.toFixed(1)}x`;
+  sensXVal.textContent = `${Math.round(v)}°`;
 });
 sensYSlider.addEventListener('input', () => {
   const v = parseFloat(sensYSlider.value);
   settings.update({ sensitivityY: v });
-  sensYVal.textContent = `${v.toFixed(1)}x`;
+  sensYVal.textContent = `${Math.round(v)}°`;
+});
+adsSensSlider.addEventListener('input', () => {
+  const v = parseFloat(adsSensSlider.value) / 100;
+  settings.update({ adsSensitivity: v });
+  adsSensVal.textContent = `${Math.round(v * 100)}%`;
 });
 invertYCheck.addEventListener('change', () => {
   settings.update({ invertY: invertYCheck.checked });
+});
+camAccelSelect.addEventListener('change', () => {
+  settings.update({ cameraAcceleration: camAccelSelect.value as 'fixed' | 'distance' | 'speed' });
+  updateAccelerationControlsUI();
+});
+camAccelStrengthSlider.addEventListener('input', () => {
+  const v = parseFloat(camAccelStrengthSlider.value);
+  settings.update({ cameraAccelerationStrength: v });
+  camAccelStrengthVal.textContent = `${v.toFixed(2).replace(/0$/, '')}×`;
+});
+camAccelThresholdSlider.addEventListener('input', () => {
+  const v = parseFloat(camAccelThresholdSlider.value);
+  settings.update({ cameraAccelerationThreshold: v });
+  camAccelThresholdVal.textContent = `${v.toFixed(1)}×`;
 });
 weatherSelect.addEventListener('change', () => {
   settings.update({ weatherMode: weatherSelect.value as any });
@@ -1869,25 +2721,75 @@ bindAction(upgradeBtn, () => {
   say(`🎉 Home upgraded to ${HOME_UPGRADE_COSTS[nextLevel].title}!`);
 });
 
-// Fullscreen with graceful fallback for iframes
-const fullscreenBtn = document.querySelector('#fullscreenBtn') as HTMLButtonElement;
-async function toggleFullscreen() {
+// Survival only opens after a user gesture enters native fullscreen in landscape.
+// Browser chrome cannot be hidden by script without this explicit fullscreen API.
+const fullscreenBtn = document.querySelector('#fullscreenBtn') as HTMLButtonElement | null;
+const displayModeGate = document.querySelector('#displayModeGate') as HTMLDivElement | null;
+const enterGameDisplayMode = document.querySelector('#enterGameDisplayMode') as HTMLButtonElement | null;
+const displayModeTitle = document.querySelector('#displayModeTitle') as HTMLHeadingElement | null;
+const displayModeMessage = document.querySelector('.displayModeFullscreenHint') as HTMLParagraphElement | null;
+let displayGatePausedRun = false;
+
+function isLandscapeDisplay(): boolean {
+  return matchMedia('(orientation: landscape)').matches || innerWidth >= innerHeight;
+}
+
+function syncDisplayMode(): void {
+  const fullscreen = !!document.fullscreenElement;
+  const ready = fullscreen && isLandscapeDisplay();
+  document.body.classList.toggle('native-fullscreen', fullscreen);
+  document.body.classList.toggle('display-mode-ready', ready);
+  for (const layer of Array.from(document.body.children)) {
+    if (layer.id !== 'displayModeGate' && layer instanceof HTMLElement) layer.inert = !ready;
+  }
+  if (fullscreenBtn) fullscreenBtn.hidden = fullscreen;
+
+  if (!ready && survival?.enabled && !survivalPaused) {
+    survivalPaused = true;
+    displayGatePausedRun = true;
+    releaseSurvivalInputs();
+    document.body.classList.add('survival-paused');
+  } else if (ready && displayGatePausedRun) {
+    // Re-entering the display mode never silently resumes a live run.
+    survivalPaused = true;
+    survivalPauseOverlay?.classList.add('show');
+    document.body.classList.add('survival-paused');
+    displayGatePausedRun = false;
+  }
+
+  if (displayModeTitle) displayModeTitle.textContent = isLandscapeDisplay() ? 'FULLSCREEN REQUIRED' : 'LANDSCAPE REQUIRED';
+  if (displayModeMessage) displayModeMessage.textContent = isLandscapeDisplay()
+    ? 'Enter fullscreen to open the island. The run stays paused if fullscreen is exited.'
+    : 'Rotate your phone to landscape to continue.';
+  if (enterGameDisplayMode) enterGameDisplayMode.disabled = !isLandscapeDisplay();
+}
+
+async function enterRequiredDisplayMode(): Promise<void> {
+  if (!isLandscapeDisplay()) {
+    syncDisplayMode();
+    return;
+  }
   try {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-      say('Exit fullscreen');
-    } else if (document.documentElement.requestFullscreen) {
-      await document.documentElement.requestFullscreen();
-      say('Fullscreen mode');
-    } else {
-      throw new Error('Native fullscreen not available');
+    if (!document.fullscreenElement) {
+      if (!document.documentElement.requestFullscreen) throw new Error('Fullscreen is not supported in this browser.');
+      await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    }
+    try { await (screen.orientation as unknown as { lock?: (orientation: string) => Promise<void> }).lock?.('landscape'); } catch { /* Keep the gate until the device is actually landscape. */ }
+    syncDisplayMode();
+    if (!document.fullscreenElement && displayModeMessage) {
+      displayModeMessage.textContent = 'Fullscreen was blocked. Use a browser that supports fullscreen, then try again.';
     }
   } catch {
-    const isSim = document.body.classList.toggle('simulated-fullscreen');
-    say(isSim ? '⛶ Fullscreen view enabled' : '⛶ Standard view');
+    if (displayModeMessage) displayModeMessage.textContent = 'Fullscreen could not start. Try opening this game in a supported browser.';
   }
 }
-bindAction(fullscreenBtn, toggleFullscreen);
+
+if (enterGameDisplayMode) bindAction(enterGameDisplayMode, enterRequiredDisplayMode);
+if (fullscreenBtn) bindAction(fullscreenBtn, enterRequiredDisplayMode);
+document.addEventListener('fullscreenchange', syncDisplayMode);
+addEventListener('orientationchange', syncDisplayMode);
+addEventListener('resize', syncDisplayMode);
+syncDisplayMode();
 
 // --- WORLD SURVEY: AUTHORITATIVE TOPOLOGY + HYDROLOGY DIAGNOSTICS ---
 let surveyWasFog: THREE.Scene['fog'] = gameplayFog;
@@ -2115,7 +3017,7 @@ function takeScreenshot() {
     const a = document.createElement('a');
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     a.href = dataUrl;
-    a.download = `wildlife-screenshot-${ts}.png`;
+    a.download = `island-outbreak-screenshot-${ts}.png`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -2177,6 +3079,12 @@ window.addEventListener('keydown', e => {
 });
 
 let promptTimer = 0, sprintToggle = false, mapAccumulator = 0, uiAccumulator = 0;
+let staminaCapacity = 100 + survivalMeta.upgrades.stamina * 15;
+let stamina = staminaCapacity;
+let staminaLocked = false;
+const SLIDE_DURATION = 0.68;
+let slideTimer = 0, slideCooldown = 0;
+let slideDirection = { x: 0, z: 1 };
 
 function say(t: string) {
   prompt.textContent = t;
@@ -2197,10 +3105,53 @@ function jump() {
     return;
   }
   if (player.onGround) {
+    // Jumping out of a slide preserves its momentum, as in familiar mobile shooters.
+    if (slideTimer > 0) {
+      slideTimer = 0;
+      player.velocity.x *= 1.12;
+      player.velocity.z *= 1.12;
+    }
     player.velocity.y = JUMP_FORCE;
     player.onGround = false;
     player.playJump();
   }
+}
+
+function triggerSlide() {
+  if (!survival?.enabled || survival.isDead || player.swimming || !player.onGround || slideCooldown > 0) return;
+  const stickMagnitude = joyActive ? Math.hypot(joy.x, joy.y) : 0;
+  const stickSprint = stickMagnitude >= 0.55;
+  const sprinting = keys.has('shift') || sprintToggle || stickSprint;
+  const currentSpeed = Math.hypot(player.velocity.x, player.velocity.z);
+  // Touch players often cannot hold a sprint modifier while steering and tapping
+  // an action button. A deliberate movement vector or existing run speed is enough
+  // to initiate the slide; a stationary tap remains safely rejected.
+  if (!sprinting && currentSpeed < 3.2) {
+    say('SPRINT TO SLIDE');
+    return;
+  }
+
+  const iv = input();
+  let dx = -Math.cos(camYaw) * iv.x - Math.sin(camYaw) * iv.y;
+  let dz = Math.sin(camYaw) * iv.x - Math.cos(camYaw) * iv.y;
+  let length = Math.hypot(dx, dz);
+  if (length < 0.08) {
+    dx = player.velocity.x;
+    dz = player.velocity.z;
+    length = Math.hypot(dx, dz);
+  }
+  if (length < 0.08) {
+    dx = Math.sin(player.root.rotation.y);
+    dz = Math.cos(player.root.rotation.y);
+    length = 1;
+  }
+  slideDirection = { x: dx / length, z: dz / length };
+  const launchSpeed = Math.max(6.8, currentSpeed);
+  player.velocity.x = slideDirection.x * launchSpeed;
+  player.velocity.z = slideDirection.z * launchSpeed;
+  slideTimer = SLIDE_DURATION;
+  slideCooldown = 1.12;
+  say('SLIDE');
 }
 
 function addItem(item: string, qty: number) {
@@ -2216,25 +3167,6 @@ function renderInventory() {
     .join('');
 }
 renderInventory();
-
-fauna = new WildlifeSystem({
-  heightAt: terrainHeightAt,
-  waterAt,
-  roadAt,
-  nearHome,
-  biomeAt,
-  chunkSize: SIZE,
-  trust: save.wildlifeTrust ?? {},
-  hasFruit: () => Boolean(inventory.Fruit),
-  consumeFruit: () => {
-    inventory.Fruit = Math.max(0, (inventory.Fruit || 0) - 1);
-    renderInventory();
-    saveNow();
-  },
-  onTrustChange: saveNow,
-  notify: say,
-  faunaContainer: actors,
-});
 
 chunks.stream(save.player.x, save.player.z);
 void environmentAssets.preload().then(() => {
@@ -2304,12 +3236,19 @@ const aimNdc = new THREE.Vector2();
 const aimObjects: THREE.Object3D[] = [];
 const aimHits: THREE.Intersection[] = [];
 let aimCache: THREE.Object3D | null = null, aimTimer = 0;
+let combatAimCache: THREE.Object3D | null = null, combatAimTimer = 0;
+const combatMarkerWorld = new THREE.Vector3();
 
-function getAimTarget(force = false): THREE.Object3D | null {
-  if (!force && aimTimer > 0) return aimCache;
-  aimTimer = LOW_POWER_MODE ? 0.10 : 0.05;
+function getAimTarget(force = false, combat = false): THREE.Object3D | null {
+  const cache = combat ? combatAimCache : aimCache;
+  const timer = combat ? combatAimTimer : aimTimer;
+  if (!force && timer > 0) return cache;
+  if (combat) combatAimTimer = LOW_POWER_MODE ? 0.10 : 0.05;
+  else aimTimer = LOW_POWER_MODE ? 0.10 : 0.05;
 
   const pp = player.root.position;
+  aimObjects.length = 0;
+  for (const o of chunks.aimTargets) aimObjects.push(o);
 
   if (mode === 'tpp') {
     // Call of Duty Battle Royale style character-centric action volume
@@ -2322,7 +3261,7 @@ function getAimTarget(force = false): THREE.Object3D | null {
     const forwardX = Math.sin(charYaw);
     const forwardZ = Math.cos(charYaw);
 
-    for (const o of chunks.aimTargets) {
+    for (const o of aimObjects) {
       if (!o.visible || !o.parent) continue;
       const ox = o.matrixWorld.elements[12];
       const oy = o.matrixWorld.elements[13];
@@ -2333,16 +3272,16 @@ function getAimTarget(force = false): THREE.Object3D | null {
       const dz = oz - pp.z;
       const dist = Math.hypot(dx, dz);
 
-      if (dist > 3.4 || Math.abs(dy) > 2.8) continue;
+      if (dist > (combat ? 6.0 : 3.4) || Math.abs(dy) > (combat ? 3.5 : 2.8)) continue;
 
       // Facing alignment (-1 to 1)
       const dot = dist > 0.05 ? (dx * forwardX + dz * forwardZ) / dist : 1.0;
 
       // In TPP: allow anything immediately adjacent (<1.3m), or in forward cone (dot >= 0.28, ~73 deg)
-      if (dist > 1.3 && dot < 0.28) continue;
+      if (dist > (combat ? 1.8 : 1.3) && dot < (combat ? 0.15 : 0.28)) continue;
 
       // Score prefers closer objects with high directional alignment
-      const score = (1.0 - dist / 3.4) * 2.0 + dot * 1.5;
+      const score = (1.0 - dist / (combat ? 6.0 : 3.4)) * 2.0 + dot * 1.5;
       if (score > bestScore) {
         bestScore = score;
         bestObj = o;
@@ -2351,32 +3290,26 @@ function getAimTarget(force = false): THREE.Object3D | null {
 
     if (bestObj) {
       let o = bestObj;
-      while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable && !o.userData.animal) o = o.parent;
-      return (aimCache = o);
+      while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable) o = o.parent;
+      return combat ? (combatAimCache = o) : (aimCache = o);
     }
-    return (aimCache = null);
+    return combat ? (combatAimCache = null) : (aimCache = null);
   }
 
   // FPP mode: Precision raycast from camera eye
   aimRay.setFromCamera(aimNdc.set(0, 0), camera);
-  aimObjects.length = 0;
-  for (const o of chunks.aimTargets) aimObjects.push(o);
   aimHits.length = 0;
   const hit = aimRay.intersectObjects(aimObjects, true, aimHits)[0];
-  if (!hit || hit.distance > 3.8) return (aimCache = null);
+  if (!hit || hit.distance > (combat ? 10 : 3.8)) return combat ? (combatAimCache = null) : (aimCache = null);
   let o = hit.object;
-  while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable && !o.userData.animal) o = o.parent;
-  return (aimCache = o);
+  while (o.parent && o.parent !== world && !o.userData.resource && !o.userData.interactable) o = o.parent;
+  return combat ? (combatAimCache = o) : (aimCache = o);
 }
 
 function interact() {
   const o = getAimTarget(true);
   if (!o) {
     say('Aim at something within reach');
-    return;
-  }
-  if (o.userData.animal) {
-    fauna?.interact(o);
     return;
   }
   if (o.userData.resource) {
@@ -2464,6 +3397,339 @@ function canOccupy(x: number, z: number) {
   return true;
 }
 
+let modeBeforeSurvival: Mode = mode;
+
+function setSurvivalEnabled(enabled: boolean) {
+  if (enabled && !document.body.classList.contains('display-mode-ready')) return;
+  if (enabled) {
+    if (!survival.enabled) modeBeforeSurvival = mode;
+    survival.setEnabled(true);
+    survival.setAmbientEnabled(true);
+    mode = 'fpp';
+    document.body.classList.add('survival-mode');
+    if (survivalBtn) {
+      survivalBtn.textContent = '🛡️';
+      survivalBtn.title = 'Leave Zombie Survival';
+      survivalBtn.setAttribute('aria-label', 'Leave Zombie Survival Mode');
+    }
+    target.style.display = 'grid';
+  } else {
+    survivalPaused = false;
+    survivalPauseOverlay?.classList.remove('show');
+    document.body.classList.remove('survival-paused');
+    releaseSurvivalInputs();
+    survival.setEnabled(false);
+    document.body.classList.remove('aim-active');
+    mode = modeBeforeSurvival;
+    document.body.classList.remove('survival-mode', 'survival-damaged');
+    survivalDeathOverlay?.classList.remove('show');
+    if (survivalBtn) {
+      survivalBtn.textContent = '🧟';
+      survivalBtn.title = 'Enter Zombie Survival';
+      survivalBtn.setAttribute('aria-label', 'Enter Zombie Survival Mode');
+    }
+  }
+  saveNow();
+}
+
+let sightBlockerCacheKey = '';
+let sightBlockerCache: THREE.Object3D[] = [];
+
+survival = new ZombieSurvivalSystem({
+  scene,
+  camera,
+  getPlayerPosition: () => player.root.position,
+  getTerrainHeight: terrainHeightAt,
+  getNightFactor: () => (1 - Math.cos(((worldTime - 12) / 12) * Math.PI)) / 2,
+  isWater: waterAt,
+  getWaterDepth: waterDepthAt,
+  canOccupy: (x, z) => canOccupy(x, z),
+  getSightBlockers: () => {
+    const pcx = chunks.coord(player.root.position.x), pcz = chunks.coord(player.root.position.z);
+    const cacheX = Math.floor(player.root.position.x / 8);
+    const cacheZ = Math.floor(player.root.position.z / 8);
+    const nearby: string[] = [];
+    for (let ox = -2; ox <= 2; ox++) {
+      for (let oz = -2; oz <= 2; oz++) {
+        const key = chunks.key(pcx + ox, pcz + oz);
+        const chunk = chunks.loaded.get(key);
+        if (chunk) nearby.push(`${key}:${chunk.uuid}`);
+      }
+    }
+    // Cache the scene-graph walk. Automatic fire can call this many times per second on mobile.
+    const cacheKey = `${pcx}:${pcz}:${cacheX}:${cacheZ}:${chunks.loaded.size}:${chunks.cameraBlockers.size}:${nearby.join('|')}`;
+    if (cacheKey !== sightBlockerCacheKey) {
+      // Only nearby colliders can matter for the initial 15–25 m hostile encounters.
+      // A 50 m margin covers chunk-edge movement while avoiding ray-testing every distant prop.
+      const blockers = new Set<THREE.Object3D>();
+      const blockerPosition = new THREE.Vector3();
+      const playerPosition = player.root.position;
+      for (const object of chunks.cameraBlockers) {
+        if (!object.visible || !object.parent) continue;
+        object.getWorldPosition(blockerPosition);
+        if (blockerPosition.distanceToSquared(playerPosition) <= 2500) blockers.add(object);
+      }
+      for (let ox = -2; ox <= 2; ox++) {
+        for (let oz = -2; oz <= 2; oz++) {
+          const chunk = chunks.loaded.get(chunks.key(pcx + ox, pcz + oz));
+          if (!chunk) continue;
+          const terrain = chunk.getObjectByName('terrain');
+          if (terrain) blockers.add(terrain);
+          chunk.traverse(object => {
+            if (object === chunk || object === terrain) return;
+            const hasPhysicalMarker = Boolean(
+              object.userData.colliderRadius ||
+              object.userData.collider ||
+              object.userData.resource ||
+              object.userData.interactable
+            );
+            if (hasPhysicalMarker) blockers.add(object);
+          });
+        }
+      }
+      sightBlockerCache = [...blockers];
+      sightBlockerCacheKey = cacheKey;
+    }
+    // Do not let hidden or unloaded resources block bullets.
+    const isVisibleInWorld = (object: THREE.Object3D) => {
+      let node: THREE.Object3D | null = object;
+      while (node) {
+        if (!node.visible) return false;
+        node = node.parent;
+      }
+      return object.parent !== null;
+    };
+    return sightBlockerCache.filter(isVisibleInWorld);
+  },
+  safeZones: [
+    { id: 'homestead', label: 'HOMESTEAD', x: HOME_X, z: HOME_Z, radius: 12 },
+    { id: 'settlement', label: 'SETTLEMENT', x: VILLAGE_X, z: VILLAGE_Z, radius: 13 },
+  ],
+  lowPowerMode: LOW_POWER_MODE,
+  respawnPlayer: () => {
+    const x = HOME_X + 2.8, z = HOME_Z + 7.2;
+    player.root.position.set(x, physicalGroundHeightAt(x, z) + 0.2, z);
+    player.velocity.set(0, 0, 0);
+    player.onGround = true;
+    player.swimming = false;
+    mode = 'fpp';
+    camYaw = player.root.rotation.y;
+    targetYaw = camYaw;
+    camPitch = 0;
+    targetPitch = 0;
+    saveNow();
+  },
+  notify: message => { if (message) say(message); },
+  onShot: hit => {
+    document.body.classList.remove('survival-fired', 'survival-hit');
+    void document.body.offsetWidth;
+    document.body.classList.add('survival-fired');
+    if (hit) document.body.classList.add('survival-hit');
+    window.setTimeout(() => document.body.classList.remove('survival-fired', 'survival-hit'), hit ? 190 : 130);
+  },
+  onStatus: (state: SurvivalStatus) => {
+    lastSurvivalState = state;
+    if (state.preparationSeconds && state.preparationSeconds !== lastPrepAnnouncement) {
+      lastPrepAnnouncement = state.preparationSeconds;
+      if (state.preparationSeconds <= 3 || state.preparationSeconds === 12) announceSurvivalEvent(state.preparationSeconds <= 3 ? `FIRST CONTACT IN ${state.preparationSeconds}` : 'PREPARE FOR FIRST CONTACT', 'wave-start');
+    }
+    if (state.wave > lastEventWave) {
+      lastEventWave = state.wave;
+      if (state.wave > 0) announceSurvivalEvent(`WAVE ${state.wave} · CONTACT`, state.wave >= 5 && state.wave % 5 === 0 ? 'boss-warning' : 'wave-start');
+    }
+    let metaChanged = false;
+    const newKills = Math.max(0, state.kills - lastMetaKills);
+    if (newKills > 0) {
+      const repeatCount = survivalMeta.waveClearCounts[String(Math.max(1, state.wave))] || 0;
+      const rewardFactor = 1 / (1 + repeatCount * 0.22);
+      survivalMeta.xp += newKills * Math.max(1, Math.round((5 + state.wave * 0.35) * rewardFactor));
+      survivalMeta.totalKills += newKills;
+      metaChanged = true;
+    }
+    if (state.wave > lastMetaWave && lastMetaWave > 0) {
+      for (let clearedWave = lastMetaWave; clearedWave < state.wave; clearedWave++) {
+        if (clearedWave <= 0) continue;
+        const key = String(clearedWave);
+        const repeatCount = survivalMeta.waveClearCounts[key] || 0;
+        survivalMeta.xp += Math.max(1, Math.round((12 + clearedWave) / (1 + repeatCount * 0.22)));
+        survivalMeta.waveClearCounts[key] = repeatCount + 1;
+        metaChanged = true;
+      }
+    }
+    lastMetaKills = state.kills;
+    lastMetaWave = state.wave;
+    if (metaChanged) saveSurvivalMeta();
+    if (survivalHealthText) survivalHealthText.textContent = `${state.health} / ${state.maxHealth}`;
+    if (survivalHealthBar) {
+      survivalHealthBar.style.width = `${Math.max(0, Math.min(100, (state.health / state.maxHealth) * 100))}%`;
+      survivalHealthBar.style.background = state.health <= 25 ? '#ef4444' : state.health <= 50 ? '#f59e0b' : 'linear-gradient(90deg, #e87942, #f5c26b)';
+    }
+    if (survivalWeapon) survivalWeapon.textContent = state.weaponLabel;
+    if (survivalSkillButton) {
+      const cooldown = state.skillCooldownSeconds ?? 0;
+      survivalSkillButton.textContent = cooldown > 0 ? `${cooldown}s` : 'PULSE';
+      survivalSkillButton.title = cooldown > 0 ? `Shockwave recharging · ${cooldown}s` : 'Shockwave pulse · 18s cooldown';
+      survivalSkillButton.classList.toggle('recharging', cooldown > 0);
+    }
+    if (survivalAmmo) survivalAmmo.textContent = String(state.ammoInMag).padStart(2, '0');
+    if (survivalReserve) survivalReserve.textContent = state.reloading ? 'RELOADING' : `/ ${state.ammoReserve}`;
+    if (survivalKills) survivalKills.textContent = `KILLS ${state.kills}`;
+    if (survivalWave) survivalWave.textContent = state.preparationSeconds ? `PREP ${state.preparationSeconds}s` : state.runComplete ? 'ISLAND SECURED' : state.wave ? `WAVE ${state.wave} / 100` : 'SAFE START';
+    if (survivalZombies) survivalZombies.textContent = state.livingZombies ? `${state.livingZombies} INFECTED` : '';
+    if (state.runComplete && !runResultShown) recordSurvivalRun('VICTORY', state);
+    if (safeZoneDirection) {
+      const hasTarget = Number.isFinite(state.safeZoneX) && Number.isFinite(state.safeZoneZ);
+      safeZoneDirection.classList.toggle('show', hasTarget && (!state.inSafeZone || state.zonePhase === 'weakening'));
+      if (hasTarget && safeZoneArrowIcon) {
+        const dx = (state.safeZoneX as number) - player.root.position.x;
+        const dz = (state.safeZoneZ as number) - player.root.position.z;
+        const bearing = Math.atan2(dx, dz);
+        const relative = Math.atan2(Math.sin(bearing - camYaw), Math.cos(bearing - camYaw));
+        safeZoneArrowIcon.style.transform = `rotate(${relative * 180 / Math.PI}deg)`;
+        if (safeZoneArrowDistance) safeZoneArrowDistance.textContent = `${Math.round(Math.hypot(dx, dz))}m`;
+      }
+      if (safeZoneArrowLabel) safeZoneArrowLabel.textContent = state.zonePhase === 'weakening' ? 'SANCTUARY FAILING' : state.nearestZone.startsWith('NEXT') ? 'NEXT SANCTUARY' : 'SAFE ZONE';
+    }
+    if (survivalZoneStatus) {
+      survivalZoneStatus.textContent = state.zonePhase === 'weakening'
+        ? `WEAKENING · ${state.nearestZone} ${Math.round(state.zoneIntegrity ?? 0)}%`
+        : state.inSafeZone ? `SAFE · ${state.nearestZone}`
+          : state.nearestZone ? `DANGER · ${state.nearestZone} ${Math.round(state.zoneDistance)}m` : 'NO SAFE ZONE · RELOCATING';
+      survivalZoneStatus.classList.toggle('safe', state.inSafeZone && state.zonePhase !== 'weakening');
+      survivalZoneStatus.classList.toggle('danger', !state.inSafeZone || state.zonePhase === 'weakening');
+    }
+  },
+  onDamage: () => {
+    document.body.classList.add('survival-damaged');
+    window.setTimeout(() => document.body.classList.remove('survival-damaged'), 230);
+  },
+  onDeath: () => {
+    keys.clear();
+    keyboardKeys.clear();
+    pointerKeys.clear();
+    document.body.classList.remove('aim-active');
+    recordSurvivalRun('OVERRUN', lastSurvivalState);
+    survivalSound.playCue('game-over');
+    survival.setEnabled(false);
+    document.body.classList.add('survival-mode');
+    survivalLobby?.classList.remove('show');
+    if (document.pointerLockElement) document.exitPointerLock();
+  },
+});
+
+function recordSurvivalRun(result: 'OVERRUN' | 'VICTORY', state: SurvivalStatus | null = null) {
+  if (runResultShown) return;
+  runResultShown = true;
+  const wave = state?.wave ?? survival.wave;
+  const kills = state?.kills ?? survival.kills;
+  const duration = state?.durationSeconds ?? lastSurvivalState?.durationSeconds ?? 0;
+  const isNewWave = wave > survivalMeta.bestWave;
+  const isNewTime = duration > survivalMeta.bestTimeSeconds;
+  if (isNewWave) survivalMeta.bestWave = wave;
+  if (isNewTime) survivalMeta.bestTimeSeconds = duration;
+  const xpBefore = survivalMeta.xp;
+  survivalMeta.totalRuns++;
+  survivalMeta.xp += result === 'VICTORY' ? 500 : Math.max(5, Math.round(wave * 0.5));
+  if (isNewWave) survivalMeta.xp += 100;
+  if (isNewTime) survivalMeta.xp += 75;
+  saveSurvivalMeta();
+  const runXp = survivalMeta.xp - xpBefore;
+  const level = 1 + Math.floor(survivalMeta.xp / 150);
+  const previousLevel = 1 + Math.floor(xpBefore / 150);
+  if (level > previousLevel) survivalSound.playCue('level-up');
+  const nextLevelXp = level * 150;
+  const xpIntoLevel = survivalMeta.xp - (level - 1) * 150;
+  const xpPercent = Math.max(0, Math.min(100, (xpIntoLevel / 150) * 100));
+  if (survivalResultEyebrow) survivalResultEyebrow.textContent = result === 'VICTORY' ? 'ISLAND SECURED' : 'SIGNAL LOST';
+  const title = document.querySelector('#survivalDeathTitle');
+  if (title) title.textContent = result === 'VICTORY' ? 'DAWN HOLDS' : 'ZOMBIE ATE YOUR BRAIN';
+  if (survivalResultCopy) survivalResultCopy.textContent = result === 'VICTORY' ? 'One hundred waves. The island is still standing.' : 'The island kept the score. Your run is now part of the record.';
+  if (survivalResultStats) survivalResultStats.innerHTML = `<span><strong>${formatRunTime(duration)}</strong>TIME SURVIVED</span><span><strong>${wave}</strong>WAVE REACHED</span><span><strong>${kills}</strong>INFECTED KILLS</span>`;
+  if (survivalRunXp) survivalRunXp.textContent = `+${runXp} XP`;
+  if (survivalTotalXp) survivalTotalXp.textContent = `${survivalMeta.xp} XP`;
+  if (survivalXpProgress) survivalXpProgress.textContent = `LEVEL ${level} · ${xpIntoLevel} / ${150} XP TO LEVEL ${level + 1}`;
+  if (survivalXpBar) { survivalXpBar.style.width = '0%'; window.setTimeout(() => { if (survivalXpBar) survivalXpBar.style.width = `${xpPercent}%`; }, reducedMotion ? 0 : 120); }
+  if (survivalResultCallout) survivalResultCallout.textContent = isNewWave || isNewTime ? `${isNewWave ? 'NEW BEST WAVE' : ''}${isNewWave && isNewTime ? ' · ' : ''}${isNewTime ? 'NEW BEST TIME' : ''}${level > previousLevel ? ` · LEVEL ${level}` : ''}` : (level > previousLevel ? `LEVEL ${level} REACHED` : 'RUN LOGGED · KEEP MOVING');
+  if (lobbyLastRun) lobbyLastRun.textContent = `${result} · WAVE ${wave}/100 · ${kills} KILLS · ${formatRunTime(duration)}${isNewWave || isNewTime ? ' · NEW RECORD' : ''}`;
+  survivalDeathOverlay?.classList.add('show');
+  document.body.classList.add('survival-mode');
+}
+if (upgradeHealthBtn) bindAction(upgradeHealthBtn, () => purchaseSurvivalUpgrade('health'));
+if (upgradeStaminaBtn) bindAction(upgradeStaminaBtn, () => purchaseSurvivalUpgrade('stamina'));
+if (upgradeDamageBtn) bindAction(upgradeDamageBtn, () => purchaseSurvivalUpgrade('damage'));
+
+function releaseSurvivalInputs() {
+  // A pause/background transition must not leave a held fire, ADS, or movement input behind.
+  keys.clear();
+  keyboardKeys.clear();
+  pointerKeys.clear();
+  joy.x = 0;
+  joy.y = 0;
+  joyActive = false;
+  joyPointer = null;
+  survival?.setFireHeld(false);
+  survival?.setAim(false);
+  document.body.classList.remove('aim-active');
+}
+
+function beginSurvivalRun(selectedWeapon: SurvivalWeaponId) {
+  if (!document.body.classList.contains('display-mode-ready')) return;
+  runResultShown = false;
+  survivalDeathOverlay?.classList.remove('show');
+  for (const id of Object.keys(wildcardCooldowns) as WildcardId[]) delete wildcardCooldowns[id];
+  runStartXp = survivalMeta.xp;
+  lastEventWave = 0;
+  lastPrepAnnouncement = -1;
+  survivalPaused = false;
+  survivalPauseOverlay?.classList.remove('show');
+  document.body.classList.remove('survival-paused');
+  survival.restart();
+  lastMetaKills = 0;
+  lastMetaWave = 0;
+  stamina = staminaCapacity;
+  staminaLocked = false;
+  survival.setPermanentUpgrades(survivalMeta.upgrades.health, survivalMeta.upgrades.damage);
+  survival.switchWeapon(selectedWeapon);
+  setSurvivalEnabled(true);
+  survival.beginPreparation(12);
+  survivalLobby?.classList.remove('show');
+  updateWildcardHud();
+}
+
+if (startRunBtn) bindAction(startRunBtn, () => {
+  const selectedWeapon = (lobbyWeaponSelect?.value || 'pistol') as SurvivalWeaponId;
+  beginSurvivalRun(selectedWeapon);
+});
+
+if (survivalPauseBtn) bindAction(survivalPauseBtn, () => {
+  if (!survival?.enabled || survival.isDead || survivalPaused || survivalLobby?.classList.contains('show')) return;
+  survivalPaused = true;
+  releaseSurvivalInputs();
+  survivalPauseOverlay?.classList.add('show');
+  document.body.classList.add('survival-paused');
+});
+if (resumeRunBtn) bindAction(resumeRunBtn, () => {
+  survivalPaused = false;
+  survivalPauseOverlay?.classList.remove('show');
+  document.body.classList.remove('survival-paused');
+});
+if (pauseSettingsBtn) bindAction(pauseSettingsBtn, () => openSettings(true));
+if (restartPausedRunBtn) bindAction(restartPausedRunBtn, () => beginSurvivalRun(survival.weapon));
+if (leaveSurvivalBtn) bindAction(leaveSurvivalBtn, () => {
+  survivalPauseOverlay?.classList.remove('show');
+  setSurvivalEnabled(false);
+  survivalLobby?.classList.add('show');
+});
+
+document.body.classList.add('survival-mode');
+survivalLobby?.classList.add('show');
+
+// Pointer/touch interaction is the browser-safe point to unlock procedural Web Audio.
+// Capture phase makes this work for the joystick and HUD buttons as well as the canvas.
+window.addEventListener('pointerdown', () => {
+  if (survival?.enabled) survival.activateAudio();
+}, { capture: true, passive: true });
+
 function moveWithCollisions(dx: number, dz: number) {
   const p = player.root.position;
   const nx = p.x + dx, nz = p.z + dz;
@@ -2500,11 +3766,19 @@ function input() {
 
 function update(dt: number) {
   if (survey.isActive) {
-    // Survey is a frozen world snapshot: no weather, fauna, physics, terrain
+    // Survey is a frozen world snapshot: no weather, physics, terrain
     // streaming, or other live simulation advances while the user inspects it.
     return;
   }
+  if (survival?.enabled && survival.isDead) {
+    survival.update(dt, false, false);
+    return;
+  }
+  if (survival?.enabled) updateWildcards(dt);
   aimTimer = Math.max(0, aimTimer - dt);
+  combatAimTimer = Math.max(0, combatAimTimer - dt);
+  slideTimer = Math.max(0, slideTimer - dt);
+  slideCooldown = Math.max(0, slideCooldown - dt);
 
   // Time cycle: 24h cycle
   worldTime = (worldTime + dt * 0.04) % 24;
@@ -2519,13 +3793,12 @@ function update(dt: number) {
   }
   if (terrainShader) terrainShader.uniforms.uTime.value += dt;
   updateSplash(dt);
+  updateMagicEffects(dt);
 
-  // High-mountain cloud deck altitude & gentle atmospheric drift
-  cloudDeckMesh.position.y = weatherEffects.cloudBaseAltitude;
-  cloudDeckMesh.position.x = player.root.position.x;
-  cloudDeckMesh.position.z = player.root.position.z;
-  cloudDeckMat.opacity = clamp(0.22 + weatherEffects.skyDim * 0.42, 0.18, 0.65);
-  cloudDeckMesh.rotation.z += dt * 0.005;
+  // Keep scattered cloud clusters nearby without covering the sky.
+  cloudDeckGroup.position.set(player.root.position.x, weatherEffects.cloudBaseAltitude, player.root.position.z);
+  cloudDeckMat.opacity = clamp(0.19 + weatherEffects.skyDim * 0.10, 0.16, 0.30);
+  cloudDeckGroup.rotation.y += dt * 0.0015;
 
   const wasSwimming = player.swimming;
   const p = player.root.position;
@@ -2548,7 +3821,17 @@ function update(dt: number) {
   const dir = moveDirection.set(0, 0, 0).addScaledVector(right, iv.x).addScaledVector(forward, -iv.y);
   const inputMagnitude = Math.min(1, dir.length());
   const hasInput = inputMagnitude > 0.08;
-  const sprinting = (keys.has('shift') || sprintToggle) && hasInput;
+  // Push the virtual stick into its outer ring to sprint without a separate run button.
+  const joystickSprint = joyActive && Math.hypot(joy.x, joy.y) >= 0.78;
+  const wantsSprint = (keys.has('shift') || sprintToggle || joystickSprint) && hasInput;
+  if (wantsSprint && !staminaLocked) {
+    stamina = Math.max(0, stamina - dt * 24);
+    if (stamina <= 0) staminaLocked = true;
+  } else {
+    stamina = Math.min(100, stamina + dt * 18);
+    if (stamina >= 25) staminaLocked = false;
+  }
+  const sprinting = wantsSprint && !staminaLocked && stamina > 0;
 
   const slopeInfo = terrainSlopeAt(p.x, p.z);
   // Calculate motion alignment with downhill slope fall-line
@@ -2568,7 +3851,13 @@ function update(dt: number) {
     slopeSpeedMultiplier *= 0.72; // Shallow water wading resistance
   }
 
-  if (hasInput) {
+  if (slideTimer > 0 && !player.swimming) {
+    const progress = clamp(slideTimer / SLIDE_DURATION, 0, 1);
+    const slideSpeed = 6.8 * (0.32 + progress * 0.68);
+    const response = 1 - Math.exp(-dt * 3.4);
+    player.velocity.x = lerp(player.velocity.x, slideDirection.x * slideSpeed, response);
+    player.velocity.z = lerp(player.velocity.z, slideDirection.z * slideSpeed, response);
+  } else if (hasInput) {
     const desired = Math.atan2(dir.x, dir.z);
     const speed = player.swimming
       ? (sprinting ? 2.5 : 1.6)
@@ -2718,8 +4007,6 @@ function update(dt: number) {
     say(player.swimming ? 'Swimming · hold Space / RISE to surface; Ctrl / DIVE to submerge.' : 'Back on land.');
   }
 
-  fauna?.update(dt, p, sprinting);
-
   camYaw = angleLerp(camYaw, targetYaw, Math.min(1, dt * 12));
   camPitch = lerp(camPitch, targetPitch, Math.min(1, dt * 12));
   camDistance = lerp(camDistance, targetDistance, Math.min(1, dt * 12));
@@ -2791,7 +4078,7 @@ function update(dt: number) {
     camera.lookAt(lookTarget);
   } else {
     const eye = cameraEye.copy(p);
-    eye.y += player.swimming ? 0.22 : 1.55;
+    eye.y += slideTimer > 0 ? 0.93 : player.swimming ? 0.22 : 1.55;
     camera.position.lerp(eye, Math.min(1, dt * 18));
     const look = cameraLook.copy(eye);
     look.x += Math.sin(camYaw) * Math.cos(camPitch) * 8;
@@ -2815,27 +4102,36 @@ function update(dt: number) {
 
   // Choose directional animation from velocity relative to the character's facing,
   // not raw joystick direction. Assets without a matching clip safely use locomotion.
-  const facingYaw = player.root.rotation.y;
-  const localForwardSpeed = player.velocity.x * Math.sin(facingYaw) + player.velocity.z * Math.cos(facingYaw);
-  const localSideSpeed = -player.velocity.x * Math.cos(facingYaw) + player.velocity.z * Math.sin(facingYaw);
-  const movementIntent: 'forward' | 'backward' | 'strafe-left' | 'strafe-right' =
-    Math.abs(localSideSpeed) > Math.abs(localForwardSpeed) * 1.15 && Math.abs(localSideSpeed) > 0.35
-      ? (localSideSpeed < 0 ? 'strafe-left' : 'strafe-right')
-      : localForwardSpeed < -0.35 ? 'backward' : 'forward';
-  player.animate(walkTime += dt, moving, sprinting, player.swimming, dt, horizontalSpeed, angularVelocity, player.onGround, player.velocity.y, movementIntent);
+  // First-person mode hides the player mesh; skip its skeletal mixer and
+  // fallback rig updates entirely until third-person is requested again.
+  if (mode !== 'fpp') {
+    const facingYaw = player.root.rotation.y;
+    const localForwardSpeed = player.velocity.x * Math.sin(facingYaw) + player.velocity.z * Math.cos(facingYaw);
+    const localSideSpeed = -player.velocity.x * Math.cos(facingYaw) + player.velocity.z * Math.sin(facingYaw);
+    const movementIntent: 'forward' | 'backward' | 'strafe-left' | 'strafe-right' =
+      Math.abs(localSideSpeed) > Math.abs(localForwardSpeed) * 1.15 && Math.abs(localSideSpeed) > 0.35
+        ? (localSideSpeed < 0 ? 'strafe-left' : 'strafe-right')
+        : localForwardSpeed < -0.35 ? 'backward' : 'forward';
+    player.animate(walkTime += dt, moving, sprinting, player.swimming, dt, horizontalSpeed, angularVelocity, player.onGround, player.velocity.y, movementIntent);
+  }
   if (isPhotoMode) updatePhotoBadges();
+
+  // Shooter simulation runs after the existing camera is positioned, so its hitscan uses the actual FPP view.
+  survival.update(dt, keys.has('shoot'), keys.has('aim'));
 
   // Record breadcrumb displacement trail
   minimap.recordPosition(p.x, p.z);
 
   const aimed = getAimTarget();
+  const canInteractWithAimed = !!aimed && !!(aimed.userData.resource || aimed.userData.interactable);
+  document.body.classList.toggle('survival-can-interact', !!survival?.enabled && canInteractWithAimed);
+  const combatTarget = getAimTarget(false, true);
+  combatTargetMarker.visible = false;
   if (aimed) {
     const r = aimed.userData.resource as { kind: string; hits: number; maxHits: number } | undefined;
-    const animal = aimed.userData.animal as { species: keyof typeof SPECIES_NAME } | undefined;
     const interactable = aimed.userData.interactable as { action: string; label: string } | undefined;
     let label = 'Interact';
-    if (animal) label = `Pet ${SPECIES_NAME[animal.species]}${inventory.Fruit ? ' (Feed Fruit)' : ''}`;
-    else if (r) label = `Harvest ${r.kind.replace('_', ' ')} (${r.maxHits - r.hits}/${r.maxHits})`;
+    if (r) label = `Harvest ${r.kind.replace('_', ' ')} (${r.maxHits - r.hits}/${r.maxHits})`;
     else if (interactable) label = interactable.label;
     else label = aimed.name.replace('front-door', 'Front Door').replace('tree-', 'Tree ');
 
@@ -2858,9 +4154,9 @@ function update(dt: number) {
   mapAccumulator += dt;
   if (mapAccumulator >= 0.08) {
     mapAccumulator = 0;
-    const markers = fauna?.markers() ?? [];
-    minimap.renderMini(p, camYaw, markers);
-    if (minimap.isOpen()) minimap.renderFull(p, camYaw, markers);
+    const survivalRadar = survival.enabled ? survival.getRadarState() : undefined;
+    minimap.renderMini(p, camYaw, [], survivalRadar);
+    if (minimap.isOpen()) minimap.renderFull(p, camYaw, [], survivalRadar);
 
     // Distance to Home & Village on HUD
     const dHome = Math.round(Math.hypot(p.x - HOME_X, p.z - HOME_Z));
@@ -2891,13 +4187,16 @@ function update(dt: number) {
     target.textContent = aimed ? '✦' : '•';
     (document.querySelector('#modeBtn') as HTMLButtonElement).textContent = mode.toUpperCase();
     (document.querySelector('#runBtn') as HTMLButtonElement).textContent = sprintToggle ? 'RUN' : 'WALK';
+    if (survivalStaminaBar) {
+      survivalStaminaBar.style.width = `${Math.round(stamina / staminaCapacity * 100)}%`;
+      survivalStaminaBar.style.background = stamina <= staminaCapacity * 0.2 ? '#f59e0b' : '#a3e635';
+    }
     (document.querySelector('#jumpBtn') as HTMLButtonElement).textContent = player.swimming ? 'RISE' : 'JUMP';
 
     const hour = Math.floor(worldTime);
     const minute = Math.floor((worldTime - hour) * 60);
     const biome = biomeAt(p.x, p.z);
     status.textContent = `${player.swimming ? 'SWIM' : mode.toUpperCase()} · ${sprinting ? 'RUN' : 'WALK'} · ${biome.toUpperCase()} · ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-    (document.querySelector('#wildlife') as HTMLElement).textContent = fauna?.status(p) ?? 'Wildlife loading…';
   }
 }
 
@@ -2911,16 +4210,62 @@ addEventListener('resize', () => {
 
 addEventListener('beforeunload', saveNow);
 
+// The lobby is a genuine pause point: freeze simulation and limit background
+// rendering while the player chooses a loadout. A low-rate redraw lets late
+// GLB/environment loads appear without running terrain, weather, and AI every frame.
+let lobbyRenderAccumulator = 0;
+let lobbyHasRendered = false;
 function loop() {
   requestAnimationFrame(loop);
   const dt = Math.min(clock.getDelta(), 0.05);
+
+  if (document.hidden) {
+    lobbyHasRendered = false;
+    lobbyRenderAccumulator = 0;
+    return;
+  }
+
+  if (!document.body.classList.contains('display-mode-ready')) {
+    lobbyHasRendered = false;
+    lobbyRenderAccumulator = 0;
+    return;
+  }
+
   if (survey.isActive) {
+    lobbyHasRendered = false;
+    lobbyRenderAccumulator = 0;
     // Only redraw the frozen survey scene when its camera actually changes.
-    // This keeps the full-world survey detailed without continuously burning GPU.
     if (survey.update(dt)) renderer.render(scene, survey.camera);
     return;
   }
+
+  const lobbyOpen = !!survivalLobby?.classList.contains('show') || survivalPaused;
+  if (lobbyOpen) {
+    lobbyRenderAccumulator += dt;
+    if (!lobbyHasRendered || lobbyRenderAccumulator >= 0.25) {
+      lobbyRenderAccumulator = 0;
+      renderer.render(scene, camera);
+      lobbyHasRendered = true;
+    }
+    return;
+  }
+
+  lobbyHasRendered = false;
+  lobbyRenderAccumulator = 0;
   update(dt);
   renderer.render(scene, camera);
 }
+document.addEventListener('visibilitychange', () => {
+  // Reset the clock baseline when returning from the background to avoid a
+  // large simulation step or a jump in physics on mobile browsers.
+  clock.getDelta();
+  lobbyHasRendered = false;
+  lobbyRenderAccumulator = 0;
+  if (document.hidden && survival?.enabled && !survival.isDead && !survivalPaused) {
+    survivalPaused = true;
+    releaseSurvivalInputs();
+    survivalPauseOverlay?.classList.add('show');
+    document.body.classList.add('survival-paused');
+  }
+});
 loop();

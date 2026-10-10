@@ -49,9 +49,13 @@ export interface PlayerProfile {
 }
 
 export interface SettingsState {
-  sensitivityX: number; // 0.2 to 3.0, default 1.0
-  sensitivityY: number; // 0.2 to 3.0, default 1.0
+  sensitivityX: number; // Degrees turned across a full look-zone-width swipe; default 180
+  sensitivityY: number; // Degrees looked across a full look-zone-height swipe; default 100
+  adsSensitivity: number; // Multiplier applied only while holding aim; 0.25 to 1
   invertY: boolean;
+  cameraAcceleration: 'fixed' | 'distance' | 'speed';
+  cameraAccelerationStrength: number; // 0 to 2.0
+  cameraAccelerationThreshold: number; // 0.5 to 2.0; higher requires a stronger/faster swipe
   graphics: 'low' | 'med' | 'high';
   weatherMode: 'dynamic' | 'clear' | 'rain';
   chunkRadius: number;
@@ -133,6 +137,8 @@ export interface AnimalState {
   scale: number;
   hp: number;
   maxHp: number;
+  burnUntil?: number;
+  burnTick?: number;
   hunger: number;
   thirst?: number;
   matingCooldown: number;

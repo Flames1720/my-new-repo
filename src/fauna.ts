@@ -1031,6 +1031,19 @@ export class WildlifeSystem {
       a.matingCooldown = Math.max(0, a.matingCooldown - dt);
       a.think -= dt;
 
+      // Fire damage is deliberately short and readable: it rewards a quick
+      // cast without turning the wildlife simulation into a persistent DoT farm.
+      if (a.burnUntil && this.elapsed < a.burnUntil) {
+        a.burnTick = (a.burnTick ?? 0) - dt;
+        if (a.burnTick <= 0) {
+          a.burnTick = 0.45;
+          if (this.applyDamage(a, 7, 'fire')) continue;
+        }
+      } else if (a.burnUntil) {
+        a.burnUntil = undefined;
+        a.burnTick = undefined;
+      }
+
       // 2. Offspring Follow Mother
       if (a.isBaby && a.motherId) {
         const mother = this.animals.get(a.motherId);
@@ -1501,6 +1514,46 @@ export class WildlifeSystem {
     }
   }
 
+  private applyDamage(a: AnimalState, amount: number, source: 'melee' | 'fire'): boolean {
+    a.hp = Math.max(0, a.hp - amount);
+    const data = a.root.userData.animal as { hp?: number } | undefined;
+    if (data) data.hp = a.hp;
+    a.mood = 'fleeing';
+    a.fleeCooldown = Math.max(a.fleeCooldown, source === 'fire' ? 2.8 : 2.0);
+    if (a.hp > 0) return false;
+
+    a.root.parent?.remove(a.root);
+    this.animals.delete(a.id);
+    this.checkSpeciesExtinction(a.species);
+    this.options.notify(`⚔️ ${SPECIES_NAME[a.species]} defeated · ${source === 'fire' ? 'burned' : 'hit'}`);
+    return true;
+  }
+
+  /** Damage the nearest attached animal inside a small combat sphere. */
+  damageAt(x: number, y: number, z: number, radius: number, amount: number, source: 'melee' | 'fire'):
+    { id: string; root: THREE.Group; species: Species; hp: number; killed: boolean } | null {
+    let nearest: AnimalState | null = null;
+    let nearestDistance = radius;
+    for (const a of this.animals.values()) {
+      if (!a.isAttachedToScene || !a.root.visible) continue;
+      const dx = a.root.position.x - x;
+      const dy = a.root.position.y - y;
+      const dz = a.root.position.z - z;
+      const distance = Math.hypot(dx, dy, dz);
+      if (distance <= nearestDistance) {
+        nearest = a;
+        nearestDistance = distance;
+      }
+    }
+    if (!nearest) return null;
+    if (source === 'fire') {
+      nearest.burnUntil = Math.max(nearest.burnUntil ?? 0, this.elapsed + 3.0);
+      nearest.burnTick = 0.1;
+    }
+    const killed = this.applyDamage(nearest, amount, source);
+    return { id: nearest.id, root: nearest.root, species: nearest.species, hp: nearest.hp, killed };
+  }
+
   interact(root: THREE.Object3D): void {
     const data = root.userData.animal as { id: string; species: Species } | undefined;
     if (!data) return;
@@ -1540,6 +1593,12 @@ export class WildlifeSystem {
       });
     }
     return list;
+  }
+
+  targetObjects(out: THREE.Object3D[]): void {
+    for (const a of this.animals.values()) {
+      if (a.isAttachedToScene && a.root.visible) out.push(a.root);
+    }
   }
 
   speciesCensus(): Record<Species, { total: number; males: number; females: number; babies: number; status: string }> {

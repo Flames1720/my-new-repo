@@ -627,3 +627,214 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Important findings:** The reported TypeScript error was fixed in a later commit, but the later code has not yet been validated by a complete build. Do not merge based on the earlier failed deployment or assume the fix compiles.
 
 **Next agent:** When deployment capacity is available, build the latest branch HEAD and fix any remaining TypeScript errors before asking the user to test the preview.
+
+## 2026-10-09 06:57 +0000 UTC — Manus
+
+**Scope:** Integration branch recovery, character gameplay actions, procedural fire projectile/impact effects, and browser smoke test.
+
+**Starting point:** `integration/character-world-foundation` at `ee8af5d`, containing the character-action foundation and world-foundation research merge. `main` remained untouched.
+
+**Inspected:** `src/character.ts`, `src/magic-effects.ts`, `src/main.ts` player input/update/collision/camera loop, `index.html`, `src/style.css`, `src/settlement.ts` references, `docs/WORLD_FOUNDATION_RESEARCH.md`, and this changelog’s prior handoffs.
+
+**Changed:**
+- `src/main.ts`: wired `Q` to the verified semantic attack action and `R` to the cast action; added mobile `ATTACK` and `FIRE` button handlers.
+- `src/main.ts`: added a visible fire projectile using `MagicProjectileEffect`, terrain/water impact termination, fire burst spawning, per-frame animation/fade, and explicit scene removal/disposal.
+- `index.html`: added mobile action buttons and documented `Q: Attack` / `R: Fire` in the controls hint.
+- `src/style.css`: added distinct styling for attack and fire buttons.
+- `AGENT_CHANGELOG.md`: appended this handoff.
+
+**Verification:**
+- Build: PASS — `npm run build` (`tsc && vite build`); Vite emitted the existing large-chunk advisory, now 762.31 kB minified JS.
+- Typecheck: PASS — `npm run lint` (`tsc --noEmit`).
+- Diff check: PASS — `git diff --check`.
+- Runtime/browser: PARTIAL — sandbox browser loaded the public Vite URL, Q produced `Sword slash · animation only`, R produced `Fire bolt · visual prototype only`, and the character visibly changed pose during the cast. The mobile button handlers were invoked through browser DOM smoke testing; the touch overlay itself was hidden at desktop viewport.
+- Device: NOT VERIFIED — no physical Android phone/tablet test was available.
+
+**Important findings:**
+- The default Adventurer’s verified embedded clips include `CharacterArmature|Sword_Slash`, `HitRecieve`, `Death`, `Interact`, and locomotion clips. There is no verified spell-specific clip; `cast` intentionally uses the documented `Interact` fallback.
+- No damage, hit detection, cooldown, enemy combat or complete magic system was implemented.
+- The existing terrain, hydrology, water, road, collision, resource, camera and touch foundations were preserved. No new environment pack was downloaded or added because the research recommends a curated visual spike only after profiling and license selection.
+
+**Remaining work:**
+- Verify the projectile and impact visually at a controlled camera angle and on a physical mobile device; the smoke test confirms handlers and runtime stability but does not prove every frame of the projectile is visible in the screenshot.
+- Consider a small separate environment-asset visual spike using officially sourced CC0 assets, with mobile frame-time/draw-call measurements.
+- Address any remaining water-edge, road-intersection, building-placement or camera issues only after targeted runtime reproduction; no concrete new regression was established in this pass.
+
+**Next agent:** Test the integration branch on Android, then review the character/world PRs before any merge into `main`.
+
+## 2026-10-09 06:59 +0000 UTC — Manus — correction
+
+**Scope:** Remove the unwanted green illumination around the player and repair the changelog integrity issue discovered after the first integration push.
+
+**Changed:** Removed the two character-mounted `PointLight` instances from `src/character.ts`; the shared scene hemisphere and directional lights still provide normal character lighting. Restored the complete prior `AGENT_CHANGELOG.md` history and retained the integration entry instead of replacing the historical log.
+
+**Verification:** Refreshed the running sandbox browser. The player remains visible and the green patch/halo around the feet is gone. The existing Q/R gameplay controls and controls hint remain present. Final typecheck/build passed locally.
+
+**Important correction:** The prior commit `5c34ab6` accidentally truncated `AGENT_CHANGELOG.md`; this follow-up restores the content on the same integration branch. No force-push or main-branch change is required.
+
+## 2026-10-09 07:02 +0000 UTC — Manus
+
+**Scope:** Investigate the reported visual mismatch where the grass/terrain appeared to hover above lower ground.
+
+**Finding:** The foreground terrain mesh used only 32 subdivisions in Ultra mode (16 in lower settings), while collision and camera calculations sample the continuous `terrainHeightAt` field. On slopes and noise transitions, the interpolated visual mesh could differ visibly from the physical height sample.
+
+**Changed:** Increased foreground terrain tessellation to 64 segments in Ultra, 40 in Balanced and 24 in Fast/low-power mode; LOD1 now uses 20 segments. Water continues to use the same `segs` value as its terrain chunk, preserving shared visual sampling.
+
+**Remaining verification:** Recheck the player-area slope and chunk edges in the browser, then run lint/build and push if the alignment is improved. Monitor mobile frame time because the Ultra foreground mesh has more vertices.
+
+
+## 2026-10-09 07:25 UTC — Fast combat and animal damage pass
+
+**Scope:** Player combat integration, TPP/FPP wildlife targeting, and rapid fire-action feedback.
+
+**Starting point:** `integration/character-world-foundation`, continuing the existing character/world work.
+
+**Inspected:** `src/character.ts`, `src/magic-effects.ts`, `src/main.ts`, `src/fauna.ts`, `src/types.ts`, `index.html`, `src/style.css`.
+
+**Changed:**
+- Extended verified Quaternius action aliases with semantic `punch`, `kick`, and `roll` actions. Combat clips run at a faster action-game tempo while one-shot actions still return to locomotion.
+- Added desktop controls: `Q` sword slash, `Z` fast punch, `X` kick, `V` dodge roll, and `R` fire bolt. Preserved `C`/`F` for TPP/FPP switching.
+- Added mobile `PUNCH` and `KICK` buttons beside the existing sword and fire actions.
+- Added shared TPP/FPP targeting for attached wildlife. TPP uses a forward combat cone out to 6m; FPP uses a center-screen ray out to 10m. A rotating red ground marker identifies the selected animal.
+- Added `WildlifeSystem.damageAt()` with melee damage, fire impact damage, short flee reaction, HP synchronization and removal on defeat. Fire applies a 3-second burn with 0.45-second damage ticks, plus a visible temporary fire effect.
+
+**Verification:**
+- Build: PASS (`npm run build`)
+- Typecheck: PASS (`npm run lint` / `tsc --noEmit`)
+- Runtime/browser: VERIFIED for sword, punch, kick, fire, FPP/TPP switching, and mobile combat button handlers.
+- Browser console: no runtime errors observed during smoke testing.
+- Formatting: PASS (`git diff --check`)
+- Device: NOT VERIFIED on a physical mobile device.
+
+**Important findings:** Existing checked-in Quaternius clips already provide sword slash, punch, kick and roll coverage, so no Mixamo download was added; this avoids introducing an unverified rig/retargeting dependency during the fast combat pass. The current implementation is player-versus-wildlife combat, not a complete RPG combat system.
+
+**Remaining work:** Enemy attack AI against the player, authored hitbox timing per combo frame, weapon progression, sound/haptics, stamina/cooldowns, and deeper device testing remain future work.
+
+**Next agent:** Deploy this integration branch for browser review, then tune target selection and combat feel using real device feedback before adding more combat content.
+
+## 2026-10-10 07:34 +01:00 — GPT-6 — fullscreen button handoff
+
+**Scope:** Replace the blocking fullscreen/landscape entry gate with an optional one-tap fullscreen control.
+
+**Branch/repository:** `feature/zombie-survival-world-v2` in `Flames1720/my-new-repo`. Keep `main` untouched; PR #8 remains the review path.
+
+**Changed (already present on branch):**
+- `src/main.ts` (commit `dd31d186e5179d3a732c7dc788dd3640cfe9d14d`): removed the old display-mode gate behavior and orientation-locking entry flow. Added a simple fullscreen button handler using `requestFullscreen({ navigationUI: 'hide' })`, an exit-fullscreen path, a `fullscreenchange` listener, and user-facing fallback messages when fullscreen is unsupported or fails.
+- `src/ui-modern.css` (latest known commit `b94c04aa3eb7b324ac15467e6e9bf34ec1e37f3d`): hides the obsolete `#displayModeGate` and hides `#fullscreenBtn` while `body.native-fullscreen` is active.
+
+**Deployment:** Latest known Vercel preview deployment is READY, ID `dpl_FNKgaKY2avr8fcrB71kYrq6Ykwut`, for commit `b94c04aa3eb7b324ac15467e6e9bf34ec1e37f3d`. Preview: https://virtual-family-core-dzzp6104h-flames-projects-5a93c7bd.vercel.app
+
+**Verification status:** Deployment reports READY; this is not the same as complete gameplay or physical-device QA. Still test on Android: (1) button is visible in normal browser mode, (2) tapping enters fullscreen where supported, (3) button hides during fullscreen, and (4) it reappears after exiting fullscreen. Browser support and browser-chrome behavior can vary.
+
+**Known unrelated gameplay issues not confirmed fixed:** FPP left/right turning direction may be reversed; TPP movement/look controls were previously unreliable; world colliders, road intersections, FPP local-mesh hiding, jump/harvest state, water-edge access, house/road spacing, and TPP crosshair obstruction still require targeted reproduction and verification.
+
+**Safety/merge note:** Do not merge to `main` unless the user explicitly asks. Do not describe the older gameplay issues as fixed without reproducing and testing them.
+
+**Next agent:** Open the preview on the user's Android device and verify the fullscreen control first. Then tackle one reproducible gameplay issue at a time, run build/typecheck and inspect the deployment before reporting success.
+
+
+## 2026-10-10 07:52 +01:00 — landscape/fullscreen-gated outbreak lobby and animation polish
+
+**Scope:** `feature/zombie-survival-world-v2` in `Flames1720/my-new-repo`. This entry supersedes the 07:34 handoff's optional-fullscreen direction: user explicitly wants the game gated until landscape fullscreen.
+
+**Implemented in the working tree:**
+- `index.html`: reworked the display-mode onboarding copy; replaced the card-and-paragraph lobby with a field-deployment layout, three accessible weapon choices, concise mission stats/upgrades, and a hand-authored animated infected SVG in the background. The four-infected opening wave replaces a misleading infinity indicator.
+- `src/main.ts`: require native Fullscreen API plus landscape before showing the game; attempt orientation lock after the user gesture; show an explanatory fallback when the API fails; use `inert` for every background body layer behind the modal; pause/re-gate on fullscreen/orientation loss; stop rendering before readiness; guard run entry; connect lobby cards to the existing weapon setting; add fire and hit-confirmation screen-state callbacks.
+- `src/ui-modern.css`: full-screen deployment-stage styling, reduced-motion fallbacks, orientation animation, zombie idle/reach/eye-glow motion, and shot-edge/reticle feedback.
+- `src/zombie-survival.ts`: add a translucent perimeter wall and dome, three traveling energy bands and orbiting perimeter nodes, all pulsing green and shifting toward amber during safe-zone weakening; expose shot hit/miss feedback.
+- `README.md`, `docs/ZOMBIE_SURVIVAL_INTEGRATION.md`, and `PROJECT_PLAN.md`: update capabilities, known limitations and animation follow-ups.
+
+**Verification:** `npm run build` (TypeScript + Vite production build) passed; `git diff --check` passed. Local browser smoke test confirmed native fullscreen gate entry, lobby weapon selection (shotgun), and start-of-run transition with the selected weapon. Physical-device orientation behavior and the field's exterior readability remain unverified.
+
+**Animation opportunities found while reviewing this branch:** zombies already have procedural locomotion/arm swings, hit flashes and shrink/fade deaths; loot already floats and rotates; weapon rigs already recoil/reload/flash. The largest remaining gaps are authored boss wind-up/impact/shockwave; stronger sanctuary final collapse/relocation; pickup collection pull-in; distinct hit-stagger/knockback; and richer shell/hand weapon handling. See README's Animation follow-ups section.
+
+**Review note:** Keep this work on the requested feature branch; do not merge to `main`. Preserve PR #8 as the review path. Physical Android/iOS QA is still required.
+
+## 2026-10-10 08:08 +01:00 — mobile WebView gate hardening
+
+**Observed from the user's phone screenshot:** the page is portrait, displays the gate as normal white-page content, and leaks the HUD beneath it. This is not the intended appearance; external CSS did not appear to apply in that embedded mobile browser.
+
+**Changed:** `index.html` now carries a minimal inline critical style for the entry gate, a portrait rotation animation, and a rule that hides and disables all other body layers until `.display-mode-ready`. This preserves the essential safety gate even if the app's stylesheet request fails. The updated app was built and is served for mobile review as a static Vite production preview on port 4173, rather than the development server on port 3000.
+
+**Verification:** production build passed; local and public HTML/CSS requests returned HTTP 200; the production preview rendered the styled gate and the fullscreen deployment lobby in the browser. Actual phone/WebView retest is still required; use the production preview link supplied in the handoff.
+
+
+## 2026-10-10 09:35 +0000 UTC — Manus
+
+**Scope:** Island Outbreak survival lobby, Wildcards, pause/results flow, wave feedback and procedural audio.
+
+**Starting point:** `feature/zombie-survival-world-v2` at `5c7a0d4`, with a clean worktree. No merge, permanent hosting or deployment was performed.
+
+**Inspected:** `PROJECT_PLAN.md`, `README.md`, `index.html`, `src/main.ts`, `src/zombie-survival.ts`, `src/survival-audio.ts`, `src/style.css`, existing HUD persistence and fullscreen/pause code.
+
+**Changed:**
+- Added a data-driven collection of 10 Wildcards, with two provisional starter cards unlocked and a third slot available at level 5.
+- Added illustrated card faces with distinct accent colors and effect motifs; the first tap flips a card to its effect briefing and the second tap equips/removes it.
+- Added one ready/cooldown HUD activation button per equipped active card, including Shockwave Relay, Field Medic and Endurance runtime behavior. The legacy standalone PULSE button is now represented by Shockwave Relay rather than exposed as a separate skill layer.
+- Extended the existing `zombie-survival-hud-v1` layout defaults for three wildcard buttons and retained version-safe loading of older layouts.
+- Added an authored wave/preparation event banner and procedural wave, boss, wildcard, level-up and game-over cues using the existing Web Audio engine.
+- Replaced immediate defeat-to-lobby behavior with a result surface showing time survived, wave reached, infected kills, run XP, total XP, level progress, best-wave/best-time callouts and explicit Redeploy / Quit to Lobby actions.
+- Persisted best survival time and wildcard unlock/equipped selections inside the existing `island-outbreak-meta-v1` record with defensive migration defaults.
+- Opening Settings during an active run now releases held controls and keeps the run paused; the pause surface exposes Resume, Settings and Quit.
+- Added elapsed duration to `SurvivalStatus` and a bounded `restoreHealth()` hook for wildcard effects.
+
+**Verification:**
+- Build: PASS (`npm run build`)
+- Typecheck/lint: PASS (`npm run lint`)
+- Whitespace: PASS (`git diff --check`)
+- Runtime/browser: PARTIAL — sandbox browser entered fullscreen, rendered the lobby and showed all 10 illustrated cards; the first unlocked card was tapped and visibly flipped to its briefing side; browser console had no output/errors.
+- Device: NOT VERIFIED — no physical Android/iOS test was available.
+
+**Important findings:** The card interaction now matches the requested physical-card metaphor. The supplied browser smoke test confirms the lobby visuals and flip behavior, but the full defeat/result path and touch-device ergonomics still need a longer run on a real device.
+
+**Remaining work:** Retune exact wildcard balance and unlock rules with playtesting; exercise Redeploy, Quit, pause-settings-resume, wave-100 victory and result XP animation in browser; verify mobile safe-area placement and reduced-motion behavior on a physical phone.
+
+**Next agent:** Continue on this feature branch only. Do not deploy or merge. Run the full survival flow smoke test, then commit/push the implementation if the user wants branch continuity.
+
+
+## 2026-10-10 09:46 +0000 UTC — Manus
+
+**Scope:** Island Outbreak lobby composition and landscape viewport safety.
+
+**Starting point:** `feature/zombie-survival-world-v2` at `031cb0a`.
+
+**Changed:** Reworked the survival lobby into an Island Outbreak-specific operations layout rather than copying unavailable reference-game systems. The lobby now has a top navigation shell for Mission, Field Kit, Wildcards, Records and Settings; a left solo field-operations/records panel; a center tactical island mission board; and a right Challenges, Field Kit and Wildcards panel. The center uses a procedural mission board instead of forcing a character into the hero area. Added navigation handlers for the existing panels and settings modal, connected the records panel to persisted best wave, best time and total kills, and added strict card text containment and landscape-safe modal sizing.
+
+**Verification:**
+- Build: PASS (`npm run build`)
+- Typecheck/lint: PASS (`npm run lint`)
+- Whitespace: PASS (`git diff --check`)
+- Browser: VERIFIED in sandbox landscape viewport (`1280x1100`); captured Mission lobby, Wildcards view and Settings view.
+- Overflow audit: PASS — `bodyHorizontalOverflow: false`, all Wildcard cards have no scroll-width overflow, Settings card bounds are within viewport (`top 10`, `bottom 1070` in an 1100px viewport).
+- Device: NOT VERIFIED on a physical phone.
+
+**Remaining work:** The navigation is intentionally a single-lobby shell with focused scrolling, not separate full-screen pages. Physical Android/iOS testing remains required for safe-area and touch ergonomics.
+
+
+## 2026-10-10 09:55 +0000 UTC — Manus
+
+**Scope:** Landscape Settings presentation and lobby threat visibility.
+
+**Changed:** Replaced the narrow portrait-like Settings card presentation with a wide control-room panel: configuration eyebrow/title, category strip (General, Graphics, Audio, Controls, Gameplay), and a responsive three-column settings body retaining all existing controls. Added compact two-column behavior for smaller landscape widths and a one-column fallback only for narrow portrait devices. Corrected the existing procedural lobby zombie backdrop, which had no explicit positioning and rendered as an oversized static block; it is now an absolute, full-height, contained silhouette with readable contrast, eyes and distant infected forms behind the mission UI.
+
+**Verification:**
+- Build: PASS (`npm run build`)
+- Typecheck/lint: PASS (`npm run lint`)
+- Whitespace: PASS (`git diff --check`)
+- Browser: VERIFIED in Sandbox landscape viewport at 1280x1100.
+- Settings geometry: card `x=80..1200`, `y=27..1073`; body scrolls internally; page horizontal overflow `false`.
+- Zombie backdrop geometry: `x=690..1127`, `y=23..1100`, contained to the viewport and visible behind the lobby panels.
+- Device: NOT VERIFIED on a physical phone.
+
+**Remaining work:** The category buttons are presentation-only labels for the current unified settings panel; physical Android/iOS safe-area and touch testing remains required.
+
+
+## 2026-10-10 10:08 +0000 UTC — Manus
+
+**Scope:** Survival Slide touch control.
+
+**Finding:** The Slide button was wired to multi-touch-safe `bindAction`, but the activation gate required sprint state or a velocity of at least 5.2. Survival mode does not expose a clear sprint modifier, so a player moving with the joystick could be rejected even while visibly running. The control also lacked an explicit touch-priority rule.
+
+**Changed:** Lowered the deliberate-movement threshold to 3.2 velocity or 0.55 joystick magnitude while retaining grounded, non-swimming and cooldown guards. Added explicit `z-index`, `pointer-events` and `touch-action` rules for the Slide button so tapping it while another pointer controls movement is supported.
+
+**Verification:** `npm run lint`, `npm run build` and `git diff --check` all passed. Physical-device multitouch verification remains pending.

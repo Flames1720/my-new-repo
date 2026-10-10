@@ -215,3 +215,20 @@ Read ARCHITECTURE.md for protected decisions and AGENT_CHANGELOG.md for the chro
 - Diagnostic filters are reversible: tapping the active TERRAIN or HYDROLOGY control returns to WORLD, with an explicit WORLD button also present.
 - Survey mode hides the 920m distant-horizon terrain mesh so no second procedural world appears outside the finite world boundary.
 
+
+### Zombie-survival display-mode and lobby polish — 2026-10-10
+- Scope: `feature/zombie-survival-world-v2`; use native landscape fullscreen as a mandatory entry gate, pause/re-gate if fullscreen/orientation is lost, and make the survival lobby feel like an outbreak deployment screen rather than a centered explanatory card.
+- Implemented: animated rotating-phone onboarding; accessible/inert background while gated; loadout cards wired to the existing starting-weapon select; full-stage lobby composition with an animated infected silhouette; pulsing sanctuary dome, rising green energy bands and moving perimeter lights (amber while weakening); brief shot flash and a distinct registered-hit reticle tint.
+- Verification: TypeScript and Vite production build pass; browser smoke test entered fullscreen, selected the shotgun, and started a real survival run. Browser preview is not a substitute for physical Android/iOS testing; verify orientation lock, comfort/reach, active-view barrier readability and performance on devices.
+- Animation backlog is recorded in README: hit-stagger/knockback and boss slam telegraph-impact, sanctuary collapse/relocation set-piece, pickup pull-in, and richer weapon hand/shell handling.
+
+### Mobile WebView entry-gate hardening — 2026-10-10
+- The user-provided phone screenshot showed an unstyled portrait gate with HUD content leaking into view. Added inline critical styling and background-layer hiding so the mandatory entry gate remains full-screen and the phone-rotation cue remains visible even if external stylesheets fail.
+- Built a static production preview (compiled CSS/JS) on port 4173. Local/public HTML and hashed CSS returned HTTP 200, and the production preview was visually checked in the browser. Still request a fresh physical-device WebView check from the user before calling mobile rendering verified.
+
+
+### Survival run design continuation — 2026-10-10
+- Status: IMPLEMENTED & BUILD VERIFIED; browser verification is PARTIAL on `feature/zombie-survival-world-v2`.
+- Added illustrated, flip-to-inspect Wildcards with two starter cards, two active slots, data-driven definitions, local loadout persistence and one activation button per equipped active card.
+- Added unified paused Settings/Resume/Quit behavior, a detailed defeat/victory result surface, duration and best-time persistence, XP/level feedback, wave event banners and procedural event cues.
+- Remaining verification: complete a long browser run through defeat/results/redeploy/quit, and verify physical mobile safe-area/touch ergonomics.

@@ -5,22 +5,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#10151b" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <title>World Prototype — Wildlife</title>
-    <meta name="description" content="3D open-world nature and wildlife exploration prototype with procedural terrain, biomes, resources, and animals." />
-    <meta property="og:title" content="World Prototype — Wildlife" />
-    <meta property="og:description" content="3D open-world nature and wildlife exploration prototype with procedural terrain, biomes, resources, and animals." />
+    <title>Island Outbreak · Zombie Survival</title>
+    <meta name="description" content="Survive 100 waves on a ruined island. Fight evolving infected, hold safe zones, and build your loadout." />
+    <meta property="og:title" content="Island Outbreak · Zombie Survival" />
+    <meta property="og:description" content="First-person open-world zombie survival prototype with procedural terrain, weapons, loot, and safe zones." />
+    <style id="critical-display-gate">
+      html, body { width: 100%; height: 100%; min-height: 100%; margin: 0; overflow: hidden; background: #07100f; }
+      body { color: #edf3eb; font-family: system-ui, -apple-system, sans-serif; }
+      #displayModeGate { position: fixed !important; inset: 0 !important; z-index: 2147483647 !important; display: flex !important; align-items: center; justify-content: center; box-sizing: border-box; overflow: auto; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: radial-gradient(ellipse at 50% 42%, #14231d, #07100f 70%); text-align: center; }
+      body:not(.display-mode-ready) > :not(#displayModeGate) { visibility: hidden !important; pointer-events: none !important; }
+      body.display-mode-ready #displayModeGate { display: none !important; }
+      #displayModeGate .displayModeCard { box-sizing: border-box; width: min(520px, 100%); max-height: 100%; overflow: auto; padding: clamp(24px, 5vw, 48px); border: 1px solid #456351; border-radius: 4px 20px; background: linear-gradient(145deg, #111d1b, #080e0f); box-shadow: 0 30px 90px #000a; }
+      #displayModeGate .displayModeEyebrow { color: #83bd95; font-size: 9px; font-weight: 900; letter-spacing: .22em; }
+      #displayModeGate h1 { margin: 16px 0; color: #f3f2e9; font-size: clamp(28px, 5vw, 42px); line-height: 1; letter-spacing: -.045em; }
+      #displayModeGate p { max-width: 34ch; margin: 0 auto 18px; color: #b5c5ba; font-size: 13px; line-height: 1.55; }
+      #displayModeGate .displayModeFootnote { margin-top: 18px; color: #819087; font-size: 8px; letter-spacing: .18em; }
+      #displayModeGate #enterGameDisplayMode { min-height: 50px; min-width: 230px; display: inline-flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 8px; padding: 0 18px; border: 1px solid #79c591; border-radius: 3px 12px; background: linear-gradient(100deg, #1d7548, #194d3a); color: #effff1; font: 900 10px system-ui, sans-serif; letter-spacing: .14em; }
+      #displayModeGate #enterGameDisplayMode:disabled { opacity: .42; }
+      #displayModeGate .rotatePhoneAnimation, #displayModeGate .displayModeLandscapeHint { display: none; }
+      @keyframes criticalPhoneTurn { 0%, 12% { transform: rotate(0); } 48%, 70% { transform: rotate(90deg); } 90%, 100% { transform: rotate(0); } }
+      @media (orientation: portrait) {
+        #displayModeGate .displayModeCard { width: min(460px, 100%); }
+        #displayModeGate .rotatePhoneAnimation { position: relative; width: 140px; height: 115px; display: flex; align-items: center; justify-content: center; margin: 12px auto; }
+        #displayModeGate .rotatePhoneDevice { position: relative; width: 48px; height: 82px; border: 3px solid #a8d7b0; border-radius: 10px; background: linear-gradient(140deg, #325b45, #101817); animation: criticalPhoneTurn 2.8s ease-in-out infinite; }
+        #displayModeGate .rotatePhoneSpeaker { position: absolute; top: 4px; left: 50%; width: 12px; height: 3px; border-radius: 3px; background: #82c691; transform: translateX(-50%); }
+        #displayModeGate .rotatePhoneScreen { position: absolute; inset: 12px 4px; border-radius: 3px; background: linear-gradient(145deg, #497754, #173e30 55%, #825532); }
+        #displayModeGate .rotatePhoneHome { position: absolute; bottom: 4px; left: 50%; width: 5px; height: 5px; border: 1px solid #82c691; border-radius: 50%; transform: translateX(-50%); }
+        #displayModeGate .rotatePhoneArrow { position: absolute; top: 0; right: 5px; color: #b1e4b9; font-size: 25px; }
+        #displayModeGate .displayModeLandscapeHint { display: block; color: #d3e7d7; font-size: 10px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+        #displayModeGate .displayModeFullscreenHint, #displayModeGate #enterGameDisplayMode, #displayModeGate .displayModeFootnote { display: none !important; }
+      }
+    </style>
   </head>
   <body>
+    <div id="displayModeGate" role="dialog" aria-modal="true" aria-labelledby="displayModeTitle">
+      <div class="displayModeCard">
+        <div class="displayModeEyebrow">ISLAND OUTBREAK · FIELD DEPLOYMENT</div>
+        <h1 id="displayModeTitle">LANDSCAPE REQUIRED</h1>
+        <div class="rotatePhoneAnimation" role="img" aria-label="Animation showing a phone rotating from portrait to landscape"><div class="rotatePhoneDevice"><span class="rotatePhoneSpeaker"></span><span class="rotatePhoneScreen"></span><span class="rotatePhoneHome"></span></div><span class="rotatePhoneArrow">↻</span></div><p class="displayModeLandscapeHint">Rotate your phone to continue</p>
+        <p class="displayModeFullscreenHint">Island Outbreak runs in landscape fullscreen. Enter fullscreen to open the game.</p>
+        <button id="enterGameDisplayMode" type="button">ENTER FULLSCREEN <span>→</span></button>
+        <div class="displayModeFootnote">LANDSCAPE · FULLSCREEN · DEPLOY</div>
+      </div>
+    </div>
     <div id="game"></div>
     <div id="hud">
       <!-- Top Tactical Compass -->
       <div id="compass">360° N</div>
+      <div id="safeZoneDirection" aria-live="polite"><span id="safeZoneArrowIcon">▲</span><span id="safeZoneArrowLabel">SAFE ZONE</span><strong id="safeZoneArrowDistance">—</strong></div>
 
       <!-- Top Right Controls & Live Mini-Map -->
       <div id="topRightBar">
         <button id="photoBtn" aria-label="Photo Mode (clean screenshot)" title="Photo Mode (P)">📷</button>
         <button id="surveyBtn" aria-label="Open World Survey" title="World Survey">🗺️</button>
-        <button id="ecoBtn" aria-label="Ecosystem sanctuary & field guide" title="Wildlife Sanctuary">🐾</button>
+        <button id="survivalBtn" aria-label="Toggle Zombie Survival Mode" title="Zombie Survival · Z">🧟</button>
+        <button id="survivalPauseBtn" type="button" aria-label="Pause survival run" title="Pause run">Ⅱ</button>
         <button id="settingsBtn" aria-label="Open settings" title="Settings">⚙️</button>
         <button id="fullscreenBtn" aria-label="Toggle fullscreen" title="Fullscreen">⛶</button>
       </div>
@@ -39,9 +78,19 @@
         <div id="status">EXPLORING</div>
       </div>
 
-      <!-- Nearby Wildlife & Waypoint Context -->
-      <div id="wildlife" aria-live="polite">Wildlife loading…</div>
+      <!-- Compact, borderless survival HUD -->
+      <section id="survivalHud" aria-live="polite" aria-label="Zombie survival status">
+        <div class="survivalHudTop"><span id="survivalZoneStatus" class="survivalZoneStatus safe">SAFE · HOMESTEAD</span><span id="survivalWave">WAVE 0</span></div>
+        <div class="survivalBottomRow">
+          <div class="survivalHealthBlock"><span class="survivalHudKicker">HP</span><div class="survivalHealthTrack"><span id="survivalHealthBar"></span></div><strong id="survivalHealthText">100</strong></div>
+          <div class="survivalWeaponBlock"><div class="survivalWeaponLine"><strong id="survivalWeapon">P9 PISTOL</strong></div><div class="survivalAmmoValue"><strong id="survivalAmmo">15</strong><span id="survivalReserve">/ 60</span></div></div>
+          <div class="survivalKillsBlock"><span id="survivalKills">0 KILLS</span><span id="survivalZombies"></span></div>
+        </div>
+        <div class="survivalStaminaTrack" aria-label="Stamina"><span id="survivalStaminaBar"></span></div>
+      </section>
+
       <div id="waypointBadge"></div>
+      <div id="survivalEventBanner" aria-live="assertive"></div>
 
       <!-- Modern Bottom Hotbar Inventory -->
       <div id="inventory"></div>
@@ -51,7 +100,122 @@
       <div id="prompt"></div>
 
       <!-- Minimalist Controls Hint -->
-      <div id="controls">WASD: Move · Shift: Sprint · Space: Jump · E: Interact · P: Photo</div>
+      <div id="controls">WASD: Move · Shift: Sprint · Q: Sword · Z: Punch · X: Kick · R: Fire · C/F: TPP/FPP</div>
+    </div>
+
+    <div id="survivalLobby" class="show" role="dialog" aria-modal="true" aria-labelledby="lobbyTitle">
+      <div class="survivalLobbyCard">
+        <div class="lobbyStalker" aria-hidden="true">
+          <svg viewBox="0 0 360 640" role="presentation">
+            <defs><linearGradient id="stalkerShade" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#718078"/><stop offset=".48" stop-color="#384841"/><stop offset="1" stop-color="#111a18"/></linearGradient><filter id="stalkerBlur"><feGaussianBlur stdDeviation="3"/></filter></defs>
+            <g class="stalkerFar" fill="#25322e" opacity=".48" filter="url(#stalkerBlur)"><path d="M70 229q-24-38 2-69 19-23 44-4 20 15 14 43l-11 29 17 20 21 103-15 6-26-80-8 76-19 2-7-94-22 62-16-7 22-87z"/><path d="M268 256q-19-33 3-59 19-21 39-2 17 16 8 42l-12 21 18 23 15 91-13 4-23-63-7 73-17 1-4-75-19 56-14-5 18-79z"/></g>
+            <g class="stalkerMain" fill="url(#stalkerShade)" stroke="#b0c19f" stroke-opacity=".09" stroke-width="2">
+              <path class="stalkerLeg" d="M136 362l88 1 20 103-11 74-27 8-3-93-23-45-11 55-32 80-28-4 20-93-12-74z"/>
+              <path class="stalkerTorso" d="M121 153q17-36 62-34 42 2 59 35l23 98-22 74-28 38-91-5-31-44-11-67z"/>
+              <path class="stalkerArm stalkerLeftArm" d="M127 162q-27 5-37 39l-33 98q-9 25 4 42l19 14 11-18-8-17 28-58 36-64z"/>
+              <path class="stalkerArm stalkerRightArm" d="M237 159q30 9 40 39l41 88q12 27 0 46l-17 16-13-16 8-18-35-59-42-55z"/>
+              <path class="stalkerHead" d="M143 58q16-31 50-26 34 5 43 38l-7 30-17 27-31 13-31-19-15-31z"/>
+              <path d="M151 118l-18 30 29 8 18-19zm57 1l28 25-21 11-17-17z" fill="#19231f" stroke="none"/>
+              <path d="M157 98l15 4-4 5-13-2zm45 2l14-3 2 6-14 3z" fill="#d77a50" stroke="none"/>
+              <path d="M169 120q14 9 28-2l-2 9q-13 11-25 0z" fill="#171b19" stroke="none"/>
+              <path d="M146 181l27 5-18 26-22-11zm105 22l22 5-14 30-19-12zM112 303l25 7-8 29-25-5zm154 30l24-11 14 24-24 12z" fill="#24342e" stroke="none"/>
+              <path d="M144 232l41 12-12 8-35-10zm55 42l45-13-8 11-37 14z" fill="#8b9d86" opacity=".24" stroke="none"/>
+            </g>
+            <g class="stalkerEyes"><circle cx="168" cy="101" r="3.4"/><circle cx="211" cy="99" r="3.4"/></g>
+          </svg>
+      </div>
+        <nav class="lobbyNav" aria-label="Lobby navigation">
+          <button class="active" type="button" data-lobby-focus="lobbyMissionBoard">MISSION</button>
+          <button type="button" data-lobby-focus="lobbyFieldKit">FIELD KIT</button>
+          <button type="button" data-lobby-focus="lobbyWildcardsPanel">WILDCARDS</button>
+          <button type="button" data-lobby-focus="lobbyRecords">RECORDS</button>
+          <button id="lobbyOptionsBtn" type="button">SETTINGS</button>
+          <span class="lobbyNavSpacer"></span><span class="lobbyCurrency">◉ 2,900</span><span class="lobbyLevel">LV 1</span>
+        </nav>
+        <header class="lobbyTopline">
+          <div class="lobbyMark"><span class="lobbyMarkGlyph">IO</span><span>ISLAND OUTBREAK<small>FIELD OPERATIONS</small></span></div>
+          <div class="lobbySignal"><i></i> ISLAND SIGNAL <strong>LIVE</strong></div>
+        </header>
+        <main class="lobbyStage">
+          <aside class="lobbyPartyPanel" aria-label="Field operations" id="lobbyRecords">
+            <div class="lobbyPanelTitle"><span>FIELD OPERATIONS</span><small>SOLO DEPLOYMENT</small></div>
+            <div class="lobbyOperator active"><span class="operatorAvatar">IO</span><span><strong id="lobbyOperatorName">EXPLORER</strong><small>LEVEL 1 · ACTIVE</small></span><b>●</b></div>
+            <div class="lobbyOperator"><span class="operatorAvatar operatorGhost">+</span><span><strong>OPEN SLOT</strong><small>SOLO RUN</small></span><b>—</b></div>
+            <div class="lobbyPartyDivider"></div>
+            <div class="lobbyPanelMetric"><span>BEST WAVE</span><strong id="lobbyBestWaveMetric">0 / 100</strong></div>
+            <div class="lobbyPanelMetric"><span>BEST TIME</span><strong id="lobbyBestTimeMetric">—</strong></div>
+            <div class="lobbyPanelMetric"><span>TOTAL KILLS</span><strong id="lobbyTotalKillsMetric">0</strong></div>
+            <div class="lobbyOpsNote"><i></i><span>ISLAND SIGNAL<br><strong>CONNECTED</strong></span></div>
+          </aside>
+          <section class="lobbyHero">
+            <p class="lobbyEyebrow"><span>01</span> · LAST KNOWN SAFE REGION</p>
+            <div class="lobbyMissionBoard" id="lobbyMissionBoard" aria-label="Current island mission">
+              <div class="missionBoardGrid"></div><div class="missionPulse"></div><span class="missionPin pinHome">⌂</span><span class="missionPin pinThreat">!</span><span class="missionRoute"></span>
+              <div class="missionBoardLabels"><span>HOMESTEAD</span><span>INFECTED ACTIVITY</span><span>RIVERWOOD SECTOR</span></div>
+            </div>
+            <h1 id="lobbyTitle">ISLAND<br><em>OUTBREAK</em></h1>
+            <p class="lobbyTagline">HOLD THE SANCTUARY<br><strong>Survive the next 100 waves.</strong></p>
+            <div class="lobbyQuickStats" aria-label="Mission parameters">
+              <div><strong>100</strong><span>WAVES</span></div>
+              <div><strong>04</strong><span>STARTING HOSTILES</span></div>
+              <div><strong>01</strong><span>ACTIVE ZONE</span></div>
+            </div>
+            <p id="lobbyLastRun" class="lobbyLastRun">NO RUN RECORDED</p>
+          </section>
+          <aside class="lobbyDeploy" id="lobbyFieldKit">
+            <section class="lobbyChallenges" aria-label="Challenges"><div class="challengeTabs"><strong>CHALLENGES</strong><span>EVENT</span></div><div class="challengeRow"><span>FIRST CONTACT</span><b>0 / 5</b><i><em></em></i></div><div class="challengeRow"><span>HOLD THE LINE</span><b>0 / 2</b><i><em></em></i></div><small>Complete a run objective to earn XP and unlock field cards.</small></section>
+            <div class="lobbySectionHead"><span>FIELD KIT</span><small>SELECT LOADOUT</small></div>
+            <div id="lobbyWeaponCards" class="lobbyWeaponCards" role="radiogroup" aria-label="Starting weapon">
+              <button class="lobbyWeaponPick active" type="button" role="radio" aria-checked="true" data-lobby-weapon="pistol"><span class="weaponCardIcon pistolIcon">P</span><span class="weaponCardCopy"><strong>P9 TACTICAL</strong><small>SIDEARM · STEADY</small></span><span class="weaponCardSelect">●</span></button>
+              <button class="lobbyWeaponPick" type="button" role="radio" aria-checked="false" data-lobby-weapon="shotgun"><span class="weaponCardIcon shotgunIcon">12</span><span class="weaponCardCopy"><strong>W-870 BREACHER</strong><small>SHOTGUN · CLOSE</small></span><span class="weaponCardSelect">○</span></button>
+              <button class="lobbyWeaponPick" type="button" role="radio" aria-checked="false" data-lobby-weapon="rifle"><span class="weaponCardIcon rifleIcon">AR</span><span class="weaponCardCopy"><strong>AR-15 SPECOPS</strong><small>RIFLE · AUTOMATIC</small></span><span class="weaponCardSelect">○</span></button>
+            </div>
+            <select id="lobbyWeaponSelect" aria-label="Starting weapon"><option value="pistol">P9 Tactical</option><option value="shotgun">W-870 Breacher</option><option value="rifle">AR-15 SpecOps</option></select>
+            <section class="lobbyProgression" aria-label="Persistent upgrades">
+              <div class="lobbySectionHead"><span id="lobbyProgressionSummary">LEVEL 1 · 0 XP · BEST WAVE 0/100</span><small>PERMANENT UPGRADES</small></div>
+              <div class="lobbyUpgradeGrid">
+                <button id="upgradeHealthBtn" type="button">+10 HP <small>120 XP</small></button>
+                <button id="upgradeStaminaBtn" type="button">+15 STAMINA <small>100 XP</small></button>
+                <button id="upgradeDamageBtn" type="button">+5% DAMAGE <small>180 XP</small></button>
+              </div>
+            </section>
+            <section class="lobbyWildcards" id="lobbyWildcardsPanel" aria-label="Wildcards">
+              <div class="lobbySectionHead"><span>WILDCARDS</span><small id="wildcardSlotSummary">2 ACTIVE SLOTS</small></div>
+              <p class="wildcardIntro">Equip active field cards before deployment. Each equipped card adds one ready button in the run.</p>
+              <div id="wildcardCollection" class="wildcardCollection"></div>
+            </section>
+          </aside>
+        </main>
+        <footer class="lobbyFooter">
+          <div class="lobbyObjective"><span class="lobbyObjectiveDot"></span><span>OBJECTIVE <strong>HOLD THE SANCTUARY</strong></span></div>
+          <button id="startRunBtn" type="button"><span>DEPLOY</span><b>→</b></button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="survivalDeathOverlay" role="dialog" aria-modal="true" aria-labelledby="survivalDeathTitle">
+      <div class="survivalDeathCard">
+        <div id="survivalResultEyebrow" class="survivalDeathEyebrow">SIGNAL LOST</div>
+        <h2 id="survivalDeathTitle">ZOMBIE ATE YOUR BRAIN</h2>
+        <p id="survivalResultCopy">The island kept the score.</p>
+        <div id="survivalResultStats" class="survivalResultStats"></div>
+        <div class="survivalXpPanel"><div><span>RUN XP</span><strong id="survivalRunXp">+0 XP</strong></div><div><span>TOTAL XP</span><strong id="survivalTotalXp">0 XP</strong></div><div class="xpTrack"><i id="survivalXpBar"></i></div><small id="survivalXpProgress">LEVEL 1 · 0 / 150 XP</small></div>
+        <div id="survivalResultCallout" class="survivalResultCallout"></div>
+        <button id="survivalRestartBtn">REDEPLOY</button>
+        <button id="survivalResultQuitBtn" class="resultSecondaryBtn" type="button">QUIT TO LOBBY</button>
+      </div>
+    </div>
+
+    <div id="survivalPauseOverlay" role="dialog" aria-modal="true" aria-labelledby="survivalPauseTitle">
+      <div class="survivalPauseCard">
+        <div class="survivalPauseEyebrow">FIELD CONTROL</div>
+        <h2 id="survivalPauseTitle">RUN PAUSED</h2>
+        <p>The island is on hold. Catch your breath, then get back out there.</p>
+        <button id="resumeRunBtn" type="button">RESUME RUN</button>
+        <button id="pauseSettingsBtn" type="button">SETTINGS</button>
+        <button id="restartPausedRunBtn" type="button">RESTART RUN</button>
+        <button id="leaveSurvivalBtn" type="button">QUIT</button>
+      </div>
     </div>
 
     <!-- Emote Selector Bar -->
@@ -70,41 +234,77 @@
       <canvas id="mapCanvas"></canvas>
       <div id="mapLegend">
         <span>■ Home</span>
+        <span>◉ Safe zone</span>
+        <span>● Hostile</span>
         <span>● You (Arrow)</span>
         <span>— Trail (Where you came from)</span>
-        <span>▲ Wildlife</span>
         <span>★ Waypoint (Tap anywhere to set)</span>
       </div>
     </div>
 
     <!-- Settings Modal Overlay -->
-    <div id="settingsOverlay">
-      <div class="settingsCard">
-        <div class="settingsHeader">
-          <h3>GAMEPLAY & CONTROLS SETTINGS</h3>
-          <button id="settingsClose">✕</button>
-        </div>
+	    <div id="settingsOverlay">
+	      <div class="settingsCard">
+	        <div class="settingsHeader">
+	          <div class="settingsTitleBlock"><span class="settingsEyebrow">FIELD CONTROL / CONFIGURATION</span><h3>GAMEPLAY & CONTROLS</h3></div>
+	          <nav class="settingsTabs" aria-label="Settings categories"><button class="active" type="button">GENERAL</button><button type="button">GRAPHICS</button><button type="button">AUDIO</button><button type="button">CONTROLS</button><button type="button">GAMEPLAY</button></nav>
+	          <button id="settingsClose">✕</button>
+	        </div>
         <div class="settingsBody">
           <div class="settingGroup">
             <div class="settingLabel">
-              <span>Horizontal Sensitivity (X-Axis)</span>
-              <span id="sensXVal">1.0x</span>
+              <span>Horizontal turn (° per full right-side swipe)</span>
+              <span id="sensXVal">180°</span>
             </div>
-            <input type="range" id="sensXSlider" min="0.2" max="3.0" step="0.1" value="1.0" />
+            <input type="range" id="sensXSlider" min="60" max="720" step="15" value="180" />
           </div>
 
           <div class="settingGroup">
             <div class="settingLabel">
-              <span>Vertical Sensitivity (Y-Axis)</span>
-              <span id="sensYVal">1.0x</span>
+              <span>Vertical look (° per full look-zone swipe)</span>
+              <span id="sensYVal">100°</span>
             </div>
-            <input type="range" id="sensYSlider" min="0.2" max="3.0" step="0.1" value="1.0" />
+            <input type="range" id="sensYSlider" min="30" max="360" step="10" value="100" />
+          </div>
+
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Aim sensitivity while holding ADS</span>
+              <span id="adsSensVal">50%</span>
+            </div>
+            <input type="range" id="adsSensSlider" min="25" max="100" step="5" value="50" />
           </div>
 
           <div class="settingRow">
             <span>Invert Vertical (Y-Axis)</span>
             <input type="checkbox" id="invertYCheck" />
           </div>
+
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Camera acceleration</span>
+            </div>
+            <select id="camAccelSelect">
+              <option value="fixed">Fixed · consistent turn speed</option>
+              <option value="distance">Distance · longer swipe turns faster</option>
+              <option value="speed">Speed · faster swipe turns faster</option>
+            </select>
+          </div>
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Acceleration strength</span>
+              <span id="camAccelStrengthVal">0.65×</span>
+            </div>
+            <input type="range" id="camAccelStrengthSlider" min="0" max="2" step="0.05" value="0.65" />
+          </div>
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Acceleration trigger (higher = harder/faster swipe needed)</span>
+              <span id="camAccelThresholdVal">1.0×</span>
+            </div>
+            <input type="range" id="camAccelThresholdSlider" min="0.5" max="2" step="0.1" value="1.0" />
+          </div>
+          <button id="hudCustomizeBtn" class="settingsActionBtn" type="button">🎮 Customize combat HUD</button>
 
           <div class="settingGroup">
             <div class="settingLabel">
@@ -197,22 +397,37 @@
       </div>
     </div>
 
-    <!-- Living Ecosystem Sanctuary Census Modal -->
-    <div id="ecoOverlay">
-      <div class="ecoCard">
-        <div class="ecoHeader">
-          <h3>LIVING ECOSYSTEM SANCTUARY & CENSUS</h3>
-          <button id="ecoClose">✕</button>
-        </div>
-        <div class="ecoBody">
-          <p class="ecoIntro">Real-time persistent population tracking. Animals reproduce through mating and raise their young. Protect vulnerable species from extinction!</p>
-          <div id="ecoCensusList"></div>
-          <div class="ecoSummary">
-            <span id="ecoTotalCount">Total Fauna: 0</span>
-            <span id="ecoExtinctCount">Status: Balanced</span>
+    <!-- HUD editor: the game remains visible and controls can be dragged behind this compact panel. -->
+    <div id="hudEditorOverlay" aria-label="Customize combat HUD">
+      <section id="hudEditorPanel">
+        <div class="hudEditorHeader">
+          <strong>CUSTOM COMBAT HUD</strong>
+          <div class="hudEditorHeaderActions">
+            <button id="hudEditorMinimize" type="button" aria-label="Collapse HUD editor">−</button>
+            <button id="hudEditorClose" type="button" aria-label="Close HUD editor">✕</button>
           </div>
         </div>
-      </div>
+        <p>Drag a control to place it. Tap it to select, then adjust size and transparency. Saved on this device.</p>
+        <label class="hudEditorLabel">Finger layout
+          <select id="hudPresetSelect">
+            <option value="four">4-finger claw</option>
+            <option value="three">3-finger</option>
+            <option value="thumbs">Two-thumb</option>
+            <option value="custom">Custom positions</option>
+          </select>
+        </label>
+        <label class="hudEditorLabel">Selected: <span id="hudSelectedName">SHOOT</span></label>
+        <label class="hudEditorLabel">Button size <span id="hudSizeVal">66 px</span>
+          <input id="hudSizeSlider" type="range" min="34" max="100" step="2" value="66" />
+        </label>
+        <label class="hudEditorLabel">Opacity <span id="hudOpacityVal">65%</span>
+          <input id="hudOpacitySlider" type="range" min="15" max="100" step="5" value="65" />
+        </label>
+        <div class="hudEditorFooter">
+          <button id="hudResetBtn" type="button">Reset layout</button>
+          <button id="hudSaveBtn" type="button">Save & close</button>
+        </div>
+      </section>
     </div>
 
     <!-- Home Carpenter Upgrade Modal Overlay -->
@@ -233,16 +448,28 @@
 
     <!-- Touch Mobile Controls -->
     <div id="touch">
-      <div id="stick"><div id="knob"></div></div>
-      <div id="lookZone"></div>
+      <div id="leftMoveZone" aria-hidden="true"></div>
+      <div id="stick" aria-hidden="true"><div id="knob"></div></div>
+      <div id="lookZone" aria-label="Drag the right side to look around"></div>
       <div class="actions">
+        <button id="attackBtn" title="Sword attack">ATTACK</button>
+        <button id="punchBtn" title="Fast punch">PUNCH</button>
+        <button id="kickBtn" title="Round kick">KICK</button>
+        <button id="castBtn" title="Fire bolt">FIRE</button>
+        <button id="skillBtn" data-hud-id="skill" title="Shockwave skill" aria-label="Activate shockwave skill">PULSE</button>
+        <button id="shootBtn" data-hud-id="shoot" title="Shoot weapon">SHOOT</button>
+        <button id="aimBtn" data-hud-id="ads" title="Toggle aim down sights">ADS</button>
+        <button id="reloadBtn" data-hud-id="reload" title="Reload weapon" aria-label="Reload weapon"><svg class="squareLoopIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H5a2 2 0 0 0-2 2v3M3 6l2 3 3-2M16 20h3a2 2 0 0 0 2-2v-3m0 3-3-3-3 2M7 7h9a2 2 0 0 1 2 2v1M17 17H8a2 2 0 0 1-2-2v-1"/></svg></button>
+        <button id="weaponSwitchBtn" data-hud-id="weapon" title="Switch weapon" aria-label="Switch weapon">⇄</button>
         <button id="emoteBtn" title="Emotes">EMOTE</button>
         <button id="modeBtn">FPP</button>
         <button id="runBtn">WALK</button>
-        <button id="jumpBtn">JUMP</button>
+        <button id="jumpBtn" data-hud-id="jump">JUMP</button>
+        <button id="slideBtn" data-hud-id="slide" title="Slide while sprinting">SLIDE</button>
         <button id="diveBtn" class="swimOnly">DIVE</button>
-        <button id="interactBtn">USE</button>
+        <button id="interactBtn" data-hud-id="use">USE</button>
       </div>
+      <div id="wildcardHud" aria-label="Equipped wildcards"></div>
     </div>
 
     <!-- Photo Mode Viewfinder & Screenshot Capture Overlay -->
