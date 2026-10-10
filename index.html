@@ -620,8 +620,55 @@
     persist();
   });
 
-  // Intentionally do not inject controls into the Settings/HUD DOM.
-  // Keep the capture passive so diagnostics cannot alter pause/settings layout or touch targets.
+  // Keep the log controls inside Settings, where the player expects to find them.
+  const addSettingsPanel = () => {
+    const body = document.querySelector('#settingsOverlay .settingsBody');
+    if (!body || document.getElementById('diagnosticsPanel')) return;
+    const panel = document.createElement('section');
+    panel.id = 'diagnosticsPanel';
+    panel.style.cssText = 'margin:18px 0 8px;padding:14px;border:1px solid #40544a;border-radius:10px;background:#0b1412;color:#e8f0e9';
+    panel.innerHTML = '<h4 style="margin:0 0 6px;font-size:13px">BACKGROUND DIAGNOSTICS</h4><p style="margin:0 0 10px;font-size:12px;opacity:.8">Recent gameplay performance and error logs are stored locally on this device. Copy them after reproducing a bug.</p><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><button id="diagnosticsCopy" type="button">COPY LOGS</button><button id="diagnosticsClear" type="button">CLEAR LOGS</button></div><p id="diagnosticsStatus" aria-live="polite" style="font-size:11px;margin:8px 0 0;opacity:.8">Logs are being recorded locally.</p>';
+    body.appendChild(panel);
+    const status = panel.querySelector('#diagnosticsStatus');
+    statusNode = status;
+    panel.querySelector('#diagnosticsCopy').addEventListener('click', async () => {
+      persist();
+      const report = JSON.stringify({ exportedAt: new Date().toISOString(), device: deviceInfo(), logs: rows.slice() }, null, 2);
+      try {
+        await navigator.clipboard.writeText(report);
+        status.textContent = 'Copied. Paste the report into ChatGPT.';
+      } catch {
+        const area = document.createElement('textarea');
+        area.value = report;
+        area.setAttribute('aria-label', 'Diagnostic report to copy');
+        area.style.cssText = 'position:fixed;inset:10% 5%;width:90%;height:75%;z-index:2147483647;background:#fff;color:#111;font-size:11px';
+        document.body.appendChild(area);
+        area.focus(); area.select();
+        let copied = false;
+        try { copied = document.execCommand('copy'); } catch {}
+        status.textContent = copied ? 'Copied. Paste the report into ChatGPT.' : 'Copy was blocked. The report is selected; use Copy from your device menu.';
+        if (copied) area.remove();
+      }
+    });
+    panel.querySelector('#diagnosticsClear').addEventListener('click', () => {
+      rows.length = 0;
+      push('logs-cleared');
+      persist();
+      status.textContent = 'Logs cleared; recording continues.';
+    });
+  };
+  const logUiAction = event => {
+    const target = event.target instanceof Element ? event.target.closest('button') : null;
+    if (target && /settings|hud|resume|pause|restart|leave|save|cancel|close|diagnostic/i.test((target.id || '') + ' ' + (target.textContent || ''))) {
+      push('ui-action', { id: target.id || null, label: (target.textContent || '').trim().slice(0, 60), bodyStates: ['survival-mode', 'survival-paused', 'hud-edit-mode'].filter(name => document.body.classList.contains(name)) });
+      persist();
+    }
+  };
+  document.addEventListener('click', logUiAction, true);
+  const settingsObserver = new MutationObserver(addSettingsPanel);
+  settingsObserver.observe(document.documentElement, { childList: true, subtree: true });
+  addEventListener('DOMContentLoaded', addSettingsPanel);
+  addSettingsPanel();
 
 })();
 </script>
