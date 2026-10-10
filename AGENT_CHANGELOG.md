@@ -942,3 +942,23 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 - `src/zombie-survival.ts` (not changed): per-zombie geometry/material creation, and `hasLineOfSight` running every frame inside attack range before the cooldown check (reordering the checks is behaviour-preserving).
 
 **Next agent:** Apply the patch on `feature/zombie-survival-world-v2`, run `npm run lint && npm run build`, and fix any type errors before testing on device. Do not merge to `main`.
+
+
+## 2026-10-10 — GPT-6 — Island Outbreak aiming, mobile controls, lobby and settings sprint
+
+**Branch:** `feature/zombie-survival-world-v2`; `main` unchanged. **Status:** in progress, NOT user-finalized.
+
+**Confirmed baseline from source:** first-person reticle uses 50%/50% screen coordinates. Hit detection starts from the camera ray; visible tracers previously started from the weapon muzzle. Single-bullet pistol/rifle inherited nonzero random NDC spread even while aiming. Player reported consistent roughly 40px leftward missed impacts on his Android screen, but a precise on-device calibration has NOT yet been verified.
+
+**Applied:**
+- `src/zombie-survival.ts`: aimed single-projectile weapons now use zero random spread; centered shotgun spread stays intact, hip-fire spread preserved. ADS tracers originate from the same camera ray used for ray-hit detection to avoid misleading muzzle parallax. ADS FOV interpolation uses frame-independent faster exponential blending.
+- `src/main.ts`, `src/settings.ts`, `src/types.ts`, `index.html`: survival first-person camera orientation and eye position no longer trail touch input through an extra angle/position lerp. Separate opt-in button drag-look toggles (Look while aiming / Look while firing), both default OFF, with pointer IDs so Shoot/ADS drags do not rotate view without permission. ADS set on pointer down.
+- `index.html`, `src/style.css`, `src/main.ts`: Mission, Field Kit, Wildcards, Records, Challenges and Upgrades now switch as distinct lobby panels, not scroll targets. Existing selection, Wildcard and upgrade IDs/handlers preserved. Mission wording simplified, current level/XP/best-wave summaries added. Three lightweight inline SVG weapon illustrations added, without downloading new textures or creating a WebGL preview scene.
+- Settings controls grouped in functional CONTROLS / GRAPHICS-AUDIO / PLAYER / DIAGNOSTICS navigation. Model picker and profession hidden in UI, outfit deferred and hidden, backing code retained. Opt-in diagnostics capture/copy/clear wired to the preexisting bounded 120s performance event stream; music controls await the user's audio files.
+- Added a lightweight procedural slide sound on successful slide start.
+- Display gate now checks actual landscape viewport dimensions and listens for Android/WebKit fullscreen, rotation, page/show/focus and orientation updates; existing no-auto-resume pause behavior retained.
+- Hid old exploration HUD (inventory, playerCard, carpenter overlay, survey button) in survival view, without deleting their source. Undecided legacy actions and photo-mode code remain untouched.
+
+**Verification:** Vercel preview auto-build for commit `fa031e5` reached `READY`, which includes TypeScript+Vite build as configured in `package.json`. This is **build verification only**, not a mobile-browser interaction, accuracy, performance, screenshot, or save-data regression test. Previous optimization `chunk-queue-1` was not modified.
+
+**Next tests:** Reproduce 40px-left symptom with stationary target at multiple ranges and ADS/hip modes; Android claw multi-touch; fullscreen exit/return and portrait rotation; inspect lobby card layout and all page actions; confirm save data, memory and frame time. Collect user audio files before implementing music.
