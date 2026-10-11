@@ -2580,35 +2580,34 @@ const lobbyOptionsBtn = document.querySelector('#lobbyOptionsBtn') as HTMLButton
 const settingsOverlay = document.querySelector('#settingsOverlay') as HTMLDivElement;
 const settingsClose = document.querySelector('#settingsClose') as HTMLButtonElement;
 const settingsTabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-settings-tab]'));
-const settingsSections = document.querySelector('.settingsBody') as HTMLElement | null;
-// Tag existing settings without moving the inputs their event handlers depend on.
-const settingsSectionByControl: Record<string, string> = {
-  sensXSlider: 'controls', sensYSlider: 'controls', adsSensSlider: 'controls',
-  invertYCheck: 'controls', lookWhileAimingCheck: 'controls', lookWhileFiringCheck: 'controls',
-  camAccelSelect: 'controls', camAccelStrengthSlider: 'controls',
-  camAccelThresholdSlider: 'controls', hudCustomizeBtn: 'controls',
-  graphicsSelect: 'graphics', weatherSelect: 'graphics', lodSelect: 'graphics',
-  playerNameInput: 'player',
+const settingsPages = Array.from(document.querySelectorAll<HTMLElement>('#settingsOverlay .settingsPage'));
+const settingsTitle = document.querySelector<HTMLElement>('#settingsOverlay .settingsTitleBlock h3');
+const settingsTitles: Record<string, string> = {
+  controls: 'CAMERA & CONTROLS',
+  graphics: 'GRAPHICS & AUDIO',
+  player: 'PLAYER DETAILS',
+  diagnostics: 'DIAGNOSTICS',
 };
-for (const [id, section] of Object.entries(settingsSectionByControl)) {
-  const control = document.getElementById(id);
-  const container = control?.closest<HTMLElement>('.settingGroup, .settingRow') || control;
-  if (container) container.dataset.settingsSection = section;
-}
-// Legacy rig, profession and future outfit controls remain in the source for
-// compatibility, but do not clutter the current first-person survival settings.
-for (const id of ['characterModelSelect', 'playerRoleSelect', 'outfitSelect']) {
-  document.getElementById(id)?.closest<HTMLElement>('.settingGroup')?.setAttribute('hidden', '');
-}
+// Real section containers keep every unrelated control out of the active tab,
+// including pre-existing inline-script diagnostics, and preserve existing listeners.
 function showSettingsTab(section: string): void {
-  settingsTabButtons.forEach(button => {
+  const page = settingsPages.find(item => item.dataset.settingsPage === section);
+  if (!page) return;
+  for (const button of settingsTabButtons) {
     const active = button.dataset.settingsTab === section;
     button.classList.toggle('active', active);
-    button.setAttribute('aria-pressed', String(active));
-  });
-  settingsSections?.querySelectorAll<HTMLElement>('[data-settings-section]').forEach(group => {
-    group.hidden = group.dataset.settingsSection !== section;
-  });
+    button.setAttribute('aria-selected', String(active));
+  }
+  for (const item of settingsPages) {
+    const active = item === page;
+    item.classList.toggle('active', active);
+    item.hidden = !active;
+    item.inert = !active;
+    item.setAttribute('aria-hidden', String(!active));
+  }
+  if (settingsTitle) settingsTitle.textContent = settingsTitles[section] || 'SETTINGS';
+  const body = document.querySelector<HTMLElement>('#settingsOverlay .settingsBody');
+  if (body) body.scrollTop = 0;
 }
 settingsTabButtons.forEach(button => bindAction(button, () => showSettingsTab(button.dataset.settingsTab || 'controls')));
 showSettingsTab('controls');
