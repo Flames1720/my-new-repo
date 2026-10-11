@@ -238,6 +238,13 @@ export class MinimapSystem {
       }
     }
 
+    if (survival?.safeZones.length) {
+      const zone = survival.safeZones.reduce((a, b) => Math.hypot(a.x-playerPos.x,a.z-playerPos.z) < Math.hypot(b.x-playerPos.x,b.z-playerPos.z) ? a : b);
+      const target = toRadar(zone.x, zone.z);
+      ctx.save(); ctx.strokeStyle = '#a7f3d0'; ctx.lineWidth = 1.5; ctx.lineCap = 'round'; ctx.setLineDash([1, 5]);
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(target.x, target.y); ctx.stroke(); ctx.restore();
+    }
+
     // Safe-zone rings are overlaid on the existing generated world map, not on a replacement map.
     if (survival) {
       for (const zone of survival.safeZones) {
@@ -423,6 +430,15 @@ export class MinimapSystem {
         ctx.fillStyle = getMapTileColor(wx, wz);
         ctx.fillRect(sx, sy, Math.ceil(cell) + 0.5, Math.ceil(cell) + 0.5);
       }
+    }
+
+    if (survival?.safeZones.length) {
+      const zone = survival.safeZones.reduce((a, b) => Math.hypot(a.x-playerPos.x,a.z-playerPos.z) < Math.hypot(b.x-playerPos.x,b.z-playerPos.z) ? a : b);
+      ctx.save(); ctx.strokeStyle = '#a7f3d0'; ctx.lineWidth = 1.5; ctx.lineCap = 'round'; ctx.setLineDash([1, 5]);
+      ctx.beginPath();
+      ctx.moveTo(mapOriginX + (playerPos.x / SIZE + WORLD_RADIUS + 0.5) * cell, mapOriginY + (playerPos.z / SIZE + WORLD_RADIUS + 0.5) * cell);
+      ctx.lineTo(mapOriginX + (zone.x / SIZE + WORLD_RADIUS + 0.5) * cell, mapOriginY + (zone.z / SIZE + WORLD_RADIUS + 0.5) * cell);
+      ctx.stroke(); ctx.restore();
     }
 
     // Safe-zone coverage and hostile locations share the exact same world coordinates as the simulation.

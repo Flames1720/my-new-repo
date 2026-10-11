@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import ts from 'typescript';
+import * as THREE from 'three';
+const data=s=>`data:text/javascript;base64,${Buffer.from(s).toString('base64')}`;
+let code=ts.transpileModule(await readFile('src/minimap.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+code=code.replaceAll("from 'three'",`from '${import.meta.resolve('three')}'`).replaceAll("from './terrain'",`from '${data("export const HOME_X=0,HOME_Z=0,VILLAGE_X=200,VILLAGE_Z=200,WORLD_RADIUS=6,WORLD_DIAMETER=13,SIZE=16;export const waterAt=()=>false,roadAt=()=>false,mountainMaskAt=()=>0,isRiverAt=()=>false,queryWorldFields=()=>({});")}'`).replaceAll("from './fauna'",`from '${data('export const speciesColor=()=>"white";')}'`);
+globalThis.window={devicePixelRatio:1};globalThis.localStorage={getItem:()=>null};
+const paths=[];let dash=[],path=[];
+const ctx=new Proxy({setLineDash:d=>dash=d,beginPath:()=>path=[],moveTo:(x,y)=>path.push([x,y]),lineTo:(x,y)=>path.push([x,y]),stroke:()=>{if(dash[0]===1&&dash[1]===5)paths.push([...path]);}},{get:(o,k)=>o[k]??(()=>{})});
+const canvas={clientWidth:200,clientHeight:200,width:200,height:200,getContext:()=>ctx,addEventListener:()=>{}};
+const {MinimapSystem}=await import(data(code));
+const map=new MinimapSystem(canvas,canvas,{classList:{toggle(){}}});
+const player=new THREE.Vector3(0,0,0),radar={safeZones:[{id:'far',label:'Far',x:80,z:0,radius:10},{id:'near',label:'Near',x:20,z:0,radius:10}],zombies:[]};
+map.renderMini(player,0,[],radar);assert.deepEqual(paths[0][0],[100,100]);assert(paths[0][1][0]<100);assert.equal(paths.length,1);
+map.renderMini(player,Math.PI/2,[],radar);assert(Math.abs(paths[1][1][0]-100)<1e-8);assert(paths[1][1][1]<100);
+map.isFullOpen=true;map.renderFull(player,0,[],radar);assert.equal(paths.length,3);assert(paths[2][1][0]>paths[2][0][0]);assert.equal(paths[2][1][1],paths[2][0][1]);
+console.log('PASS: dotted sanctuary line uses nearest target and correct rotating/full-map coordinates');

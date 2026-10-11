@@ -2380,16 +2380,13 @@ const survivalHealthText = document.querySelector('#survivalHealthText') as HTML
 const survivalHealthBar = document.querySelector('#survivalHealthBar') as HTMLSpanElement | null;
 const survivalStaminaBar = document.querySelector('#survivalStaminaBar') as HTMLSpanElement | null;
 const survivalSkillButton = document.querySelector('#skillBtn') as HTMLButtonElement | null;
-const safeZoneDirection = document.querySelector('#safeZoneDirection') as HTMLDivElement | null;
-const safeZoneArrowIcon = document.querySelector('#safeZoneArrowIcon') as HTMLSpanElement | null;
-const safeZoneArrowLabel = document.querySelector('#safeZoneArrowLabel') as HTMLSpanElement | null;
-const safeZoneArrowDistance = document.querySelector('#safeZoneArrowDistance') as HTMLElement | null;
 const survivalWeapon = document.querySelector('#survivalWeapon') as HTMLSpanElement | null;
 const survivalAmmo = document.querySelector('#survivalAmmo') as HTMLSpanElement | null;
 const survivalReserve = document.querySelector('#survivalReserve') as HTMLSpanElement | null;
 const survivalKills = document.querySelector('#survivalKills') as HTMLSpanElement | null;
 const survivalWave = document.querySelector('#survivalWave') as HTMLSpanElement | null;
 const survivalZombies = document.querySelector('#survivalZombies') as HTMLSpanElement | null;
+const survivalNotice = document.querySelector('#survivalNotice') as HTMLDivElement | null;
 const survivalEventBanner = document.querySelector('#survivalEventBanner') as HTMLDivElement | null;
 const survivalDeathOverlay = document.querySelector('#survivalDeathOverlay') as HTMLDivElement | null;
 const survivalRestartBtn = document.querySelector('#survivalRestartBtn') as HTMLButtonElement | null;
@@ -2478,6 +2475,14 @@ let firstRunTutorial: FirstRunTutorial | undefined;
 let lastBossKills = 0, lastTravelMeters = 0, lastTravelSaveSecond = -1;
 let nearDeathWave: number | null = null;
 
+let survivalNoticeHideTimer: ReturnType<typeof setTimeout> | undefined;
+function showSurvivalNotice(message: string): void {
+  if (!survivalNotice) return;
+  survivalNotice.textContent = message;
+  survivalNotice.classList.add('show');
+  clearTimeout(survivalNoticeHideTimer);
+  survivalNoticeHideTimer = setTimeout(() => survivalNotice.classList.remove('show'), 2200);
+}
 let survivalEventHideTimer: ReturnType<typeof setTimeout> | undefined;
 function announceSurvivalEvent(label: string, cue: 'wave-start' | 'wave-clear' | 'boss-warning' | 'level-up' | 'game-over'): void {
   if (survivalEventBanner) {
@@ -2489,7 +2494,7 @@ function announceSurvivalEvent(label: string, cue: 'wave-start' | 'wave-clear' |
       { transform: 'translate(-50%, -50%) scale(.88)' },
       { transform: 'translate(-50%, -50%) scale(1)' },
     ], { duration: 220, easing: 'ease-out' });
-    survivalEventHideTimer = setTimeout(() => survivalEventBanner.classList.remove('show'), 2400);
+    survivalEventHideTimer = setTimeout(() => survivalEventBanner.classList.remove('show'), 1500);
   }
   survivalSound.playCue(cue);
 }
@@ -4030,7 +4035,10 @@ survival = new ZombieSurvivalSystem({
   },
   notify: message => {
     if (!message) return;
-    if (/SAFE ZONE RELOCATED|COLLAPSED|BOSS SLAM|BOSS APPROACHING/i.test(message)) { announceSurvivalEvent(message, 'boss-warning'); return; }
+    if (/SAFE ZONE RELOCATED/i.test(message)) { showSurvivalNotice('New sanctuary ready'); return; }
+    if (/COLLAPSED/i.test(message)) { showSurvivalNotice('Sanctuary relocating'); return; }
+    if (/DEFENSES WEAKENING/i.test(message)) { showSurvivalNotice('Sanctuary disappearing'); return; }
+    if (/BOSS SLAM|BOSS APPROACHING/i.test(message)) { showSurvivalNotice(/SLAM/i.test(message) ? 'Boss strike' : 'Boss approaching'); survivalSound.playCue('boss-warning'); return; }
     if (/^(HIT|HEADSHOT|INFECTED ELIMINATED|TAKEN HIT|RELOADING|Reload complete|Weapon:|PREPARE|PREPARATION COMPLETE|WAVE \d)/i.test(message)) return;
     say(message);
   },
@@ -4054,11 +4062,15 @@ survival = new ZombieSurvivalSystem({
     lastSurvivalState = state;
     if (state.preparationSeconds && state.preparationSeconds !== lastPrepAnnouncement) {
       lastPrepAnnouncement = state.preparationSeconds;
-      if (state.preparationSeconds <= 3 || state.preparationSeconds === 12) announceSurvivalEvent(state.preparationSeconds <= 3 ? `FIRST CONTACT IN ${state.preparationSeconds}` : 'PREPARE FOR FIRST CONTACT', 'wave-start');
+      if (state.preparationSeconds <= 3 || state.preparationSeconds === 12) showSurvivalNotice(state.preparationSeconds <= 3 ? `First contact in ${state.preparationSeconds}` : 'Prepare for first contact');
     }
     if (state.wave > lastEventWave) {
       lastEventWave = state.wave;
-      if (state.wave > 0) announceSurvivalEvent(`WAVE ${state.wave}`, state.wave >= 5 && state.wave % 5 === 0 ? 'boss-warning' : 'wave-start');
+      if (state.wave > 0 && state.waveIntroActive && !state.livingZombies) announceSurvivalEvent(`WAVE ${state.wave}`, state.wave >= 5 && state.wave % 5 === 0 ? 'boss-warning' : 'wave-start');
+    }
+    if (!state.waveIntroActive || state.livingZombies || state.dead || !state.enabled) {
+      clearTimeout(survivalEventHideTimer);
+      survivalEventBanner?.classList.remove('show');
     }
     let metaChanged = false;
     const newKills = Math.max(0, state.kills - lastMetaKills);
@@ -4114,24 +4126,11 @@ survival = new ZombieSurvivalSystem({
     setHudText(survivalWave, state.preparationSeconds ? `PREP ${state.preparationSeconds}s` : state.runComplete ? 'ISLAND SECURED' : state.wave ? `WAVE ${state.wave} / 100` : 'SAFE START');
     setHudText(survivalZombies, state.livingZombies ? `${state.livingZombies} INFECTED` : '');
     if (state.runComplete && !runResultShown) recordSurvivalRun('VICTORY', state);
-    if (safeZoneDirection) {
-      const hasTarget = Number.isFinite(state.safeZoneX) && Number.isFinite(state.safeZoneZ);
-      safeZoneDirection.classList.toggle('show', hasTarget && (!state.inSafeZone || state.zonePhase === 'weakening'));
-      if (hasTarget && safeZoneArrowIcon) {
-        const dx = (state.safeZoneX as number) - player.root.position.x;
-        const dz = (state.safeZoneZ as number) - player.root.position.z;
-        const bearing = Math.atan2(dx, dz);
-        const relative = Math.atan2(Math.sin(bearing - camYaw), Math.cos(bearing - camYaw));
-        safeZoneArrowIcon.style.transform = `rotate(${relative * 180 / Math.PI - 90}deg)`;
-        setHudText(safeZoneArrowDistance, `${Math.round(Math.hypot(dx, dz))}m`);
-      }
-      setHudText(safeZoneArrowLabel, state.zonePhase === 'weakening' ? 'SANCTUARY FAILING' : state.nearestZone.startsWith('NEXT') ? 'NEXT SANCTUARY' : 'SAFE ZONE');
-    }
     if (survivalZoneStatus) {
       setHudText(survivalZoneStatus, state.zonePhase === 'weakening'
-        ? `WEAKENING · ${state.nearestZone} ${Math.round(state.zoneIntegrity ?? 0)}%`
-        : state.inSafeZone ? `SAFE · ${state.nearestZone}`
-          : state.nearestZone ? `DANGER · ${state.nearestZone} ${Math.round(state.zoneDistance)}m` : 'NO SAFE ZONE · RELOCATING');
+        ? `Sanctuary fading · ${Math.round(state.zoneIntegrity ?? 0)}%`
+        : state.inSafeZone ? 'In sanctuary'
+          : state.nearestZone ? 'Sanctuary on map' : 'Sanctuary relocating');
       survivalZoneStatus.classList.toggle('safe', state.inSafeZone && state.zonePhase !== 'weakening');
       survivalZoneStatus.classList.toggle('danger', !state.inSafeZone || state.zonePhase === 'weakening');
     }

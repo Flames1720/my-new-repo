@@ -15,7 +15,7 @@ with sync_playwright() as pw:
   page.route('**/auth/v1/**',auth);page.route('**/rest/v1/rpc/**',rpc)
   page.goto('http://127.0.0.1:4192/',wait_until='domcontentloaded');page.locator('[name=email]').fill('fixture@example.invalid');page.locator('[name=password]').fill('fixture-password-123');assert page.locator('[name=email]').get_attribute('autocomplete')=='username';page.locator('[data-password-toggle]').tap();assert page.locator('[name=password]').get_attribute('type')=='text';page.locator('[data-password-toggle]').tap();assert page.locator('[name=password]').get_attribute('type')=='password';page.locator('.pilot-card button[type=submit]').tap()
   page.locator('#enterGameDisplayMode').tap(timeout=60000);page.locator('#startRunBtn').tap(timeout=60000)
-  assert not page.locator('#interactBtn').is_visible();shoot=page.locator('#shootBtn').bounding_box();assert shoot
+  assert page.locator('#safeZoneDirection').count()==0;assert not page.locator('#interactBtn').is_visible();shoot=page.locator('#shootBtn').bounding_box();assert shoot
   assert abs(shoot['x']+shoot['width']/2-width*(.12 if custom else .88))<2
   if not custom:
    assert shoot['width']==72
@@ -31,7 +31,7 @@ with sync_playwright() as pw:
   source=Path('src/main.ts').read_text();start=source.index('function announceSurvivalEvent(');end=source.index('function updateLobbyProgressionUi',start)
   fn=source[start:end].replace("label: string, cue: 'wave-start' | 'wave-clear' | 'boss-warning' | 'level-up' | 'game-over'",'label, cue').replace(': void','')
   page.evaluate('''(fn)=>{const survivalEventBanner=document.querySelector('#survivalEventBanner');const reducedMotion=true;const survivalSound={playCue(){}};let survivalEventHideTimer;eval(fn + `;announceSurvivalEvent('WAVE 2','wave-start');`)}''',fn)
-  page.wait_for_timeout(600);assert page.locator('#survivalEventBanner').inner_text()=='WAVE 2';assert page.locator('#survivalEventBanner').evaluate('(e)=>getComputedStyle(e).opacity')=='1'
+  page.wait_for_timeout(600);assert page.locator('#survivalEventBanner').evaluate('(e)=>parseFloat(getComputedStyle(e).fontSize)')<=30;assert page.locator('#survivalEventBanner').inner_text()=='WAVE 2';assert page.locator('#survivalEventBanner').evaluate('(e)=>getComputedStyle(e).opacity')=='1'
   page.wait_for_function('getComputedStyle(document.querySelector("#survivalEventBanner")).opacity==="0"',timeout=10000)
   assert not errors,errors
   context.close()

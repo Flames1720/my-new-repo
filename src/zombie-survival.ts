@@ -35,6 +35,7 @@ export interface SurvivalStatus {
   ammoReserve: number;
   kills: number;
   wave: number;
+  waveIntroActive?: boolean;
   livingZombies: number;
   inSafeZone: boolean;
   nearestZone: string;
@@ -276,6 +277,7 @@ export class ZombieSurvivalSystem {
   }
 
   private spawnTimer = 0;
+  private waveIntroTimer = 0;
   private waveQueue = 0;
   private breakTimer = 0;
   private hasEnteredHostileArea = false;
@@ -1189,7 +1191,9 @@ export class ZombieSurvivalSystem {
       if (this.preparationTimer === 0 && !this.hasEnteredHostileArea) {
         this.wave = 1;
         this.waveQueue = 4;
-        this.spawnTimer = 0.6;
+        this.spawnTimer = 0;
+        this.waveIntroTimer = 1.6;
+        this.emitStatus();
         this.hasEnteredHostileArea = true;
         this.options.notify('PREPARATION COMPLETE · WAVE 1 READY');
       }
@@ -1251,11 +1255,19 @@ export class ZombieSurvivalSystem {
       this.hasEnteredHostileArea = true;
       this.wave = 1;
       this.waveQueue = 4;
-      this.spawnTimer = 0.6;
+      this.spawnTimer = 0;
+      this.waveIntroTimer = 1.6;
+      this.emitStatus();
       this.options.notify('HOSTILE TERRITORY · FIND COVER');
     }
 
-    if (!this.tutorialMode && !this.isDead && this.hasEnteredHostileArea && !nearSafe) {
+    // Publish the cleared announcement before any spawn, even after a long frame.
+    const wasIntroducingWave = this.waveIntroTimer > 0;
+    if (wasIntroducingWave) {
+      this.waveIntroTimer = Math.max(0, this.waveIntroTimer - dt);
+      if (this.waveIntroTimer === 0) this.emitStatus();
+    }
+    if (!this.tutorialMode && !this.isDead && this.hasEnteredHostileArea && !nearSafe && !wasIntroducingWave) {
       if (this.waveQueue > 0) {
         this.spawnTimer += dt;
         if (this.spawnTimer >= 2.7 && this.zombies.filter(z => !z.dead).length < this.maxZombies) {
@@ -1276,6 +1288,9 @@ export class ZombieSurvivalSystem {
             return;
           }
           this.wave++;
+          this.spawnTimer = 0;
+          this.waveIntroTimer = 1.6;
+          this.emitStatus();
           this.bossSpawnedThisWave = false;
           this.waveQueue = Math.min(3 + this.wave, this.maxZombies);
           this.options.notify(`WAVE ${this.wave} · CONTACT`);
@@ -1337,6 +1352,7 @@ export class ZombieSurvivalSystem {
     this.waveQueue = 0;
     this.spawnTimer = 0;
     this.breakTimer = 0;
+    this.waveIntroTimer = 0;
     this.ammo = {
       pistol: { mag: 15, reserve: WEAPONS.pistol.reserveStart },
       shotgun: { mag: 8, reserve: WEAPONS.shotgun.reserveStart },
@@ -1394,6 +1410,7 @@ export class ZombieSurvivalSystem {
       enabled: this.enabled, health: this.health, maxHealth: this.maxHealth,
       weapon: this.weapon, weaponLabel: WEAPONS[this.weapon].label,
       ammoInMag: ammo.mag, ammoReserve: ammo.reserve, kills: this.kills, wave: this.wave,
+      waveIntroActive: this.waveIntroTimer > 0,
       livingZombies: living, inSafeZone: this.isPlayerProtected(p.x, p.z), runComplete: this.runComplete,
       preparationSeconds: Math.ceil(this.preparationTimer),
       durationSeconds: Math.max(0, Math.floor(this.elapsed)),
