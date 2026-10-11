@@ -55,6 +55,10 @@ export interface ZombieSurvivalOptions {
   getPlayerPosition: () => THREE.Vector3;
   getTerrainHeight: (x: number, z: number) => number;
   getNightFactor?: () => number;
+  isFirstPerson?: () => boolean;
+  getMovementSpeed?: () => number;
+  performanceActive?: () => boolean;
+  onPerformanceCost?: (phase: 'fire' | 'enemyAI' | 'combatEffects', ms: number) => void;
   isWater: (x: number, z: number) => boolean;
   getWaterDepth: (x: number, z: number) => number;
   canOccupy: (x: number, z: number) => boolean;
@@ -281,6 +285,8 @@ export class ZombieSurvivalSystem {
 
     this.createWeaponRigs();
     for (const [id, rig] of this.weaponRigs) {
+      // Emissive flash meshes avoid a changing point-light shader variant on mobile.
+      rig.muzzleLight.removeFromParent();
       this.camera.add(rig.root);
       rig.root.visible = this.enabled && id === this.weapon;
       rig.muzzleFlash.visible = false;
@@ -381,7 +387,7 @@ export class ZombieSurvivalSystem {
     this.loot.forEach(drop => (drop.root.visible = enabled));
     if (!enabled) this.muzzleTimer = 0;
     for (const [id, rig] of this.weaponRigs) {
-      rig.root.visible = enabled && id === this.weapon;
+      rig.root.visible = enabled && id === this.weapon && (this.options.isFirstPerson?.() ?? true);
       rig.muzzleFlash.visible = false;
       setRigFlashOpacity(rig, 0);
       rig.muzzleLight.intensity = 0;
@@ -498,6 +504,11 @@ export class ZombieSurvivalSystem {
   }
 
   fire(): void {
+    const started = this.options.performanceActive?.() ? performance.now() : null;
+    try { this.fireShot(); } finally { if (started !== null) this.options.onPerformanceCost?.('fire', performance.now() - started); }
+  }
+
+  private fireShot(): void {
     if (!this.enabled || this.isDead || this.reloadTimer > 0 || this.fireCooldown > 0) return;
     this.activateAudio();
     const definition = WEAPONS[this.weapon];
@@ -1057,7 +1068,7 @@ export class ZombieSurvivalSystem {
 
     this.muzzleTimer = Math.max(0, this.muzzleTimer - dt);
     for (const [id, rig] of this.weaponRigs) {
-      const active = this.enabled && id === this.weapon;
+      const active = this.enabled && id === this.weapon && (this.options.isFirstPerson?.() ?? true);
       rig.root.visible = active;
       rig.muzzleFlash.visible = active && this.muzzleTimer > 0;
       setRigFlashOpacity(rig, active ? Math.min(0.95, 0.95 * (this.muzzleTimer / 0.065)) : 0);
@@ -1069,11 +1080,19 @@ export class ZombieSurvivalSystem {
     if (activeRig) {
       const base = this.aimActive ? activeRig.adsPos : activeRig.basePos;
       const weaponBase = this.weaponBaseScratch.copy(base);
-      weaponBase.y += Math.sin(this.elapsed * 7) * (this.aimActive ? 0.001 : 0.003);
+      const movement = Math.min(1, (this.options.getMovementSpeed?.() ?? 0) / 5);
+      const reloadProgress = this.reloadTimer > 0 ? 1 - this.reloadTimer / WEAPONS[this.weapon].reloadTime : 0;
+      const reloadDip = this.reloadTimer > 0 ? Math.sin(reloadProgress * Math.PI) : 0;
+      weaponBase.x += Math.sin(this.elapsed * 7) * movement * (this.aimActive ? 0.001 : 0.005);
+      weaponBase.y += Math.sin(this.elapsed * 14) * movement * (this.aimActive ? 0.001 : 0.006) - reloadDip * 0.08;
       weaponBase.z += Math.cos(this.elapsed * 8) * (this.aimActive ? 0.002 : 0.005);
       weaponBase.z += Math.max(0, activeRig.root.position.z - base.z) * Math.exp(-dt * WEAPONS[this.weapon].recoilRecovery);
-      activeRig.root.position.lerp(weaponBase, Math.min(1, dt * 12));
-      activeRig.root.rotation.x += ((this.aimActive ? activeRig.adsRot.x : activeRig.baseRot.x) - activeRig.root.rotation.x) * Math.min(1, dt * 8);
+      activeRig.root.position.lerp(weaponBase, 1 - Math.exp(-dt * 12));
+      const targetRotation = this.aimActive ? activeRig.adsRot : activeRig.baseRot;
+      const blend = 1 - Math.exp(-dt * 10);
+      activeRig.root.rotation.x += (targetRotation.x - reloadDip * 0.3 - activeRig.root.rotation.x) * blend;
+      activeRig.root.rotation.y += (targetRotation.y - activeRig.root.rotation.y) * blend;
+      activeRig.root.rotation.z += (targetRotation.z + reloadDip * 0.16 - activeRig.root.rotation.z) * blend;
       if (activeRig.slideOrPump) {
         const baseZ = this.slideBaseZ.get(this.weapon) ?? activeRig.slideOrPump.position.z;
         const reloadDuration = WEAPONS[this.weapon].reloadTime;
@@ -1123,13 +1142,17 @@ export class ZombieSurvivalSystem {
       this.spawnTimer = Math.max(0, this.spawnTimer - dt * 0.5);
     }
 
+    const aiStarted = this.options.performanceActive?.() ? performance.now() : null;
     for (let i = this.zombies.length - 1; i >= 0; i--) {
       const actor = this.zombies[i];
       this.updateZombie(actor, dt, playerPos, nearSafe);
       if (actor.dead && actor.deathAge > 6) this.removeZombie(actor);
     }
+    if (aiStarted !== null) this.options.onPerformanceCost?.('enemyAI', performance.now() - aiStarted);
     this.updateLoot(dt, playerPos);
+    const effectsStarted = this.options.performanceActive?.() ? performance.now() : null;
     this.combatEffects.update(dt);
+    if (effectsStarted !== null) this.options.onPerformanceCost?.('combatEffects', performance.now() - effectsStarted);
     if (this.flashDamageTimer > 0) this.flashDamageTimer = Math.max(0, this.flashDamageTimer - dt);
 
     if (this.statusTimer >= 0.12) {

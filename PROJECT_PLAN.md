@@ -278,3 +278,13 @@ User Android logs show sustained ~20–23 FPS in low-power FPP mode, including w
 - Combat commit 85183ec Vercel preview READY and 20 remote mobile combat checks passed at both sizes, zero page errors. Tracer shader links/endpoint buffers remained 1/1 after warm-up and repeated firing, with zero buffer deletions. Phone FPS improvement remains unverified. NOT FINALIZED.
 
 - Final local music repeat passed at 854×393 and 915×412 with mobile/touch Chromium: real decoding and loops, restart on lobby/gameplay transitions, uninterrupted pause/Settings, mute/master gain, background recovery and preference persistence; no page errors. Artifact: `/workspace/scratch/music-reset-local.log`.
+
+## First 20-player pilot — 2026-10-11 — IN PROGRESS
+- User authorized accounts/database, first 20 admitted players, opt-in automatic diagnostic collection and private backend analytics; also requested signup/menu and gameplay animation polish.
+- Dedicated Supabase project discovered and confirmed by name: `my-new-repo`, Flames1720’s Org. Applied private/RLS-backed admission, consent, progress, report and analytics RPCs; daily retention cron configured.
+- Atomic cap locally tested with 21 concurrent requests yielding exactly 20 admissions. Initial permission/consent/deletion/idempotency/weighted-number checks passed against disposable PostgreSQL 17.
+- Pilot auth/consent/game-data UI and bounded reporting implemented; production build requires admission. Mobile fixture tests and animation regression verification in progress.
+- Real production signup is blocked on a verified email sender/custom SMTP and final redirect configuration. Do not claim public launch ready or promote production until live email/auth flows and the exact preview are verified. See PILOT_RELEASE.md.
+
+### October 11 release verification update
+Owner confirmed Resend SMTP saved in Supabase. Email/password confirmation and the original 20 admitted-player cap remain; no guest migration was applied remotely. Recovery form now removes the irrelevant required email field. Production build/type checks, 24 mocked mobile auth/consent checks, 27 performance checks, 313 combat checks and disposable PostgreSQL admission/privacy/analytics audit passed. Hosted security advisor has only expected private-table deny-all informational notices. Live inbox delivery, final Auth redirect configuration and exact deployed verification remain pending; production is not yet promoted.

@@ -115,3 +115,9 @@ Before replacing a system:
 ## 18. Verification discipline
 
 Never claim fixed, works or complete without the corresponding evidence. A successful build proves compilation, not gameplay behavior. A browser test proves only the tested path.
+
+## 19. Pilot accounts and optional telemetry
+
+The pilot admits at most 20 confirmed accounts using a locked server-side configuration row. Supabase Auth, scoped private database functions and trusted admin membership are authoritative; client metadata never grants admission/admin access. Production builds require admission before initializing the game. Account progress is isolated and self-reported.
+
+Telemetry is opt-in, bounded and batched. Withdrawal clears client queues and deletes server reports under a consent epoch lock. Collect numeric performance/game-action counters and broad device categories only, never credentials, typed text, recordings or raw exception content. Aggregate timings with observation counts and frame histograms; do not label correlations or browser scheduling gaps as proven GPU/thermal causes. Private tables have no client grants or permissive RLS policies. Public Vite keys are publishable only. Production publication requires tested real email/Auth flows and the exact mobile deployment.

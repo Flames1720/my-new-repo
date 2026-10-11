@@ -181,3 +181,9 @@
 - Combat commit 85183ec Vercel preview READY and 20 remote mobile combat checks passed at both sizes, zero page errors. Tracer shader links/endpoint buffers remained 1/1 after warm-up and repeated firing, with zero buffer deletions. Phone FPS improvement remains unverified. NOT FINALIZED.
 
 - Final local music repeat passed at 854×393 and 915×412 with mobile/touch Chromium: real decoding and loops, restart on lobby/gameplay transitions, uninterrupted pause/Settings, mute/master gain, background recovery and preference persistence; no page errors. Artifact: `/workspace/scratch/music-reset-local.log`.
+
+### 2026-10-11 — Pilot foundation in progress
+Dedicated `my-new-repo` Supabase project now has a 20-account admission cap, optional consent/reporting, account progress and private analytics. Concurrent cap and permission/deletion tests passed locally. Signup/menu and gameplay animation polish implemented and undergoing mobile checks. Production launch still needs custom SMTP/verified sender, auth redirects, real email tests and exact-preview verification; no production promotion yet. See PILOT_RELEASE.md.
+
+### October 11 release verification update
+Owner confirmed Resend SMTP saved in Supabase. Email/password confirmation and the original 20 admitted-player cap remain; no guest migration was applied remotely. Recovery form now removes the irrelevant required email field. Production build/type checks, 24 mocked mobile auth/consent checks, 27 performance checks, 313 combat checks and disposable PostgreSQL admission/privacy/analytics audit passed. Hosted security advisor has only expected private-table deny-all informational notices. Live inbox delivery, final Auth redirect configuration and exact deployed verification remain pending; production is not yet promoted.

@@ -1,0 +1,105 @@
+.pilot-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  background: #07110f;
+  overflow: auto;
+  color: #edf3e9;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+.pilot-card {
+  width: 100%;
+  max-width: 480px;
+  margin: auto;
+  padding: 20px;
+  border: 1px solid #49604e;
+  border-radius: 14px;
+  background: #101e19;
+  box-sizing: border-box;
+}
+.pilot-card h1 {
+  font-size: 24px;
+}
+.pilot-card p,
+.pilot-data p {
+  font-size: 14px;
+  line-height: 1.55;
+}
+.pilot-card label {
+  display: block;
+  margin: 12px 0;
+}
+.pilot-card input {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  font-size: 16px;
+  margin-top: 6px;
+  padding: 10px;
+  background: #06100d;
+  color: white;
+  border: 1px solid #647b68;
+  border-radius: 6px;
+}
+.pilot-card button,
+.pilot-data button {
+  min-height: 44px;
+  margin: 6px 8px 6px 0;
+  padding: 10px 14px;
+  border: 1px solid #9cbe76;
+  border-radius: 6px;
+  background: #233d2c;
+  color: #fff;
+  font-weight: 700;
+}
+.pilot-card button:disabled,
+.pilot-data button:disabled {
+  opacity: 0.5;
+}
+.pilot-data {
+  padding: 12px;
+}
+.pilot-data pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pilot-card {
+    animation: pilot-enter 0.22s ease-out;
+  }
+  .pilot-card button,
+  .pilot-data button {
+    transition:
+      background-color 0.12s ease,
+      transform 0.12s ease;
+  }
+  .pilot-card button:active,
+  .pilot-data button:active {
+    transform: scale(0.98);
+  }
+}
+@keyframes pilot-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+body.pilot-auth #displayModeGate {
+  display: none !important;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lobbyPage.active,
+  .settingsPage.active {
+    animation: pilot-enter 0.16s ease-out;
+  }
+}

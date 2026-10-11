@@ -13,7 +13,7 @@
       html, body { width: 100%; height: 100%; min-height: 100%; margin: 0; overflow: hidden; background: #07100f; }
       body { color: #edf3eb; font-family: system-ui, -apple-system, sans-serif; }
       #displayModeGate { position: fixed !important; inset: 0 !important; z-index: 2147483647 !important; display: flex !important; align-items: center; justify-content: center; box-sizing: border-box; overflow: auto; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: radial-gradient(ellipse at 50% 42%, #14231d, #07100f 70%); text-align: center; }
-      body:not(.display-mode-ready) > :not(#displayModeGate) { visibility: hidden !important; pointer-events: none !important; }
+      body:not(.display-mode-ready) > :not(#displayModeGate):not(.pilot-overlay) { visibility: hidden !important; pointer-events: none !important; }
       body.display-mode-ready #displayModeGate { display: none !important; }
       #displayModeGate .displayModeCard { box-sizing: border-box; width: min(520px, 100%); max-height: 100%; overflow: auto; padding: clamp(24px, 5vw, 48px); border: 1px solid #456351; border-radius: 4px 20px; background: linear-gradient(145deg, #111d1b, #080e0f); box-shadow: 0 30px 90px #000a; }
       #displayModeGate .displayModeEyebrow { color: #83bd95; font-size: 9px; font-weight: 900; letter-spacing: .22em; }
@@ -607,8 +607,9 @@
     <!-- Photo Mode Toast Notification -->
     <div id="photoToast"></div>
 
-<script>
+<script type="module">
 (() => {
+  if (import.meta.env.VITE_PILOT_ENABLED === 'true') return;
   const KEY = 'island-outbreak-diagnostics-v2';
   const MAX_ROWS = 32;
   const rows = [];

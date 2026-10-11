@@ -1,3 +1,5 @@
+import { initializePilot, pilot, savePilotProgress } from './pilot';
+await initializePilot();
 import * as THREE from 'three';
 import './style.css';
 import './ui-modern.css';
@@ -466,6 +468,7 @@ scene.fog = new THREE.Fog(0x82877f, 105, 700);
 const gameplayFog = scene.fog;
 
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 1200);
+scene.add(camera);
 const renderer = new THREE.WebGLRenderer({ antialias: !LOW_POWER_MODE, powerPreference: 'high-performance' });
 function applyGraphicsSettings() {
   const quality = settings.current.graphics;
@@ -2414,13 +2417,14 @@ const WILDCARDS: WildcardDefinition[] = [
   { id: 'endurance', label: 'ENDURANCE', short: 'ENDURE', description: 'Restore a portion of sprint stamina.', accent: '#facc15', cooldown: 20, unlocked: false },
 ];
 type SurvivalMetaState = { xp: number; bestWave: number; bestTimeSeconds: number; totalRuns: number; totalKills: number; upgrades: Record<UpgradeKey, number>; waveClearCounts: Record<string, number>; unlockedWildcards: WildcardId[]; equippedWildcards: WildcardId[] };
-const SURVIVAL_META_KEY = 'island-outbreak-meta-v1';
+const SURVIVAL_META_KEY = 'island-outbreak-meta-v1' + (pilot.enabled ? ':' + pilot.userId : '');
+if (pilot.enabled && Object.keys(pilot.progress).length) localStorage.setItem(SURVIVAL_META_KEY, JSON.stringify(pilot.progress));
 function loadSurvivalMeta(): SurvivalMetaState {
   const fallback: SurvivalMetaState = { xp: 0, bestWave: 0, bestTimeSeconds: 0, totalRuns: 0, totalKills: 0, upgrades: { health: 0, stamina: 0, damage: 0 }, waveClearCounts: {}, unlockedWildcards: ['shockwave', 'field-medic'], equippedWildcards: ['shockwave', 'field-medic'] };
   try {
     const raw = localStorage.getItem(SURVIVAL_META_KEY);
     if (!raw) {
-      fallback.bestWave = Number(localStorage.getItem('island-outbreak-best-wave') || 0);
+      fallback.bestWave = Number(localStorage.getItem('island-outbreak-best-wave' + (pilot.enabled ? ':' + pilot.userId : '')) || 0);
       return fallback;
     }
     const parsed = JSON.parse(raw) as Partial<SurvivalMetaState>;
@@ -2474,7 +2478,7 @@ function updateLobbyProgressionUi(): void {
 }
 function saveSurvivalMeta(): void {
   try { localStorage.setItem(SURVIVAL_META_KEY, JSON.stringify(survivalMeta)); } catch {}
-  try { localStorage.setItem('island-outbreak-best-wave', String(survivalMeta.bestWave)); } catch {}
+  try { localStorage.setItem('island-outbreak-best-wave' + (pilot.enabled ? ':' + pilot.userId : ''), String(survivalMeta.bestWave)); } catch {}
   updateLobbyProgressionUi();
   if (typeof renderWildcards === 'function') renderWildcards();
 }
@@ -2658,7 +2662,7 @@ const settingsTitles: Record<string, string> = {
   controls: 'CAMERA & CONTROLS',
   graphics: 'GRAPHICS & AUDIO',
   player: 'PLAYER DETAILS',
-  diagnostics: 'DIAGNOSTICS',
+  diagnostics: pilot.enabled ? 'GAME DATA' : 'DIAGNOSTICS',
 };
 // Real section containers keep every unrelated control out of the active tab,
 // including pre-existing inline-script diagnostics, and preserve existing listeners.
@@ -3790,6 +3794,10 @@ let sightBlockerCacheKey = '';
 let sightBlockerCache: THREE.Object3D[] = [];
 
 survival = new ZombieSurvivalSystem({
+  isFirstPerson: () => mode === 'fpp',
+  getMovementSpeed: () => Math.hypot(player.velocity.x, player.velocity.z),
+  performanceActive: () => diagnosticFrameWindow.active,
+  onPerformanceCost: (phase, ms) => recordDiagnosticCost(phase, ms),
   scene,
   camera,
   getPlayerPosition: () => player.root.position,
@@ -4116,7 +4124,7 @@ const cameraBlockerObjects: THREE.Object3D[] = [];
 const cameraHits: THREE.Intersection[] = [];
 let cameraProbeTimer = 0, cameraClearance = camDistance;
 
-type DiagnosticCostKey = 'frameCallback' | 'frameGap' | 'simulation' | 'render' | 'survivalUpdate' | 'aimQuery' | 'chunkStream' | 'chunkPump' | 'mapUpdate';
+type DiagnosticCostKey = 'frameCallback' | 'frameGap' | 'simulation' | 'render' | 'survivalUpdate' | 'aimQuery' | 'chunkStream' | 'chunkPump' | 'mapUpdate' | 'fire' | 'enemyAI' | 'combatEffects';
 type DiagnosticCost = { totalMs: number; maxMs: number; count: number };
 type OutbreakDiagnosticsWindow = Window & { __islandOutbreakPerfEnabled?: boolean };
 const newDiagnosticCost = (): DiagnosticCost => ({ totalMs: 0, maxMs: 0, count: 0 });
@@ -4151,6 +4159,9 @@ const diagnosticFrameWindow: {
     chunkStream: newDiagnosticCost(),
     chunkPump: newDiagnosticCost(),
     mapUpdate: newDiagnosticCost(),
+    fire: newDiagnosticCost(),
+    enemyAI: newDiagnosticCost(),
+    combatEffects: newDiagnosticCost(),
   },
 };
 let diagnosticMeasureFrame = false;
@@ -4856,13 +4867,27 @@ function runFrame(): void {
         wave: survival.wave,
         kills: survival.kills,
         ...zombieDiagnostics,
+        fireAvgMs: diagnosticCostSummary('fire').avgMs,
+        fireMaxMs: diagnosticCostSummary('fire').maxMs,
+        fireSamples: diagnosticCostSummary('fire').samples,
+        enemyAIAvgMs: diagnosticCostSummary('enemyAI').avgMs,
+        enemyAIMaxMs: diagnosticCostSummary('enemyAI').maxMs,
+        enemyAISamples: diagnosticCostSummary('enemyAI').samples,
+        combatEffectsAvgMs: diagnosticCostSummary('combatEffects').avgMs,
+        combatEffectsMaxMs: diagnosticCostSummary('combatEffects').maxMs,
+        combatEffectsSamples: diagnosticCostSummary('combatEffects').samples,
+        frameHistogram: diagnosticFrameWindow.frameDurations.reduce((bins: Record<string, number>, ms: number) => {
+          const bound = [17,25,34,50,100,250,500,1000].find(value => ms <= value);
+          const key = bound ? 'le' + bound : 'over1000';
+          bins[key] = (bins[key] || 0) + 1; return bins;
+        }, {}),
         captureElapsedMs: Math.round(captureElapsedMs),
         captureComplete,
       };
       window.dispatchEvent(new CustomEvent('island-outbreak-performance', { detail }));
       resetDiagnosticWindow(diagnosticsNow);
       diagnosticMeasureFrame = false;
-      if (captureComplete) {
+      if (captureComplete && !(pilot.enabled && pilot.consent)) {
         diagnosticsWindow.__islandOutbreakPerfEnabled = false;
         diagnosticFrameWindow.active = false;
       }

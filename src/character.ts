@@ -794,7 +794,7 @@ export class PlayerCharacter {
       }
       this.activeModelAction = next;
     } else {
-      next.setEffectiveTimeScale(timeScale);
+      if (!['walk', 'run', 'backward', 'strafe-left', 'strafe-right'].includes(name)) next.setEffectiveTimeScale(timeScale);
       next.setEffectiveWeight(1);
       next.setLoop(isOneShotClip ? THREE.LoopOnce : THREE.LoopRepeat, isOneShotClip ? 1 : Infinity);
       next.clampWhenFinished = isOneShotClip;
@@ -876,6 +876,11 @@ export class PlayerCharacter {
       } else {
         this.playModelAnimation(sprinting || speed > 5.5 ? 'run' : 'walk');
       }
+      // Match gait cadence to actual speed without restarting the clip on each frame.
+      const referenceSpeed = sprinting || speed > 5.5 ? 7.5 : 4.2;
+      const cadence = clamp(speed / referenceSpeed, 0.5, 1.35);
+      const action = this.activeModelAction;
+      if (action) action.setEffectiveTimeScale(lerp(action.getEffectiveTimeScale(), cadence, 1 - Math.exp(-dt * 10)));
     } else {
       this.playModelAnimation('idle');
     }
