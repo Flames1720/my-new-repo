@@ -363,6 +363,7 @@
           </div>
           <button id="hudCustomizeBtn" class="settingsActionBtn" type="button">🎮 Customize combat HUD</button>
 
+          <button id="practiceTutorialBtn" class="settingsActionBtn" type="button">Practice tutorial</button>
           </section>
           <section class="settingsPage" data-settings-page="graphics" aria-label="Graphics and audio settings" hidden>
           <div class="settingGroup">
@@ -495,12 +496,12 @@
           </div>
         </div>
         <div class="hudEditorBody">
-        <p>Drag a control to place it. Tap it to select, then adjust size and transparency. Saved on this device.</p>
+        <p>Drag a control to place it. Tap it to select, then adjust size and transparency. Two thumbs is the default: move with your left thumb; drag the fire button to look while shooting, and tap ADS to toggle aim. Custom layouts are saved to your account when signed in.</p>
         <label class="hudEditorLabel">Finger layout
           <select id="hudPresetSelect">
+            <option value="thumbs" selected>Two thumbs · default (tap aim, drag fire to look)</option>
             <option value="four">4-finger claw</option>
             <option value="three">3-finger</option>
-            <option value="thumbs">Two-thumb</option>
             <option value="custom">Custom positions</option>
           </select>
         </label>

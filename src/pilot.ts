@@ -8,6 +8,7 @@ export const pilot = {
   canPlay: false,
   admin: false,
   userId: "",
+  userCreatedAt: "",
   consent: false,
   epoch: "",
   progress: {} as Record<string, unknown>,
@@ -372,6 +373,7 @@ export async function initializePilot() {
           return;
         }
         pilot.userId = session.user.id;
+        pilot.userCreatedAt = session.user.created_at || "";
         pilot.epoch = data.epoch;
         pilot.progress = data.progress || {};
         if (
