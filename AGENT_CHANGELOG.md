@@ -985,3 +985,5 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Verification:** Vercel preview build for `bc2eae87d8` reported READY (TypeScript+Vite). This establishes build success, **not** screenshot/phone-layout or real-touch verification. The next Android review should check small landscape screenshots (especially 1536×691 or ~800×360 CSS pixels), Wildcards card flip/taps, secondary-page Deploy, Settings selection and diagnostics copy/clear, save data and landscape/fullscreen gate. No backend, game logic or previously undecided features deleted.
 
 **Status:** CHECKPOINT IMPLEMENTED; **NOT FINALIZED**. User visual feedback still required.
+
+**Short-landscape follow-up:** The screenshots are high-resolution phone captures, so their effective CSS viewport may be much smaller than their pixel dimensions. Added a max-height:540px responsive budget: two rows of compact 78–104px Wildcards, 40px navigation and Deploy touch height, condensed Records metrics and operators. At e.g. 800×360 CSS px this is intended to fit both rows while preserving touch targets. This is source/design reasoning; a screenshot/device test is still required.
