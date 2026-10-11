@@ -94,7 +94,7 @@ def run(url, out):
             check('cooperative streaming observed', any((s.get('chunkPumpCount') or 0)>0 for s in samples))
             check('streaming queue drains after release', bool(samples) and samples[-1]['chunkQueueDepth']==0, samples[-1] if samples else None)
             check('core timing counts cover every frame', bool(samples) and all(s['simulationSamples']==s['frames']==s['renderSamples'] for s in samples))
-            check('complete callback and scheduling gap diagnostics present', bool(samples) and all(s['perfBuildTag']=='mobile-perf-3' and s['frameCallbackAvgMs']>=s['simulationAvgMs'] and s['frameGapAvgMs']>=0 for s in samples))
+            check('complete callback and scheduling gap diagnostics present', bool(samples) and all(s['perfBuildTag']=='mobile-perf-4' and s['frameCallbackAvgMs']>=s['simulationAvgMs'] and s['frameGapAvgMs']>=0 for s in samples))
             check('draw-call summaries internally consistent', bool(samples) and all(s['drawCallsMin']<=s['drawCallsAvg']<=s['drawCallsMax'] for s in samples))
             page.screenshot(path=str(out/'gameplay-after-streaming.png'))
             page.locator('#survivalPauseBtn').tap()

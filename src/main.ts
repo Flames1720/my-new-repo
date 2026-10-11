@@ -4832,7 +4832,7 @@ function runFrame(): void {
         chunkPumpMaxMs: diagnosticCostSummary('chunkPump').maxMs,
         chunkPumpCount: diagnosticCostSummary('chunkPump').samples,
         chunkQueueDepth: chunks.pendingBuilds,
-        perfBuildTag: 'mobile-perf-3',
+        perfBuildTag: 'mobile-perf-4',
         drawCalls: renderer.info.render.calls,
         drawCallsAvg: round1(diagnosticFrameWindow.drawCallsTotal / diagnosticFrameWindow.frames),
         drawCallsMin: diagnosticFrameWindow.drawCallsMin,

@@ -3,6 +3,7 @@ import { clamp } from './terrain';
 import { createWeaponRig, type SurvivalWeaponId, type WeaponRig, SURVIVAL_WEAPON_REGISTRY } from './survival-weapons';
 import { survivalSound } from './survival-audio';
 import { settings } from './settings';
+import { CombatEffects } from './combat-effects';
 export type { SurvivalWeaponId } from './survival-weapons';
 export type SurvivalPickupKind = 'ammo' | 'medkit';
 
@@ -232,8 +233,7 @@ export class ZombieSurvivalSystem {
   private readonly sightIntersections: THREE.Intersection[] = [];
   private readonly weaponBaseScratch = new THREE.Vector3();
   private currentSightBlockers: THREE.Object3D[] | null = null;
-  private readonly tracerLines: Array<{ line: THREE.Line; age: number }> = [];
-  private readonly hitSparks: Array<{ mesh: THREE.Mesh; age: number }> = [];
+  private readonly combatEffects: CombatEffects;
   private readonly weaponRigs = new Map<SurvivalWeaponId, WeaponRig>();
   private readonly slideBaseZ = new Map<SurvivalWeaponId, number>();
   private ammo: Record<SurvivalWeaponId, { mag: number; reserve: number }> = {
@@ -268,6 +268,7 @@ export class ZombieSurvivalSystem {
     this.options = options;
     this.scene = options.scene;
     this.camera = options.camera;
+    this.combatEffects = new CombatEffects(this.scene);
     this.maxZombies = options.lowPowerMode ? 5 : 9;
 
     for (const def of options.safeZones) {
@@ -391,17 +392,7 @@ export class ZombieSurvivalSystem {
       this.setAim(false);
       survivalSound.updateHeartbeat(1);
       survivalSound.setAmbientEnabled(false);
-      for (const trace of this.tracerLines) {
-        this.scene.remove(trace.line);
-        trace.line.geometry.dispose();
-        (trace.line.material as THREE.Material).dispose();
-      }
-      this.tracerLines.length = 0;
-      for (const spark of this.hitSparks) {
-        this.scene.remove(spark.mesh);
-        disposeGroup(spark.mesh);
-      }
-      this.hitSparks.length = 0;
+      this.combatEffects.clear();
     }
     this.emitStatus();
   }
@@ -900,22 +891,11 @@ export class ZombieSurvivalSystem {
   }
 
   private spawnImpact(position: THREE.Vector3, blood: boolean): void {
-    const mesh = makeMesh(
-      new THREE.SphereGeometry(blood ? 0.075 : 0.045, 5, 4),
-      new THREE.MeshBasicMaterial({ color: blood ? 0x9e302d : 0xffc66d, transparent: true, opacity: 0.9 }),
-      'survival-impact'
-    );
-    mesh.position.copy(position);
-    this.scene.add(mesh);
-    this.hitSparks.push({ mesh, age: 0 });
+    this.combatEffects.impact(position, blood);
   }
 
   private spawnTracer(from: THREE.Vector3, to: THREE.Vector3): void {
-    const geometry = new THREE.BufferGeometry().setFromPoints([from, to]);
-    const material = new THREE.LineBasicMaterial({ color: 0xffd49a, transparent: true, opacity: 0.7 });
-    const line = new THREE.Line(geometry, material);
-    this.scene.add(line);
-    this.tracerLines.push({ line, age: 0 });
+    this.combatEffects.tracer(from, to);
   }
 
   private removeZombie(actor: ZombieActor): void {
@@ -1149,7 +1129,7 @@ export class ZombieSurvivalSystem {
       if (actor.dead && actor.deathAge > 6) this.removeZombie(actor);
     }
     this.updateLoot(dt, playerPos);
-    this.updateTraces(dt);
+    this.combatEffects.update(dt);
     if (this.flashDamageTimer > 0) this.flashDamageTimer = Math.max(0, this.flashDamageTimer - dt);
 
     if (this.statusTimer >= 0.12) {
@@ -1158,28 +1138,8 @@ export class ZombieSurvivalSystem {
     }
   }
 
-  private updateTraces(dt: number): void {
-    for (let i = this.tracerLines.length - 1; i >= 0; i--) {
-      const trace = this.tracerLines[i];
-      trace.age += dt;
-      if (trace.age < 0.055) continue;
-      this.scene.remove(trace.line);
-      trace.line.geometry.dispose();
-      (trace.line.material as THREE.Material).dispose();
-      this.tracerLines.splice(i, 1);
-    }
-    for (let i = this.hitSparks.length - 1; i >= 0; i--) {
-      const spark = this.hitSparks[i];
-      spark.age += dt;
-      (spark.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - spark.age / 0.13);
-      if (spark.age < 0.13) continue;
-      this.scene.remove(spark.mesh);
-      disposeGroup(spark.mesh);
-      this.hitSparks.splice(i, 1);
-    }
-  }
-
   restart(): void {
+    this.combatEffects.clear();
     for (const actor of [...this.zombies]) this.removeZombie(actor);
     for (const drop of this.loot) {
       this.scene.remove(drop.root);
@@ -1230,8 +1190,8 @@ export class ZombieSurvivalSystem {
       zombieCount: this.zombies.length,
       livingZombies,
       lootDrops: this.loot.length,
-      tracerLines: this.tracerLines.length,
-      hitSparks: this.hitSparks.length,
+      tracerLines: this.combatEffects.tracerCount,
+      hitSparks: this.combatEffects.impactCount,
       activeSafeZones,
     };
   }
@@ -1283,15 +1243,7 @@ export class ZombieSurvivalSystem {
       this.scene.remove(drop.root);
       disposeGroup(drop.root);
     }
-    for (const trace of this.tracerLines) {
-      this.scene.remove(trace.line);
-      trace.line.geometry.dispose();
-      (trace.line.material as THREE.Material).dispose();
-    }
-    for (const spark of this.hitSparks) {
-      this.scene.remove(spark.mesh);
-      disposeGroup(spark.mesh);
-    }
+    this.combatEffects.dispose();
     for (const zone of this.zones) {
       this.scene.remove(zone.root);
       disposeGroup(zone.root);
