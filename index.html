@@ -132,29 +132,35 @@
           <button type="button" data-lobby-page="challenges">CHALLENGES</button>
           <button type="button" data-lobby-page="upgrades">UPGRADES</button>
           <button id="lobbyOptionsBtn" type="button">SETTINGS</button>
-          <span class="lobbyNavSpacer"></span><span class="lobbyCurrency" title="Currency display · economy pending">◉ 2,900</span><span class="lobbyLevel" id="lobbyNavLevel">LV 1</span>
+
         </nav>
         <header class="lobbyTopline">
           <div class="lobbyMark"><span class="lobbyMarkGlyph">IO</span><span>ISLAND OUTBREAK<small>FIELD OPERATIONS</small></span></div>
-          <div class="lobbySignal"><i></i> ISLAND SIGNAL <strong>LIVE</strong></div>
+          <div class="lobbyHeaderRight"><span class="lobbyCurrency" title="Currency display · economy pending">◉ 2,900</span><span class="lobbyLevel" id="lobbyNavLevel">LV 1</span><div class="lobbySignal"><i></i> ISLAND SIGNAL <strong>LIVE</strong></div></div>
         </header>
         <main class="lobbyStage">
           <aside class="lobbyPartyPanel lobbyPage" data-lobby-panel="records" aria-label="Your records" id="lobbyRecords">
             <div class="lobbyPanelTitle"><span>FIELD OPERATIONS</span><small>SOLO DEPLOYMENT</small></div>
-            <div class="lobbyOperator active"><span class="operatorAvatar">IO</span><span><strong id="lobbyOperatorName">EXPLORER</strong><small>LEVEL 1 · ACTIVE</small></span><b>●</b></div>
-            <div class="lobbyOperator"><span class="operatorAvatar operatorGhost">+</span><span><strong>OPEN SLOT</strong><small>SOLO RUN</small></span><b>—</b></div>
-            <div class="lobbyPartyDivider"></div>
-            <div class="lobbyPanelMetric"><span>BEST WAVE</span><strong id="lobbyBestWaveMetric">0 / 100</strong></div>
-            <div class="lobbyPanelMetric"><span>BEST TIME</span><strong id="lobbyBestTimeMetric">—</strong></div>
-            <div class="lobbyPanelMetric"><span>TOTAL KILLS</span><strong id="lobbyTotalKillsMetric">0</strong></div>
+            <div class="lobbyOperatorRow">
+              <div class="lobbyOperator active"><span class="operatorAvatar">IO</span><span><strong id="lobbyOperatorName">EXPLORER</strong><small>LEVEL 1 · ACTIVE</small></span><b>●</b></div>
+              <div class="lobbyOperator"><span class="operatorAvatar operatorGhost">+</span><span><strong>OPEN SLOT</strong><small>SOLO RUN</small></span><b>—</b></div>
+            </div>
+            <div class="lobbyRecordsMetrics">
+              <div class="lobbyPanelMetric"><span>BEST WAVE</span><strong id="lobbyBestWaveMetric">0 / 100</strong></div>
+              <div class="lobbyPanelMetric"><span>BEST TIME</span><strong id="lobbyBestTimeMetric">—</strong></div>
+              <div class="lobbyPanelMetric"><span>TOTAL KILLS</span><strong id="lobbyTotalKillsMetric">0</strong></div>
+            </div>
             <div class="lobbyOpsNote"><i></i><span>ISLAND SIGNAL<br><strong>CONNECTED</strong></span></div>
           </aside>
           <section class="lobbyHero lobbyPage active" data-lobby-panel="mission">
-            <p class="lobbyEyebrow"><span>01</span> · SAFE STARTING AREA</p>
+            <div class="missionVisual">
+              <p class="lobbyEyebrow"><span>01</span> · SAFE STARTING AREA</p>
             <div class="lobbyMissionBoard" id="lobbyMissionBoard" aria-label="Current island mission">
               <div class="missionBoardGrid"></div><div class="missionPulse"></div><span class="missionPin pinHome">⌂</span><span class="missionPin pinThreat">!</span><span class="missionRoute"></span>
               <div class="missionBoardLabels"><span>HOME BASE</span><span>ZOMBIES NEARBY</span><span>RIVERWOOD</span></div>
             </div>
+            </div>
+            <div class="missionDetails">
             <h1 id="lobbyTitle">ISLAND<br><em>OUTBREAK</em></h1>
             <p class="lobbyTagline">PROTECT YOUR BASE<br><strong>Survive 100 zombie waves.</strong></p>
             <div class="lobbyQuickStats" aria-label="Mission parameters">
@@ -166,6 +172,7 @@
                 <span id="lobbyHomeLevel">LEVEL 1</span><span id="lobbyHomeXp">0 XP</span><span id="lobbyHomeWave">BEST WAVE 0</span>
               </div>
               <p id="lobbyLastRun" class="lobbyLastRun">NO RUN RECORDED</p>
+            </div>
           </section>
           <aside class="lobbyDeploy" id="lobbyFieldKit">
             <section class="lobbyChallenges lobbyPage" data-lobby-panel="challenges" aria-label="Challenges"><div class="challengeTabs"><strong>CHALLENGES</strong><span>EVENT</span></div><div class="challengeRow"><span>FIRST CONTACT</span><b>0 / 5</b><i><em></em></i></div><div class="challengeRow"><span>HOLD THE LINE</span><b>0 / 2</b><i><em></em></i></div><small>Complete a run objective to earn XP and unlock field cards.</small></section>
@@ -258,6 +265,7 @@
 	          <button id="settingsClose">✕</button>
 	        </div>
         <div class="settingsBody">
+          <section class="settingsPage active" data-settings-page="controls" aria-label="Control settings" >
           <div class="settingGroup">
             <div class="settingLabel">
               <span>Horizontal turn (° per full right-side swipe)</span>
@@ -321,6 +329,8 @@
           </div>
           <button id="hudCustomizeBtn" class="settingsActionBtn" type="button">🎮 Customize combat HUD</button>
 
+          </section>
+          <section class="settingsPage" data-settings-page="graphics" aria-label="Graphics and audio settings" hidden>
           <div class="settingGroup">
             <div class="settingLabel">
               <span>Dynamic Weather</span>
@@ -346,60 +356,6 @@
 
           <div class="settingGroup">
             <div class="settingLabel">
-              <span>Player Identity & Gender</span>
-            </div>
-            <div style="display: flex; gap: 8px;">
-              <input type="text" id="playerNameInput" placeholder="Adventurer Name" value="Explorer" style="flex: 1; padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;" />
-              <select id="playerGenderSelect" style="padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;">
-                <option value="male">♂ Male</option>
-                <option value="female">♀ Female</option>
-                <option value="adventurer">⚧ Adventurer</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="settingGroup">
-            <div class="settingLabel">
-              <span>Character Model</span>
-              <span>Choose a rigged model</span>
-            </div>
-            <select id="characterModelSelect" aria-label="Character model">
-              <option value="quaternius-adventurer">Quaternius Adventurer · 24 animations</option>
-              <option value="quaternius-animated-human">Quaternius Animated Human · lightweight</option>
-              <option value="quaternius-animated-woman">Quaternius Animated Woman</option>
-              <option value="kenney-adventurer">Kenney Adventurer · 274 KB</option>
-              <option value="mixamo-walker">Mixamo Walker · uploaded model</option>
-              <option value="legacy-rigged">Original custom model · legacy</option>
-            </select>
-          </div>
-
-          <div class="settingGroup">
-            <div class="settingLabel">
-              <span>Life Class / Profession</span>
-            </div>
-            <select id="playerRoleSelect">
-              <option value="explorer">🧭 Pioneer Explorer (+Speed & Stamina)</option>
-              <option value="rancher">🐄 Pasture Rancher (+Animal Trust & Calves)</option>
-              <option value="hunter">🏹 Wilderness Tracker (+Predator Tracking)</option>
-              <option value="builder">🔨 Master Homesteader (+Harvest & Timber)</option>
-            </select>
-          </div>
-
-          <div class="settingGroup">
-            <div class="settingLabel">
-              <span>Character Outfit & Style</span>
-            </div>
-            <select id="outfitSelect">
-              <option value="explorer">Explorer (Royal Indigo & Leather)</option>
-              <option value="ranger">Forest Ranger (Pine Green & Brass)</option>
-              <option value="scout">Autumn Scout (Amber & Leather)</option>
-              <option value="arctic">Arctic Scout (Slate & Frost White)</option>
-              <option value="lagos">Lagos Life Pioneer (Emerald & Gold)</option>
-            </select>
-          </div>
-
-          <div class="settingGroup">
-            <div class="settingLabel">
               <span>Terrain LOD & GPU Displacement</span>
             </div>
             <select id="lodSelect">
@@ -420,6 +376,64 @@
             <div class="settingLabel"><span>Game music</span></div>
             <p class="settingNote">Lobby and gameplay music controls will be added after audio tracks are supplied. Existing game sounds remain available.</p>
           </div>
+          </section>
+          <section class="settingsPage" data-settings-page="player" aria-label="Player settings" hidden>
+          <div class="settingGroup">
+            <div class="settingLabel">
+              <span>Player Identity & Gender</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="playerNameInput" placeholder="Adventurer Name" value="Explorer" style="flex: 1; padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;" />
+              <select id="playerGenderSelect" style="padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;">
+                <option value="male">♂ Male</option>
+                <option value="female">♀ Female</option>
+                <option value="adventurer">⚧ Adventurer</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="settingGroup" hidden>
+            <div class="settingLabel">
+              <span>Character Model</span>
+              <span>Choose a rigged model</span>
+            </div>
+            <select id="characterModelSelect" aria-label="Character model">
+              <option value="quaternius-adventurer">Quaternius Adventurer · 24 animations</option>
+              <option value="quaternius-animated-human">Quaternius Animated Human · lightweight</option>
+              <option value="quaternius-animated-woman">Quaternius Animated Woman</option>
+              <option value="kenney-adventurer">Kenney Adventurer · 274 KB</option>
+              <option value="mixamo-walker">Mixamo Walker · uploaded model</option>
+              <option value="legacy-rigged">Original custom model · legacy</option>
+            </select>
+          </div>
+
+          <div class="settingGroup" hidden>
+            <div class="settingLabel">
+              <span>Life Class / Profession</span>
+            </div>
+            <select id="playerRoleSelect">
+              <option value="explorer">🧭 Pioneer Explorer (+Speed & Stamina)</option>
+              <option value="rancher">🐄 Pasture Rancher (+Animal Trust & Calves)</option>
+              <option value="hunter">🏹 Wilderness Tracker (+Predator Tracking)</option>
+              <option value="builder">🔨 Master Homesteader (+Harvest & Timber)</option>
+            </select>
+          </div>
+
+          <div class="settingGroup" hidden>
+            <div class="settingLabel">
+              <span>Character Outfit & Style</span>
+            </div>
+            <select id="outfitSelect">
+              <option value="explorer">Explorer (Royal Indigo & Leather)</option>
+              <option value="ranger">Forest Ranger (Pine Green & Brass)</option>
+              <option value="scout">Autumn Scout (Amber & Leather)</option>
+              <option value="arctic">Arctic Scout (Slate & Frost White)</option>
+              <option value="lagos">Lagos Life Pioneer (Emerald & Gold)</option>
+            </select>
+          </div>
+
+          </section>
+          <section class="settingsPage" data-settings-page="diagnostics" aria-label="Diagnostics" hidden>
           <div class="settingGroup" data-settings-section="diagnostics">
             <div class="settingLabel"><span>Performance diagnostics</span></div>
             <p class="settingNote">Start a capture, return to your run, then check or copy the readings here. Samples update every 5 seconds; capture stops automatically after 2 minutes.</p>
@@ -430,6 +444,7 @@
             </div>
             <pre id="diagnosticReadout" aria-live="polite">Capture not started.</pre>
           </div>
+          </section>
         </div>
       </div>
     </div>
@@ -659,7 +674,7 @@
 
   // Keep the log controls inside Settings, where the player expects to find them.
   const addSettingsPanel = () => {
-    const body = document.querySelector('#settingsOverlay .settingsBody');
+    const body = document.querySelector('#settingsOverlay .settingsPage[data-settings-page="diagnostics"]');
     if (!body || document.getElementById('diagnosticsPanel')) return;
     const panel = document.createElement('section');
     panel.id = 'diagnosticsPanel';
