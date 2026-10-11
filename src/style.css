@@ -2375,3 +2375,17 @@ body.survival-mode.two-thumb-controls #minimapContainer {
 .tutorial-highlight { outline: 3px solid #d4ff88 !important; outline-offset: 4px; box-shadow: 0 0 18px #bbff77 !important; }
 body.survival-paused .first-run-tutorial { visibility: hidden; }
 body.survival-mode #prompt { padding: 0; border: 0; background: none; box-shadow: none; text-shadow: 0 2px 6px #000; }
+
+.lobby-tour { position: fixed; inset: 0; z-index: 2200; background: rgb(2 9 6 / 12%); }
+.lobby-tour[hidden] { display: none; }
+.lobby-tour-spotlight { position: fixed; pointer-events: none; border: 2px solid #d4ff88; border-radius: 8px; box-shadow: 0 0 0 9999px rgb(2 9 6 / 45%); }
+.lobby-tour-panel { position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); width: min(340px, 45vw); max-height: calc(100dvh - 32px); overflow-y: auto; box-sizing: border-box; padding: 16px; color: #f2ffe9; background: #0c1b14; border: 1px solid #9ab383; border-radius: 12px; }
+.lobby-tour-panel.dock-top { bottom: auto; top: max(16px, env(safe-area-inset-top)); }
+.lobby-tour-panel small { color: #c3df9d; font-size: 10px; letter-spacing: .08em; }
+.lobby-tour-panel h2 { font-size: 20px; margin: 8px 0; outline: none; }
+.lobby-tour-panel p { font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+.lobby-tour-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.lobby-tour-actions button { min-height: 40px; padding: 8px 14px; color: #f2ffe9; background: #375c35; border: 1px solid #9ab383; border-radius: 6px; font-weight: 700; }
+@media (orientation: portrait) { .lobby-tour-panel { width: min(340px, calc(100vw - 32px)); } }
+@media (max-height: 340px) { .lobby-tour-panel { padding: 12px; } .lobby-tour-panel h2 { font-size: 17px; margin: 6px 0; } .lobby-tour-panel p { font-size: 12px; line-height: 1.35; margin-bottom: 8px; } }
+body.lobby-tour-active #survivalLobby :is(.lobbyPage.active, .lobbyDeploy) { animation: none !important; opacity: 1 !important; }

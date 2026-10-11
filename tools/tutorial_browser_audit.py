@@ -15,7 +15,11 @@ with sync_playwright() as pw:
    route.fulfill(json=result)
   page.route('**/auth/v1/**',auth);page.route('**/rest/v1/rpc/**',rpc)
   page.goto('http://127.0.0.1:4192/',wait_until='domcontentloaded');page.locator('[name=email]').fill('fixture@example.invalid');page.locator('[name=password]').fill('fixture-password-123');page.locator('.pilot-card button[type=submit]').tap()
-  page.locator('#enterGameDisplayMode').tap(timeout=60000);page.locator('#startRunBtn').tap(timeout=60000)
+  page.locator('#enterGameDisplayMode').tap(timeout=60000)
+  page.locator('.lobby-tour-actions button').filter(has_text='NEXT').first.wait_for(timeout=60000)
+  for _ in range(3):page.locator('.lobby-tour-actions button').filter(has_text='NEXT').tap()
+  page.locator('.lobby-tour-actions button').filter(has_text='FINISH TOUR').tap()
+  page.locator('#startRunBtn').tap(timeout=60000)
   page.locator('.first-run-tutorial strong').wait_for(timeout=60000)
   assert page.locator('.first-run-tutorial strong').inner_text()=='Move'
   cdp=context.new_cdp_session(page)
