@@ -67,4 +67,15 @@ export function instanceChunkResources(chunk: THREE.Group, isShared: (geometry: 
       delete data.removeInstances;
     };
   }
+  // These are static scenery models. Their roots still move/shrink when
+  // harvested, but hidden GLB source parts need not rebuild local matrices on
+  // every render. Their stored local transforms still participate in raycasts.
+  for (const resource of chunk.children) {
+    if (!resource.userData.resource) continue;
+    resource.traverse(object => {
+      if (object === resource) return;
+      object.updateMatrix();
+      object.matrixAutoUpdate = false;
+    });
+  }
 }
