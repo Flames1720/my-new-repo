@@ -2506,8 +2506,8 @@ function saveSurvivalMeta(): void {
 }
 
 const CARD_PRICES: Partial<Record<WildcardId, number>> = {
-  'quick-hands': 600, endurance: 900, 'reinforced-vest': 1200,
-  'steady-grip': 1500, scavenger: 1800, sharpshooter: 2200,
+  'quick-hands': 1800, endurance: 3000, 'reinforced-vest': 4500,
+  'steady-grip': 6500, scavenger: 9000, sharpshooter: 12000,
 };
 function survivalLevel(): number { return 1 + Math.floor(survivalMeta.earnedXp / 150); }
 function addSurvivalXp(amount: number): void { survivalMeta.xp += amount; survivalMeta.earnedXp += amount; }
