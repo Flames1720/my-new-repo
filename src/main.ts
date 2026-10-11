@@ -1,3 +1,4 @@
+import { FirstRunTutorial } from './first-run-tutorial';
 import { GAME_BUILD } from './game-build';
 import { bindFullscreenAction, requestNativeFullscreen, supportsNativeFullscreen, browserDisplayGuidance } from './display-mode';
 import { ACHIEVEMENTS, achievementValue, eligibleAchievements, type AchievementProgress } from './achievements';
@@ -1746,7 +1747,7 @@ function onLookMove(clientX: number, clientY: number) {
     acceleration += accelerationStrength * clamp(speedPxPerSecond / (1100 * accelerationThreshold), 0, 1);
   }
 
-  const adsMultiplier = survival?.enabled && keys.has('aim') ? settings.current.adsSensitivity : 1;
+  const adsMultiplier = survival?.enabled && (thumbControlMode && IS_TOUCH_DEVICE ? thumbAimLatched : keys.has('aim')) ? settings.current.adsSensitivity : 1;
   const sensX = settings.current.sensitivityX * adsMultiplier;
   const sensY = settings.current.sensitivityY * adsMultiplier;
   const invertY = settings.current.invertY ? -1 : 1;
@@ -1978,17 +1979,17 @@ function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void, onRe
 type HudLayoutItem = { x: number; y: number; size: number; opacity: number };
 const HUD_LAYOUT_KEY = 'zombie-survival-hud-v1' + (pilot.enabled ? ':' + pilot.userId : '');
 const HUD_DEFAULTS: Record<string, HudLayoutItem> = {
-  shoot: { x: 10, y: 23, size: 66, opacity: 0.68 },
-  ads: { x: 82, y: 24, size: 48, opacity: 0.62 },
-  jump: { x: 92, y: 72, size: 46, opacity: 0.56 },
-  slide: { x: 72, y: 72, size: 46, opacity: 0.58 },
-  reload: { x: 80, y: 81, size: 44, opacity: 0.56 },
-  weapon: { x: 60, y: 82, size: 44, opacity: 0.68 },
-  use: { x: 69, y: 55, size: 46, opacity: 0.62 },
+  shoot: { x: 88, y: 76, size: 72, opacity: 0.72 },
+  ads: { x: 81, y: 51, size: 48, opacity: 0.68 },
+  jump: { x: 94, y: 51, size: 48, opacity: 0.62 },
+  slide: { x: 70, y: 73, size: 48, opacity: 0.62 },
+  reload: { x: 77, y: 89, size: 46, opacity: 0.62 },
+  weapon: { x: 64, y: 89, size: 46, opacity: 0.68 },
+  use: { x: 69, y: 51, size: 46, opacity: 0.62 },
   skill: { x: 60, y: 58, size: 46, opacity: 0.78 },
-  'wildcard-1': { x: 39, y: 82, size: 46, opacity: 0.72 },
-  'wildcard-2': { x: 46, y: 82, size: 46, opacity: 0.72 },
-  'wildcard-3': { x: 53, y: 82, size: 46, opacity: 0.72 },
+  'wildcard-1': { x: 42, y: 89, size: 44, opacity: 0.72 },
+  'wildcard-2': { x: 49, y: 89, size: 44, opacity: 0.72 },
+  'wildcard-3': { x: 56, y: 89, size: 44, opacity: 0.72 },
 };
 const HUD_PRESETS: Record<'four' | 'three' | 'thumbs', Record<string, { x: number; y: number }>> = {
   four: {
@@ -1999,10 +2000,7 @@ const HUD_PRESETS: Record<'four' | 'three' | 'thumbs', Record<string, { x: numbe
     shoot: { x: 10, y: 25 }, ads: { x: 87, y: 43 }, jump: { x: 91, y: 69 },
     slide: { x: 76, y: 70 }, reload: { x: 79, y: 82 }, weapon: { x: 60, y: 82 }, use: { x: 69, y: 56 }, skill: { x: 60, y: 58 },
   },
-  thumbs: {
-    shoot: { x: 87, y: 78 }, ads: { x: 85, y: 56 }, jump: { x: 94, y: 64 },
-    slide: { x: 76, y: 65 }, reload: { x: 75, y: 83 }, weapon: { x: 60, y: 82 }, use: { x: 67, y: 55 }, skill: { x: 60, y: 58 },
-  },
+  thumbs: Object.fromEntries(Object.entries(HUD_DEFAULTS).map(([id, item]) => [id, { x: item.x, y: item.y }])),
 };
 const hudEditorOverlay = document.querySelector('#hudEditorOverlay') as HTMLDivElement;
 const hudEditorPanel = document.querySelector('#hudEditorPanel') as HTMLElement;
@@ -2017,6 +2015,8 @@ let hudTouchButtons = Array.from(document.querySelectorAll<HTMLElement>('#touch 
 let hudLayout: Record<string, HudLayoutItem> = Object.fromEntries(
   Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }])
 );
+let thumbControlMode = true;
+let thumbAimLatched = false;
 let selectedHudItem: HTMLElement | null = null;
 let hudDrag: { pointerId: number; el: HTMLElement; offsetX: number; offsetY: number } | null = null;
 
@@ -2029,8 +2029,10 @@ function clampHudItem(item: HudLayoutItem): HudLayoutItem {
   };
 }
 function applyHudItem(el: HTMLElement) {
+  document.body.classList.toggle('two-thumb-controls', thumbControlMode);
   const id = el.dataset.hudId;
   if (!id || !hudLayout[id]) return;
+  if (id === 'ads') { el.title = thumbControlMode ? 'Tap to toggle aim' : 'Hold to aim'; el.setAttribute('aria-label', el.title); }
   const item = clampHudItem(hudLayout[id]);
   hudLayout[id] = item;
   el.style.setProperty('--hud-x', `${item.x}%`);
@@ -2040,7 +2042,8 @@ function applyHudItem(el: HTMLElement) {
 }
 function saveHudLayout() {
   try { localStorage.setItem(HUD_LAYOUT_KEY, JSON.stringify(hudLayout)); } catch {}
-  savePilotProgress({ hudLayout });
+  try { localStorage.setItem(HUD_LAYOUT_KEY + ':thumb-controls', String(thumbControlMode)); } catch {}
+  savePilotProgress({ hudLayout, hudThumbControls: thumbControlMode });
 }
 window.addEventListener('pagehide', saveHudLayout);
 document.addEventListener('visibilitychange', () => {
@@ -2054,6 +2057,10 @@ function loadHudLayout() {
       ? JSON.stringify(cloudLayout)
       : localStorage.getItem(HUD_LAYOUT_KEY) || (pilot.enabled ? localStorage.getItem('zombie-survival-hud-v1') : null);
     if (raw) {
+      const savedMode = pilot.enabled ? pilot.progress.hudThumbControls : undefined;
+      const localMode = localStorage.getItem(HUD_LAYOUT_KEY + ':thumb-controls');
+      thumbControlMode = typeof savedMode === 'boolean' ? savedMode : localMode !== null ? localMode === 'true' : false;
+      hudPresetSelect.value = 'custom';
       const stored = JSON.parse(raw) as Record<string, Partial<HudLayoutItem>>;
       for (const [id, defaults] of Object.entries(HUD_DEFAULTS)) {
         const value = stored[id];
@@ -2085,9 +2092,11 @@ function selectHudItem(el: HTMLElement) {
   hudOpacityVal.textContent = `${Math.round(item.opacity * 100)}%`;
 }
 function applyHudPreset(preset: 'four' | 'three' | 'thumbs') {
+  thumbControlMode = preset === 'thumbs'; thumbAimLatched = false;
+  survival?.setAim(false); document.body.classList.remove('aim-active');
   for (const [id, position] of Object.entries(HUD_PRESETS[preset])) {
     const current = hudLayout[id] || HUD_DEFAULTS[id];
-    hudLayout[id] = clampHudItem({ ...current, ...position });
+    hudLayout[id] = clampHudItem({ ...current, ...(preset === 'thumbs' ? HUD_DEFAULTS[id] : {}), ...position });
   }
   hudTouchButtons.forEach(applyHudItem);
   hudPresetSelect.value = preset;
@@ -2261,7 +2270,9 @@ bindAction(document.querySelector('#hudSaveBtn') as HTMLButtonElement, () => set
 bindAction(document.querySelector('#hudResetBtn') as HTMLButtonElement, () => {
   hudLayout = Object.fromEntries(Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }]));
   hudTouchButtons.forEach(applyHudItem);
-  hudPresetSelect.value = 'four';
+  thumbControlMode = true; thumbAimLatched = false;
+  survival?.setAim(false); document.body.classList.remove('aim-active');
+  hudPresetSelect.value = 'thumbs';
   saveHudLayout();
   const first = hudTouchButtons.find(el => el.dataset.hudId === 'shoot') || hudTouchButtons[0];
   if (first) selectHudItem(first);
@@ -2281,15 +2292,18 @@ bindAction(document.querySelector('#punchBtn') as HTMLButtonElement, triggerPunc
 bindAction(document.querySelector('#kickBtn') as HTMLButtonElement, triggerKick);
 bindAction(document.querySelector('#castBtn') as HTMLButtonElement, () => survival?.enabled ? survival.fire() : triggerFireCast());
 bindHoldAction(document.querySelector('#shootBtn') as HTMLButtonElement, 'shoot',
-  () => survival?.enabled && survival.fire(), undefined, () => settings.current.lookWhileFiring);
+  () => survival?.enabled && survival.fire(), undefined, () => thumbControlMode || settings.current.lookWhileFiring);
 bindAction(document.querySelector('#skillBtn') as HTMLButtonElement, () => survival?.enabled && survival.activateSkill());
 const adsButton = document.querySelector('#aimBtn') as HTMLButtonElement;
 bindHoldAction(adsButton, 'aim', () => {
   // Apply aim state on pointer-down, rather than waiting for the next simulation tick.
-  survival?.setAim(true);
-  document.body.classList.add('aim-active');
-  adsButton.setAttribute('aria-pressed', 'true');
+  if (thumbControlMode) thumbAimLatched = !thumbAimLatched;
+  const aiming = thumbControlMode ? thumbAimLatched : true;
+  survival?.setAim(aiming);
+  document.body.classList.toggle('aim-active', aiming);
+  adsButton.setAttribute('aria-pressed', String(aiming));
 }, () => {
+  if (thumbControlMode) return;
   survival?.setAim(false);
   document.body.classList.remove('aim-active');
   adsButton.setAttribute('aria-pressed', 'false');
@@ -2459,6 +2473,7 @@ let runStartXp = survivalMeta.xp;
 let runStartEarnedXp = survivalMeta.earnedXp;
 let lastEventWave = 0;
 let lastPrepAnnouncement = -1;
+let firstRunTutorial: FirstRunTutorial | undefined;
 let lastBossKills = 0, lastTravelMeters = 0, lastTravelSaveSecond = -1;
 let nearDeathWave: number | null = null;
 
@@ -2660,6 +2675,7 @@ function activateWildcard(id: WildcardId): void {
   else if (id === 'quick-hands' || id === 'steady-grip' || id === 'reinforced-vest' || id === 'sharpshooter' || id === 'scavenger') activated = survival.activateFieldEffect(id);
   else { say(`${card.label} IS NOT YET OPERATIONAL`); return; }
   if (!activated) return;
+  firstRunTutorial?.cardUsed();
   wildcardCooldowns[id] = card.cooldown;
   showWildcardPulse(card);
   updateWildcardHud();
@@ -2878,6 +2894,8 @@ function updateAccelerationControlsUI() {
 }
 
 function openSettings(open: boolean) {
+  const practiceButton = document.querySelector<HTMLButtonElement>('#practiceTutorialBtn');
+  if (practiceButton) { practiceButton.disabled = survival?.enabled === true; practiceButton.textContent = survival?.enabled ? 'Practice tutorial · return to lobby first' : 'Practice tutorial'; }
   settingsOverlay.classList.toggle('show', open);
   if (open) {
     sensXSlider.value = String(settings.current.sensitivityX);
@@ -3553,6 +3571,8 @@ let slideTimer = 0, slideCooldown = 0;
 let slideDirection = { x: 0, z: 1 };
 
 function say(t: string) {
+  // Combat state is already communicated by the HUD, sound and world effects.
+  if (survival?.enabled) return;
   prompt.textContent = t;
   prompt.classList.add('show');
   promptTimer = 1.35;
@@ -3876,6 +3896,7 @@ const survivalSanctuaries = findSanctuarySites({
 let modeBeforeSurvival: Mode = mode;
 
 function setSurvivalEnabled(enabled: boolean) {
+  if (!enabled) { firstRunTutorial?.stop(); survival.setTutorialMode(false); }
   if (enabled && !document.body.classList.contains('display-mode-ready')) return;
   if (enabled) {
     if (!survival.enabled) modeBeforeSurvival = mode;
@@ -4114,6 +4135,7 @@ survival = new ZombieSurvivalSystem({
     keyboardKeys.clear();
     pointerKeys.clear();
     document.body.classList.remove('aim-active');
+    thumbAimLatched = false;
     recordSurvivalRun('OVERRUN', lastSurvivalState);
     survivalSound.playCue('game-over');
     survival.setEnabled(false);
@@ -4175,6 +4197,8 @@ if (upgradeStaminaBtn) bindAction(upgradeStaminaBtn, () => purchaseSurvivalUpgra
 if (upgradeDamageBtn) bindAction(upgradeDamageBtn, () => purchaseSurvivalUpgrade('damage'));
 
 function releaseSurvivalInputs() {
+  thumbAimLatched = false;
+  adsButton.setAttribute('aria-pressed', 'false');
   // A pause/background transition must not leave a held fire, ADS, or movement input behind.
   keys.clear();
   keyboardKeys.clear();
@@ -4191,9 +4215,36 @@ function releaseSurvivalInputs() {
   document.body.classList.remove('aim-active');
 }
 
-function beginSurvivalRun(selectedWeapon: SurvivalWeaponId) {
-  if (!document.body.classList.contains('display-mode-ready')) return;
+const tutorialStorageKey = 'island-tutorial-v1:' + (pilot.userId || 'local');
+const tutorialReleaseAt = Date.parse('2026-10-11T14:18:20Z');
+const tutorialNewAccount = !pilot.enabled || Date.parse(pilot.userCreatedAt) >= tutorialReleaseAt;
+let tutorialCompleted = pilot.progress.tutorialCompleted === true || survivalMeta.totalRuns > 0 || !tutorialNewAccount;
+try { tutorialCompleted ||= localStorage.getItem(tutorialStorageKey) === 'complete'; } catch {}
+firstRunTutorial = new FirstRunTutorial(IS_TOUCH_DEVICE, () => {
+  tutorialCompleted = true;
+  try { localStorage.setItem(tutorialStorageKey, 'complete'); } catch {}
+  savePilotProgress({ tutorialCompleted: true });
+  releaseSurvivalInputs();
+  const weapon = survival.weapon;
+  survival.setTutorialMode(false);
+  survival.restart();
+  survival.setPermanentUpgrades(survivalMeta.upgrades.health, survivalMeta.upgrades.damage);
+  survival.switchWeapon(weapon);
+  for (const id of Object.keys(wildcardCooldowns) as WildcardId[]) delete wildcardCooldowns[id];
+  lastTravelMeters = 0;
+  stamina = staminaCapacity;
+  staminaLocked = false;
+  survival.beginPreparation(12);
   startPilotRun();
+});
+
+function beginSurvivalRun(selectedWeapon: SurvivalWeaponId, practice = false) {
+  if (!document.body.classList.contains('display-mode-ready')) return;
+  thumbAimLatched = false;
+  firstRunTutorial?.stop();
+  const needsTutorial = practice || !tutorialCompleted;
+  survival.setTutorialMode(needsTutorial);
+  if (!needsTutorial) startPilotRun();
   runResultShown = false;
   survivalDeathOverlay?.classList.remove('show');
   for (const id of Object.keys(wildcardCooldowns) as WildcardId[]) delete wildcardCooldowns[id];
@@ -4214,10 +4265,18 @@ function beginSurvivalRun(selectedWeapon: SurvivalWeaponId) {
   survival.setPermanentUpgrades(survivalMeta.upgrades.health, survivalMeta.upgrades.damage);
   survival.switchWeapon(selectedWeapon);
   setSurvivalEnabled(true);
-  survival.beginPreparation(12);
+  if (!needsTutorial) survival.beginPreparation(12);
   survivalLobby?.classList.remove('show');
   updateWildcardHud();
+  if (needsTutorial) firstRunTutorial?.start(player.root.position.x, player.root.position.z, camYaw, lastSurvivalState?.ammoInMag || 12);
 }
+
+const practiceTutorialBtn = document.querySelector<HTMLButtonElement>('#practiceTutorialBtn');
+if (practiceTutorialBtn) bindAction(practiceTutorialBtn, () => {
+  if (survival.enabled) return;
+  openSettings(false);
+  beginSurvivalRun((lobbyWeaponSelect?.value || 'pistol') as SurvivalWeaponId, true);
+});
 
 if (startRunBtn) bindAction(startRunBtn, () => {
   const selectedWeapon = (lobbyWeaponSelect?.value || 'pistol') as SurvivalWeaponId;
@@ -4743,11 +4802,13 @@ function update(dt: number) {
   // Shooter simulation runs after the existing camera is positioned, so its hitscan uses the actual FPP view.
   if (diagnosticMeasureFrame) {
     const survivalStartedAt = performance.now();
-    survival.update(dt, keys.has('shoot'), keys.has('aim'));
+    survival.update(dt, keys.has('shoot'), thumbControlMode && IS_TOUCH_DEVICE ? thumbAimLatched : keys.has('aim'));
     recordDiagnosticCost('survivalUpdate', performance.now() - survivalStartedAt);
   } else {
-    survival.update(dt, keys.has('shoot'), keys.has('aim'));
+    survival.update(dt, keys.has('shoot'), thumbControlMode && IS_TOUCH_DEVICE ? thumbAimLatched : keys.has('aim'));
   }
+
+  if (!survivalPaused && lastSurvivalState) firstRunTutorial?.observe(p.x, p.z, camYaw, document.body.classList.contains('aim-active'), lastSurvivalState.ammoInMag, lastSurvivalState.reloading);
 
   // Record breadcrumb displacement trail
   minimap.recordPosition(p.x, p.z);

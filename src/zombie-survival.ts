@@ -1155,6 +1155,9 @@ export class ZombieSurvivalSystem {
     }
   }
 
+  private tutorialMode = false;
+  setTutorialMode(active: boolean): void { this.tutorialMode = active; }
+
   update(dt: number, firing = false, aiming = false): void {
     if (!this.enabled || this.runComplete) return;
     // The player position/blocker set is stable during this update, so all infected
@@ -1163,14 +1166,14 @@ export class ZombieSurvivalSystem {
     this.elapsed += dt;
     for (const id of Object.keys(this.fieldEffects) as Array<keyof typeof this.fieldEffects>) this.fieldEffects[id] = Math.max(0, (this.fieldEffects[id] || 0) - dt);
     const travelPosition = this.options.getPlayerPosition();
-    if (this.previousTravelPosition && !this.options.isWater(travelPosition.x, travelPosition.z) && !this.options.isWater(this.previousTravelPosition.x, this.previousTravelPosition.z)) {
+    if (!this.tutorialMode && this.previousTravelPosition && !this.options.isWater(travelPosition.x, travelPosition.z) && !this.options.isWater(this.previousTravelPosition.x, this.previousTravelPosition.z)) {
       const distance = Math.hypot(travelPosition.x - this.previousTravelPosition.x, travelPosition.z - this.previousTravelPosition.z);
       // Ignore teleports/restarts and discontinuities rather than awarding travel.
       if (distance <= Math.max(1, dt * 16)) this.distanceMeters += distance;
     }
     if (!this.previousTravelPosition) this.previousTravelPosition = new THREE.Vector3();
     this.previousTravelPosition.copy(travelPosition);
-    if (this.preparationTimer > 0) {
+    if (!this.tutorialMode && this.preparationTimer > 0) {
       this.preparationTimer = Math.max(0, this.preparationTimer - dt);
       if (this.preparationTimer === 0 && !this.hasEnteredHostileArea) {
         this.wave = 1;
@@ -1233,7 +1236,7 @@ export class ZombieSurvivalSystem {
 
     const playerPos = this.options.getPlayerPosition();
     const nearSafe = this.isPlayerProtected(playerPos.x, playerPos.z);
-    if (!nearSafe && !this.hasEnteredHostileArea) {
+    if (!this.tutorialMode && !nearSafe && !this.hasEnteredHostileArea) {
       this.hasEnteredHostileArea = true;
       this.wave = 1;
       this.waveQueue = 4;
@@ -1241,7 +1244,7 @@ export class ZombieSurvivalSystem {
       this.options.notify('HOSTILE TERRITORY · FIND COVER');
     }
 
-    if (!this.isDead && this.hasEnteredHostileArea && !nearSafe) {
+    if (!this.tutorialMode && !this.isDead && this.hasEnteredHostileArea && !nearSafe) {
       if (this.waveQueue > 0) {
         this.spawnTimer += dt;
         if (this.spawnTimer >= 2.7 && this.zombies.filter(z => !z.dead).length < this.maxZombies) {

@@ -2359,3 +2359,19 @@ label[for="musicEnabledCheck"] { min-height: 44px; align-items: center; cursor: 
 @media (prefers-reduced-motion:reduce) { #achievementReveal[open] .rewardFlip { animation:none; } }
 .survivalHealthBlock { position:relative; }
 .medicHealTick { position:absolute; right:0; top:-16px; color:#6bef9b; font-size:16px; font-weight:800; pointer-events:none; text-shadow:0 2px 3px #07180c; }
+
+/* Keep the map clear of the right-thumb action arc on short landscape screens. */
+body.survival-mode.two-thumb-controls #minimapContainer {
+  left: calc(12px + env(safe-area-inset-left));
+  right: auto;
+}
+
+.first-run-tutorial { position: fixed; z-index: 150; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: min(340px, 44vw); padding: 10px 14px; background: #071710ed; border: 1px solid #a8e2a0; border-radius: 12px; color: #f2ffe9; pointer-events: none; text-align: center; }
+.first-run-tutorial[hidden] { display: none; }
+.first-run-tutorial small { display: block; font-size: 10px; color: #afe297; }
+.first-run-tutorial strong { display: block; font-size: 18px; margin-top: 4px; }
+.first-run-tutorial p { font-size: 12px; line-height: 1.4; margin: 5px 0; }
+.first-run-tutorial button { pointer-events: auto; padding: 8px; background: #375c35; color: white; border: 1px solid #c3eba2; border-radius: 6px; }
+.tutorial-highlight { outline: 3px solid #d4ff88 !important; outline-offset: 4px; box-shadow: 0 0 18px #bbff77 !important; }
+body.survival-paused .first-run-tutorial { visibility: hidden; }
+body.survival-mode #prompt { padding: 0; border: 0; background: none; box-shadow: none; text-shadow: 0 2px 6px #000; }
