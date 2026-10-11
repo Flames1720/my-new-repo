@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-PAGES = ("mission", "fieldkit", "wildcards", "records", "challenges", "upgrades")
+PAGES = ("mission", "kit", "wildcards", "records", "challenges", "upgrades")
 SETTINGS = ("controls", "graphics", "player", "diagnostics")
 SIZES = ((854, 393), (915, 412), (1280, 720), (1536, 691))
 
@@ -50,12 +50,15 @@ def run(url, out, sizes):
                     path=out/f"{size_name}-{section}.png"
                     page.screenshot(path=str(path), animations="disabled")
                     stage=box_data(page.locator(".lobbyStage"))
+                    document_overflow=page.evaluate("""() => ({viewportWidth:innerWidth,scrollWidth:document.documentElement.scrollWidth,viewportHeight:innerHeight,scrollHeight:document.documentElement.scrollHeight})""")
+                    if document_overflow["scrollWidth"] > width + 2:
+                        report["warnings"].append(f"{size_name} {section}: horizontal overflow {document_overflow['scrollWidth'] - width}px")
                     footer=box_data(page.locator(".lobbyFooter"))
                     panel_data=box_data(panel)
                     info={"viewport":size_name,"page":section,"image":str(path),
-                          "stage":stage,"footer":footer,"panel":panel_data}
+                          "stage":stage,"footer":footer,"panel":panel_data,"document":document_overflow}
                     if section=="wildcards":
-                        cards=page.locator(".wildcardCollection .wildcardCard")
+                        cards=page.locator("#wildcardCollection").locator(":scope > *")
                         info["card_count"]=cards.count()
                         if cards.count()>0:
                             rects=[box_data(cards.nth(i)) for i in range(cards.count())]
