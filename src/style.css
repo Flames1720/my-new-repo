@@ -2357,3 +2357,5 @@ label[for="musicEnabledCheck"] { min-height: 44px; align-items: center; cursor: 
 @keyframes rewardArrive { from { opacity:0; transform:translateY(22px) rotateY(70deg) scale(.8); } to { opacity:1; transform:translateY(0) rotateY(0) scale(1); } }
 #achievementReveal[open] .rewardFlip { animation:rewardArrive .55s ease-out both; }
 @media (prefers-reduced-motion:reduce) { #achievementReveal[open] .rewardFlip { animation:none; } }
+.survivalHealthBlock { position:relative; }
+.medicHealTick { position:absolute; right:0; top:-16px; color:#6bef9b; font-size:16px; font-weight:800; pointer-events:none; text-shadow:0 2px 3px #07180c; }

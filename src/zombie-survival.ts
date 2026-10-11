@@ -45,6 +45,8 @@ export interface SurvivalStatus {
   bossKills?: number;
   distanceMeters?: number;
   skillCooldownSeconds?: number;
+  pulseActiveSeconds?: number;
+  medicActiveSeconds?: number;
   zonePhase?: SafeZonePhase;
   zoneIntegrity?: number;
   safeZoneX?: number;
@@ -72,6 +74,7 @@ export interface ZombieSurvivalOptions {
   onStatus: (status: SurvivalStatus) => void;
   onShot?: (hit: boolean) => void;
   onDamage: () => void;
+  onHealing?: (amount: number) => void;
   onDeath: () => void;
 }
 
@@ -277,6 +280,12 @@ export class ZombieSurvivalSystem {
   private killedThisWave = 0;
   private preparationTimer = 0;
   private skillCooldown = 0;
+  private pulseRemaining = 0;
+  private pulseBeat = 0;
+  private medicRemaining = 0;
+  private medicBeat = 0;
+  private medicCooldown = 0;
+  private cardFields: THREE.Group | null = null;
   private zoneTransitionTimer = 0;
   private nextZoneIndex = 1;
   private bossSpawnedThisWave = false;
@@ -413,6 +422,8 @@ export class ZombieSurvivalSystem {
       survivalSound.updateHeartbeat(1);
       survivalSound.setAmbientEnabled(false);
       this.combatEffects.clear();
+      this.pulseRemaining = this.pulseBeat = this.medicRemaining = this.medicBeat = 0;
+      if (this.cardFields) this.cardFields.children.forEach(ring => ring.visible = false);
     }
     this.emitStatus();
   }
@@ -473,31 +484,81 @@ export class ZombieSurvivalSystem {
     }
   }
 
-  activateSkill(): void {
-    if (!this.enabled || this.isDead || this.runComplete) return;
-    if (this.skillCooldown > 0) {
-      this.options.notify(`SHOCKWAVE RECHARGING · ${Math.ceil(this.skillCooldown)}s`);
-      return;
-    }
+  activateSkill(): boolean {
+    if (!this.enabled || this.isDead || this.runComplete || this.skillCooldown > 0) return false;
     this.skillCooldown = 18;
+    this.pulseRemaining = 6;
+    this.pulseBeat = 0;
+    this.repelPulse();
+    this.ensureCardFields();
+    this.updateCardFields(0);
+    this.emitStatus();
+    return true;
+  }
+
+  activateMedic(): boolean {
+    if (!this.enabled || this.isDead || this.runComplete || this.medicCooldown > 0 || this.health >= this.maxHealth) return false;
+    this.medicCooldown = 24;
+    this.medicRemaining = 12;
+    this.medicBeat = 0;
+    this.ensureCardFields();
+    this.updateCardFields(0);
+    this.emitStatus();
+    return true;
+  }
+
+  private ensureCardFields(): void {
+    if (this.cardFields) return;
+    this.cardFields = new THREE.Group();
+    for (const [radius, color] of [[7.5, 0xf5b544], [2, 0x4ade80]]) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(radius - .12, radius, 32), new THREE.MeshBasicMaterial({color, transparent:true, opacity:.55, side:THREE.DoubleSide, depthWrite:false}));
+      ring.rotation.x = -Math.PI / 2;
+      this.cardFields.add(ring);
+    }
+    this.scene.add(this.cardFields);
+  }
+
+  private repelPulse(): void {
     const player = this.options.getPlayerPosition();
-    let affected = 0;
     for (const actor of this.zombies) {
       if (actor.dead) continue;
-      const dx = actor.position.x - player.x;
-      const dz = actor.position.z - player.z;
+      let dx = actor.position.x - player.x, dz = actor.position.z - player.z;
       const distance = Math.hypot(dx, dz);
       if (distance > 7.5) continue;
-      affected++;
-      const damage = actor.bossTier === 2 ? 38 : actor.bossTier === 1 ? 55 : actor.type === 'brute' ? 90 : 75;
-      this.damageZombie(actor, damage, false, false, true, 'SHOCKWAVE ELIMINATED AN INFECTED');
-      if (!actor.dead && distance > 0.001) {
-        this.moveZombie(actor, (dx / distance) * 1.4, (dz / distance) * 1.4);
-      }
+      if (distance < .001) { dx = 1; dz = 0; }
+      const length = Math.max(.001, Math.hypot(dx, dz));
+      const push = actor.bossTier > 0 ? .2 : actor.type === 'brute' ? .5 : 2.2;
+      this.moveZombie(actor, dx / length * push, dz / length * push);
     }
-    this.spawnImpact(new THREE.Vector3(player.x, this.options.getTerrainHeight(player.x, player.z) + 0.28, player.z), false);
-    this.options.notify(affected ? `SHOCKWAVE · ${affected} INFECTED HIT` : 'SHOCKWAVE · AREA CLEAR');
-    this.emitStatus();
+  }
+
+  private updateCardFields(dt: number): void {
+    if (this.isDead) { this.pulseRemaining = 0; this.medicRemaining = 0; }
+    const pulseTime = Math.min(dt, this.pulseRemaining);
+    this.pulseRemaining = Math.max(0, this.pulseRemaining - dt);
+    if (this.pulseRemaining < 1e-9) this.pulseRemaining = 0;
+    this.pulseBeat += pulseTime;
+    while (this.pulseBeat >= .75 && this.pulseRemaining > 0) { this.pulseBeat -= .75; this.repelPulse(); }
+    const medicTime = Math.min(dt, this.medicRemaining);
+    this.medicRemaining = Math.max(0, this.medicRemaining - dt);
+    if (this.medicRemaining < 1e-9) this.medicRemaining = 0;
+    this.medicBeat += medicTime;
+    // Damage runs first. A lethal hit ends the field without resurrecting the player.
+    while (this.medicBeat >= 1 - 1e-9 && !this.isDead) {
+      this.medicBeat = Math.max(0, this.medicBeat - 1);
+      const before = this.health;
+      this.health = Math.min(this.maxHealth, this.health + 3);
+      if (this.health > before) { this.options.onHealing?.(this.health - before); this.emitStatus(); }
+    }
+    this.medicCooldown = Math.max(0, this.medicCooldown - dt);
+    if (this.cardFields) {
+      const player = this.options.getPlayerPosition();
+      this.cardFields.position.set(player.x, this.options.getTerrainHeight(player.x, player.z) + .12, player.z);
+      this.cardFields.children[0].visible = this.pulseRemaining > 0;
+      this.cardFields.children[0].scale.setScalar(.45 + (this.pulseBeat / .75) * .55);
+      this.cardFields.children[1].visible = this.medicRemaining > 0;
+      this.cardFields.children[1].scale.setScalar(.85 + this.medicBeat * .15);
+    }
   }
 
   switchWeapon(id: SurvivalWeaponId): void {
@@ -835,7 +896,8 @@ export class ZombieSurvivalSystem {
       }
       const length = Math.max(0.001, dist);
       const nightFactor = clamp(this.options.getNightFactor?.() ?? 0, 0, 1);
-      const effectiveSpeed = actor.speed * (1 + nightFactor * 0.18);
+      const pulseSlow = this.pulseRemaining > 0 && Math.hypot(playerPos.x - actor.position.x, playerPos.z - actor.position.z) <= 7.5 ? (actor.bossTier > 0 || actor.type === 'brute' ? .45 : .65) : 1;
+      const effectiveSpeed = actor.speed * (1 + nightFactor * 0.18) * pulseSlow;
       if (actor.bossTier === 2 && dist <= 4.1 && this.elapsed - actor.lastAttack >= actor.attackCooldown && this.hasLineOfSight(actor.position, playerPos)) {
         actor.lastAttack = this.elapsed;
         this.options.notify('BOSS SLAM · DODGE THE SHOCKWAVE');
@@ -1193,6 +1255,8 @@ export class ZombieSurvivalSystem {
           this.breakTimer = 0;
           if (this.wave >= 100) {
             this.runComplete = true;
+            this.pulseRemaining = this.medicRemaining = 0;
+            if (this.cardFields) this.cardFields.children.forEach(ring => ring.visible = false);
             this.options.notify('100 WAVES SURVIVED · ISLAND SECURED');
             this.emitStatus();
             return;
@@ -1214,7 +1278,8 @@ export class ZombieSurvivalSystem {
       if (actor.dead && actor.deathAge > 6) this.removeZombie(actor);
     }
     if (aiStarted !== null) this.options.onPerformanceCost?.('enemyAI', performance.now() - aiStarted);
-    this.updateLoot(dt, playerPos);
+    this.updateCardFields(dt);
+    if (!this.isDead) this.updateLoot(dt, playerPos);
     const effectsStarted = this.options.performanceActive?.() ? performance.now() : null;
     this.combatEffects.update(dt);
     if (effectsStarted !== null) this.options.onPerformanceCost?.('combatEffects', performance.now() - effectsStarted);
@@ -1244,6 +1309,8 @@ export class ZombieSurvivalSystem {
     this.wave = 0;
     this.preparationTimer = 0;
     this.skillCooldown = 0;
+    this.pulseRemaining = this.pulseBeat = this.medicRemaining = this.medicBeat = this.medicCooldown = 0;
+    if (this.cardFields) this.cardFields.children.forEach(ring => ring.visible = false);
     this.runComplete = false;
     this.bossSpawnedThisWave = false;
     this.zoneTransitionTimer = 0;
@@ -1318,6 +1385,7 @@ export class ZombieSurvivalSystem {
       durationSeconds: Math.max(0, Math.floor(this.elapsed)),
       bossKills: this.bossKills, distanceMeters: this.distanceMeters,
       skillCooldownSeconds: Math.ceil(this.skillCooldown),
+      pulseActiveSeconds: Math.ceil(this.pulseRemaining), medicActiveSeconds: Math.ceil(this.medicRemaining),
       nearestZone: guideZone?.label ?? 'SAFE ZONE',
       zoneDistance: guideZone ? Math.max(0, distToZone(p.x, p.z, guideZone) - guideZone.radius) : 0,
       reloading: this.reloadTimer > 0, dead: this.isDead,
@@ -1338,6 +1406,7 @@ export class ZombieSurvivalSystem {
       disposeGroup(drop.root);
     }
     this.combatEffects.dispose();
+    if (this.cardFields) { this.scene.remove(this.cardFields); disposeGroup(this.cardFields); this.cardFields = null; }
     for (const zone of this.zones) {
       this.scene.remove(zone.root);
       disposeGroup(zone.root);

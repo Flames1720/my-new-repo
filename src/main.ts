@@ -2411,8 +2411,8 @@ type UpgradeKey = 'health' | 'stamina' | 'damage';
 type WildcardId = 'shockwave' | 'field-medic' | 'quick-hands' | 'scavenger' | 'steady-grip' | 'reinforced-vest' | 'sharpshooter' | 'boss-spoils' | 'threat-reader' | 'endurance';
 type WildcardDefinition = { id: WildcardId; label: string; short: string; description: string; accent: string; cooldown: number; unlocked: boolean };
 const WILDCARDS: WildcardDefinition[] = [
-  { id: 'shockwave', label: 'SHOCKWAVE RELAY', short: 'PULSE', description: 'Push back nearby infected.', accent: '#f59e0b', cooldown: 18, unlocked: true },
-  { id: 'field-medic', label: 'FIELD MEDIC', short: 'MEDIC', description: 'Recover a capped burst of HP.', accent: '#4ade80', cooldown: 24, unlocked: true },
+  { id: 'shockwave', label: 'SHOCKWAVE RELAY', short: 'PULSE', description: 'Pulse for 6 seconds, repelling infected and slowing stronger enemies within 7.5m.', accent: '#f59e0b', cooldown: 18, unlocked: true },
+  { id: 'field-medic', label: 'FIELD MEDIC', short: 'MEDIC', description: 'Healing field: +3 HP each second for 12 seconds. Incoming damage still applies.', accent: '#4ade80', cooldown: 24, unlocked: true },
   { id: 'quick-hands', label: 'QUICK HANDS', short: 'HANDS', description: 'Reload 40% faster for 10 seconds.', accent: '#38bdf8', cooldown: 22, unlocked: false },
   { id: 'scavenger', label: 'SCAVENGER', short: 'SCAV', description: 'Get 50% more from pickups for 20 seconds.', accent: '#a3e635', cooldown: 26, unlocked: false },
   { id: 'steady-grip', label: 'STEADY GRIP', short: 'GRIP', description: 'Halve firing spread for 10 seconds.', accent: '#c084fc', cooldown: 20, unlocked: false },
@@ -2641,18 +2641,19 @@ function updateWildcardHud(): void {
   wildcardButtons.forEach((button, index) => {
     const id = survivalMeta.equippedWildcards[index];
     if (!id) return;
-    const remaining = Math.ceil(wildcardCooldowns[id] || 0);
+    const remaining = Math.ceil(Math.max(wildcardCooldowns[id] || 0, id === 'shockwave' ? lastSurvivalState?.skillCooldownSeconds || 0 : 0));
     button.classList.toggle('recharging', remaining > 0);
     const small = button.querySelector('small');
-    setHudText(small, remaining > 0 ? `${remaining}s` : 'READY');
+    const active = id === 'shockwave' ? lastSurvivalState?.pulseActiveSeconds : id === 'field-medic' ? lastSurvivalState?.medicActiveSeconds : 0;
+    setHudText(small, active ? `ACTIVE ${active}s` : remaining > 0 ? `${remaining}s` : 'READY');
   });
 }
 function activateWildcard(id: WildcardId): void {
   if (!survival?.enabled || survival.isDead || (wildcardCooldowns[id] || 0) > 0) return;
   const card = wildcardDefinition(id);
   let activated = false;
-  if (id === 'shockwave') { survival.activateSkill(); activated = true; }
-  else if (id === 'field-medic') activated = survival.restoreHealth(25);
+  if (id === 'shockwave') activated = survival.activateSkill();
+  else if (id === 'field-medic') activated = survival.activateMedic();
   else if (id === 'endurance') { stamina = Math.min(staminaCapacity, stamina + staminaCapacity * 0.45); activated = true; }
   else if (id === 'quick-hands' || id === 'steady-grip' || id === 'reinforced-vest' || id === 'sharpshooter' || id === 'scavenger') activated = survival.activateFieldEffect(id);
   else { say(`${card.label} IS NOT YET OPERATIONAL`); return; }
@@ -3993,6 +3994,15 @@ survival = new ZombieSurvivalSystem({
     if (hit) document.body.classList.add('survival-hit');
     window.setTimeout(() => document.body.classList.remove('survival-fired', 'survival-hit'), hit ? 190 : 130);
   },
+  onHealing: amount => {
+    const block = survivalHealthText?.parentElement;
+    if (!block) return;
+    let label = block.querySelector<HTMLElement>('.medicHealTick');
+    if (!label) { label = document.createElement('span'); label.className = 'medicHealTick'; block.append(label); }
+    label.textContent = `+${amount}`;
+    label.getAnimations().forEach(animation => animation.cancel());
+    label.animate([{opacity:1, transform:'translateY(0)'}, {opacity:0, transform:reducedMotion ? 'translateY(0)' : 'translateY(-16px)'}], {duration:800, fill:'forwards'});
+  },
   onStatus: (state: SurvivalStatus) => {
     lastSurvivalState = state;
     if (state.preparationSeconds && state.preparationSeconds !== lastPrepAnnouncement) {
@@ -4047,8 +4057,8 @@ survival = new ZombieSurvivalSystem({
     setHudText(survivalWeapon, state.weaponLabel);
     if (survivalSkillButton) {
       const cooldown = state.skillCooldownSeconds ?? 0;
-      survivalSkillButton.textContent = cooldown > 0 ? `${cooldown}s` : 'PULSE';
-      survivalSkillButton.title = cooldown > 0 ? `Shockwave recharging · ${cooldown}s` : 'Shockwave pulse · 18s cooldown';
+      survivalSkillButton.textContent = state.pulseActiveSeconds ? `PULSE ${state.pulseActiveSeconds}s` : cooldown > 0 ? `${cooldown}s` : 'PULSE';
+      survivalSkillButton.title = state.pulseActiveSeconds ? `Repelling field · ${state.pulseActiveSeconds}s remaining` : cooldown > 0 ? `Shockwave recharging · ${cooldown}s` : 'Six-second repelling field · 18s cooldown';
       survivalSkillButton.classList.toggle('recharging', cooldown > 0);
     }
     setHudText(survivalAmmo, String(state.ammoInMag).padStart(2, '0'));
