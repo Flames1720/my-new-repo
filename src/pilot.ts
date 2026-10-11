@@ -1,9 +1,11 @@
+import { GAME_BUILD } from './game-build';
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import "./pilot.css";
 const env = (import.meta as ImportMeta & { env: Record<string, string> }).env;
 export const pilot = {
   enabled: env.VITE_PILOT_ENABLED === "true",
   canPlay: false,
+  admin: false,
   userId: "",
   consent: false,
   epoch: "",
@@ -107,7 +109,7 @@ async function flush() {
       epoch: batch.epoch,
       session_id: sessionId,
       sequence: batch.sequence,
-      build: "pilot-v2",
+      build: GAME_BUILD,
       device: batch.device,
       samples: batch.samples,
     });
@@ -280,16 +282,12 @@ function settings(admin: boolean) {
   };
   section.append(heading, text, button, message, logout);
   if (admin) {
-    const analytics = document.createElement("button");
-    analytics.textContent = "VIEW PILOT ANALYTICS";
-    const output = document.createElement("pre");
-    analytics.onclick = async () => {
-      const { data, error } = await client!.rpc("pilot_analytics");
-      output.textContent = error
-        ? "Analytics unavailable."
-        : JSON.stringify(data, null, 2);
-    };
-    section.append(analytics, output);
+    const analytics = document.createElement("a");
+    analytics.textContent = "OPEN OWNER CONTROL CENTER ↗";
+    analytics.href = "/control-center.html";
+    analytics.target = "_blank"; analytics.rel = "noopener";
+    analytics.className = "pilot-owner-link";
+    section.append(analytics);
   }
   page.append(section);
 }
@@ -396,6 +394,7 @@ export async function initializePilot() {
           });
         } else setReporting(data.consent === true);
         pilot.canPlay = true;
+        pilot.admin = data.admin === true;
         settings(data.admin === true);
         setupReports();
         overlay.remove();
@@ -505,4 +504,20 @@ export function savePilotProgress(value: Record<string, unknown>) {
   progressDirty = true;
   clearTimeout(progressTimer);
   progressTimer = setTimeout(() => void flushPilotProgress(), 1500);
+}
+
+export async function fetchControlCenter(days: number, build: string | null): Promise<import('./control-center').ControlCenterData> {
+  if (!client || !pilot.admin) throw new Error('Owner access required');
+  const { data, error } = await client.rpc('pilot_control_center', { days, selected_build: build });
+  if (error || !data) throw error || new Error('Analytics unavailable');
+  return data;
+}
+
+export async function signOutPilot(): Promise<void> {
+  setReporting(false);
+  if (client) {
+    const { error } = await client.auth.signOut();
+    if (error) throw error;
+  }
+  location.reload();
 }
