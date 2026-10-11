@@ -1,0 +1,42 @@
+// Exercise the real firing controller and weapon geometry; audio is stubbed.
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import ts from 'typescript';
+import * as THREE from 'three';
+const data = code => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
+async function module(name, dependencies = {}) {
+  let code = ts.transpileModule(await readFile(new URL(`../src/${name}.ts`, import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+  dependencies.three = import.meta.resolve('three');
+  for (const [key, value] of Object.entries(dependencies)) code = code.replaceAll(`from '${key}'`, `from '${value}'`);
+  return data(code);
+}
+const weapons = await module('survival-weapons');
+const effects = await module('combat-effects');
+const controller = await module('zombie-survival', {
+  './terrain': data('export const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));'),
+  './survival-weapons': weapons,
+  './combat-effects': effects,
+  './survival-audio': data('export const survivalSound=new Proxy({}, {get:()=>()=>{}});'),
+  './settings': data('export const settings={current:{audioMaster:1,audioSfx:1}};'),
+});
+const { ZombieSurvivalSystem } = await import(controller);
+const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(65, 2, .1, 200);
+camera.position.set(3, 2, 4); scene.add(camera);
+const game = new ZombieSurvivalSystem({ scene, camera, getPlayerPosition:()=>camera.position, getTerrainHeight:()=>0, isWater:()=>false, getWaterDepth:()=>0, canOccupy:()=>true, getSightBlockers:()=>[], safeZones:[], lowPowerMode:true, respawnPlayer:()=>{}, notify:()=>{}, onStatus:()=>{}, onDamage:()=>{}, onDeath:()=>{} });
+game.enabled = true;
+let checks = 0;
+for (const weapon of ['pistol','rifle','shotgun']) {
+  game.weapon=weapon;game.reloadTimer=0;game.fireCooldown=0;game.ammo[weapon]={mag:1,reserve:30};
+  game.fire();assert.equal(game.ammo[weapon].mag,0);assert.ok(game.reloadTimer>0);checks+=2;
+  const reserve=game.ammo[weapon].reserve;game.finishReload();assert.ok(game.ammo[weapon].mag>0);assert.equal(game.ammo[weapon].mag+game.ammo[weapon].reserve,reserve);checks+=2;
+  game.reloadTimer=0;game.fireCooldown=0;game.ammo[weapon]={mag:0,reserve:9};game.fire();assert.ok(game.reloadTimer>0);checks++;
+  game.reloadTimer=0;game.fireCooldown=0;game.ammo[weapon]={mag:0,reserve:0};game.fire();assert.equal(game.reloadTimer,0);checks++;
+  game.reloadTimer=0;game.fireCooldown=0;game.ammo[weapon]={mag:0,reserve:9};game.fireHeld=true;game.update(.016,false,false);assert.ok(game.reloadTimer>0);checks++;game.fireHeld=false;
+}
+const {findSanctuarySites}=await import(await module('sanctuary-sites'));
+const world=await import(await module('world'));
+const sites=findSanctuarySites({originX:world.HOME_X,originZ:world.HOME_Z,limit:world.WORLD_RADIUS*world.SIZE,height:world.terrainHeightAt,wet:world.waterAt,buildingDistrict:(x,z)=>Math.hypot(x-world.HOME_X,z-world.HOME_Z)<30||Math.hypot(x-world.VILLAGE_X,z-world.VILLAGE_Z)<45});
+assert.equal(sites.length,8);checks++;
+for(const site of sites)for(let dx=-10;dx<=10;dx+=2)for(let dz=-10;dz<=10;dz+=2){if(dx*dx+dz*dz>100)continue;assert.equal(world.waterAt(site.x+dx,site.z+dz),false);assert.ok(Math.hypot(site.x+dx-world.HOME_X,site.z+dz-world.HOME_Z)>=30);assert.ok(Math.hypot(site.x+dx-world.VILLAGE_X,site.z+dz-world.VILLAGE_Z)>=45);checks+=3;}
+assert.deepEqual(findSanctuarySites({originX:0,originZ:0,limit:100,height:()=>0,wet:()=>true,buildingDistrict:()=>false}),[]);checks++;
+console.log(`${checks} auto-reload and real-terrain dry sanctuary checks passed; ${sites.length} clearings`);

@@ -1,3 +1,4 @@
+import { findSanctuarySites } from './sanctuary-sites';
 import { initializePilot, pilot, savePilotProgress } from './pilot';
 await initializePilot();
 import * as THREE from 'three';
@@ -3762,6 +3763,12 @@ function canOccupy(x: number, z: number) {
   return true;
 }
 
+const survivalSanctuaries = findSanctuarySites({
+  originX: HOME_X, originZ: HOME_Z, limit: WORLD_RADIUS * SIZE,
+  height: terrainHeightAt, wet: waterAt,
+  buildingDistrict: (x, z) => Math.hypot(x - HOME_X, z - HOME_Z) < 30 || Math.hypot(x - VILLAGE_X, z - VILLAGE_Z) < 45,
+});
+
 let modeBeforeSurvival: Mode = mode;
 
 function setSurvivalEnabled(enabled: boolean) {
@@ -3870,13 +3877,11 @@ survival = new ZombieSurvivalSystem({
     };
     return sightBlockerCache.filter(isVisibleInWorld);
   },
-  safeZones: [
-    { id: 'homestead', label: 'HOMESTEAD', x: HOME_X, z: HOME_Z, radius: 12 },
-    { id: 'settlement', label: 'SETTLEMENT', x: VILLAGE_X, z: VILLAGE_Z, radius: 13 },
-  ],
+  safeZones: survivalSanctuaries,
   lowPowerMode: LOW_POWER_MODE,
   respawnPlayer: () => {
-    const x = HOME_X + 2.8, z = HOME_Z + 7.2;
+    const start = survivalSanctuaries[0];
+    const x = start?.x ?? HOME_X + 2.8, z = start?.z ?? HOME_Z + 7.2;
     player.root.position.set(x, physicalGroundHeightAt(x, z) + 0.2, z);
     player.velocity.set(0, 0, 0);
     player.onGround = true;
@@ -3888,7 +3893,12 @@ survival = new ZombieSurvivalSystem({
     targetPitch = 0;
     saveNow();
   },
-  notify: message => { if (message) say(message); },
+  notify: message => {
+    if (!message) return;
+    if (/SAFE ZONE RELOCATED|COLLAPSED|BOSS SLAM|BOSS APPROACHING/i.test(message)) { announceSurvivalEvent(message, 'boss-warning'); return; }
+    if (/^(HIT|HEADSHOT|INFECTED ELIMINATED|TAKEN HIT|RELOADING|Reload complete|Weapon:|PREPARE|PREPARATION COMPLETE|WAVE \d)/i.test(message)) return;
+    say(message);
+  },
   onShot: hit => {
     document.body.classList.remove('survival-fired', 'survival-hit');
     void document.body.offsetWidth;
@@ -3904,7 +3914,7 @@ survival = new ZombieSurvivalSystem({
     }
     if (state.wave > lastEventWave) {
       lastEventWave = state.wave;
-      if (state.wave > 0) announceSurvivalEvent(`WAVE ${state.wave} · CONTACT`, state.wave >= 5 && state.wave % 5 === 0 ? 'boss-warning' : 'wave-start');
+      if (state.wave > 0) announceSurvivalEvent(`WAVE ${state.wave}`, state.wave >= 5 && state.wave % 5 === 0 ? 'boss-warning' : 'wave-start');
     }
     let metaChanged = false;
     const newKills = Math.max(0, state.kills - lastMetaKills);
@@ -3996,29 +4006,37 @@ function recordSurvivalRun(result: 'OVERRUN' | 'VICTORY', state: SurvivalStatus 
   const isNewTime = duration > survivalMeta.bestTimeSeconds;
   if (isNewWave) survivalMeta.bestWave = wave;
   if (isNewTime) survivalMeta.bestTimeSeconds = duration;
-  const xpBefore = survivalMeta.xp;
   survivalMeta.totalRuns++;
   survivalMeta.xp += result === 'VICTORY' ? 500 : Math.max(5, Math.round(wave * 0.5));
   if (isNewWave) survivalMeta.xp += 100;
   if (isNewTime) survivalMeta.xp += 75;
   saveSurvivalMeta();
-  const runXp = survivalMeta.xp - xpBefore;
-  const level = 1 + Math.floor(survivalMeta.xp / 150);
-  const previousLevel = 1 + Math.floor(xpBefore / 150);
-  if (level > previousLevel) survivalSound.playCue('level-up');
-  const nextLevelXp = level * 150;
-  const xpIntoLevel = survivalMeta.xp - (level - 1) * 150;
-  const xpPercent = Math.max(0, Math.min(100, (xpIntoLevel / 150) * 100));
+  const runXp = Math.max(0, survivalMeta.xp - runStartXp);
+  const previousLevel = 1 + Math.floor(runStartXp / 150);
   if (survivalResultEyebrow) survivalResultEyebrow.textContent = result === 'VICTORY' ? 'ISLAND SECURED' : 'SIGNAL LOST';
   const title = document.querySelector('#survivalDeathTitle');
   if (title) title.textContent = result === 'VICTORY' ? 'DAWN HOLDS' : 'ZOMBIE ATE YOUR BRAIN';
   if (survivalResultCopy) survivalResultCopy.textContent = result === 'VICTORY' ? 'One hundred waves. The island is still standing.' : 'The island kept the score. Your run is now part of the record.';
   if (survivalResultStats) survivalResultStats.innerHTML = `<span><strong>${formatRunTime(duration)}</strong>TIME SURVIVED</span><span><strong>${wave}</strong>WAVE REACHED</span><span><strong>${kills}</strong>INFECTED KILLS</span>`;
-  if (survivalRunXp) survivalRunXp.textContent = `+${runXp} XP`;
-  if (survivalTotalXp) survivalTotalXp.textContent = `${survivalMeta.xp} XP`;
-  if (survivalXpProgress) survivalXpProgress.textContent = `LEVEL ${level} · ${xpIntoLevel} / ${150} XP TO LEVEL ${level + 1}`;
-  if (survivalXpBar) { survivalXpBar.style.width = '0%'; window.setTimeout(() => { if (survivalXpBar) survivalXpBar.style.width = `${xpPercent}%`; }, reducedMotion ? 0 : 120); }
-  if (survivalResultCallout) survivalResultCallout.textContent = isNewWave || isNewTime ? `${isNewWave ? 'NEW BEST WAVE' : ''}${isNewWave && isNewTime ? ' · ' : ''}${isNewTime ? 'NEW BEST TIME' : ''}${level > previousLevel ? ` · LEVEL ${level}` : ''}` : (level > previousLevel ? `LEVEL ${level} REACHED` : 'RUN LOGGED · KEEP MOVING');
+  const finalCallout = [isNewWave ? 'NEW BEST WAVE' : '', isNewTime ? 'NEW BEST TIME' : ''].filter(Boolean).join(' · ') || 'RUN COMPLETE';
+  let shownLevel = previousLevel;
+  const startedAt = performance.now();
+  const animateRewards = (now: number) => {
+    if (!runResultShown || !survivalDeathOverlay?.classList.contains('show')) return;
+    const progress = reducedMotion ? 1 : Math.min(1, (now - startedAt) / 2200);
+    const earned = Math.round(runXp * (1 - (1 - progress) ** 2));
+    const displayedXp = runStartXp + earned;
+    const displayedLevel = 1 + Math.floor(displayedXp / 150);
+    if (survivalRunXp) survivalRunXp.textContent = `+${earned} XP`;
+    if (survivalTotalXp) survivalTotalXp.textContent = `${displayedXp} XP`;
+    if (survivalXpBar) survivalXpBar.style.width = `${(displayedXp % 150) / 150 * 100}%`;
+    if (survivalXpProgress) survivalXpProgress.textContent = `LEVEL ${displayedLevel} · ${displayedXp % 150} / 150 XP TO LEVEL ${displayedLevel + 1}`;
+    if (displayedLevel > shownLevel) { survivalSound.playCue('level-up'); shownLevel = displayedLevel; }
+    if (survivalResultCallout) survivalResultCallout.textContent = displayedLevel > previousLevel
+      ? `CONGRATULATIONS · LEVEL ${displayedLevel}!` : progress < 1 ? 'COUNTING YOUR REWARDS…' : finalCallout;
+    if (progress < 1) requestAnimationFrame(animateRewards);
+  };
+  requestAnimationFrame(animateRewards);
   if (lobbyLastRun) lobbyLastRun.textContent = `${result} · WAVE ${wave}/100 · ${kills} KILLS · ${formatRunTime(duration)}${isNewWave || isNewTime ? ' · NEW RECORD' : ''}`;
   survivalDeathOverlay?.classList.add('show');
   document.body.classList.add('survival-mode');

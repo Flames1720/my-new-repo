@@ -514,8 +514,9 @@ export class ZombieSurvivalSystem {
     const definition = WEAPONS[this.weapon];
     const currentAmmo = this.ammo[this.weapon];
     if (currentAmmo.mag <= 0) {
+      if (currentAmmo.reserve > 0) { this.reload(); return; }
       survivalSound.playDryFire();
-      this.options.notify(currentAmmo.reserve > 0 ? 'Magazine empty · reload' : 'No ammunition left');
+      this.options.notify('No ammunition left');
       this.fireCooldown = 0.28;
       return;
     }
@@ -577,7 +578,7 @@ export class ZombieSurvivalSystem {
       this.spawnTracer(muzzle, end);
     }
     this.options.onShot?.(registeredHit);
-    if (!registeredHit) this.options.notify(currentAmmo.mag === 0 ? 'Magazine empty · reload' : '');
+    if (currentAmmo.mag === 0 && currentAmmo.reserve > 0) this.reload();
     this.emitStatus();
   }
 
@@ -1101,6 +1102,7 @@ export class ZombieSurvivalSystem {
       if (this.reloadTimer === 0) this.finishReload();
     }
     const definition = WEAPONS[this.weapon];
+    if ((firing || this.fireHeld) && this.ammo[this.weapon].mag <= 0 && this.ammo[this.weapon].reserve > 0 && this.reloadTimer <= 0) this.reload();
     if ((firing || this.fireHeld) && definition.automatic && this.fireCooldown <= 0) this.fire();
 
     this.muzzleTimer = Math.max(0, this.muzzleTimer - dt);
