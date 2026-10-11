@@ -1,5 +1,5 @@
 import { GAME_BUILD } from './game-build';
-import { bindFullscreenAction, requestNativeFullscreen, supportsNativeFullscreen } from './display-mode';
+import { bindFullscreenAction, requestNativeFullscreen, supportsNativeFullscreen, browserDisplayGuidance } from './display-mode';
 import { ACHIEVEMENTS, achievementValue, eligibleAchievements, type AchievementProgress } from './achievements';
 import { findSanctuarySites } from './sanctuary-sites';
 import { initializePilot, pilot, savePilotProgress } from './pilot';
@@ -3206,7 +3206,7 @@ function syncDisplayMode(): void {
 
   if (displayModeTitle) displayModeTitle.textContent = isLandscapeDisplay() ? (needsBrowserDisplayMode() ? 'LANDSCAPE GAME MODE' : 'FULLSCREEN REQUIRED') : 'LANDSCAPE REQUIRED';
   if (displayModeMessage) displayModeMessage.textContent = isLandscapeDisplay()
-    ? fullscreenFailureMessage || (needsBrowserDisplayMode() ? 'This browser cannot enter native fullscreen. Continue in landscape; browser controls may remain visible. Add the game to your Home Screen for a standalone view.' : 'Enter fullscreen to open the island. The run stays paused if fullscreen is exited.')
+    ? needsBrowserDisplayMode() ? `${fullscreenFailureMessage || 'Native fullscreen is unavailable. Tap CONTINUE IN BROWSER to play in landscape.'} ${browserDisplayGuidance()}` : 'Enter fullscreen to open the island. The run stays paused if fullscreen is exited.'
     : 'Rotate your phone to landscape to continue.';
   if (enterGameDisplayMode) {
     enterGameDisplayMode.disabled = fullscreenRequestPending || !isLandscapeDisplay();

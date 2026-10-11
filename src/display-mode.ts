@@ -18,3 +18,12 @@ export function supportsNativeFullscreen(target: HTMLElement): boolean {
   return (!!target.requestFullscreen && doc.fullscreenEnabled !== false)
     || (typeof legacy.webkitRequestFullscreen === 'function' && doc.webkitFullscreenEnabled !== false);
 }
+
+/** Guidance only: fullscreen capability remains the source of truth. */
+export function browserDisplayGuidance(): string {
+  const ua = navigator.userAgent;
+  const safari = /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS|OPiOS|Android/i.test(ua);
+  const appleTouch = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (safari && appleTouch) return 'Safari: open the page menu beside the address bar and choose Hide Toolbar if available. For a standalone view, choose Share → Add to Home Screen, then open the game from that icon. Menu names vary by iOS version.';
+  return 'Browser controls may remain visible. On mobile, scrolling may collapse the toolbar; use your browser’s Hide Toolbar option if available. For a standalone view, use Add to Home Screen or Install from the browser menu if offered. On desktop, use your browser’s fullscreen menu.';
+}

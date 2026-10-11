@@ -1139,3 +1139,6 @@ Fullscreen now requests synchronously on the completed native click gesture inst
 
 ### October 11 Safari landscape entry compatibility
 Native HTML fullscreen is unavailable on some Safari/iPhone versions. Detect standard/prefixed capabilities and disabled fullscreen; offer explicit Continue in browser entry in landscape when unsupported. A rejected native request offers the same fallback on the next tap instead of trapping the player. Browser mode never claims to hide browser chrome; the gate explains Home Screen standalone use. Landscape requirement and rotation-pauses remain. Build/typecheck and real Chromium touch tests passed for native first tap, rejection fallback and absent-API first tap. Physical Safari verification remains owner-assisted. Feature branch only; main unchanged.
+
+### October 11 authorized World V2 production merge
+Owner explicitly authorized merging all current World V2 changes into main. Added capability-based fullscreen fallback guidance for all browsers, with iPhone/iPad Safari page-menu Hide Toolbar and Share/Add to Home Screen instructions. Guidance states availability/version limits and does not claim script can hide browser chrome. Fullscreen requests continue to use direct user gestures and native/prefixed APIs. Build and touch fallback audit passed before merge.
