@@ -10,3 +10,11 @@ export function requestNativeFullscreen(target: HTMLElement): Promise<void> {
   if (legacy) return Promise.resolve(legacy.call(target));
   return Promise.reject(new Error('Fullscreen is not supported in this browser.'));
 }
+
+/** iPhone Safari may expose no fullscreen API for arbitrary HTML elements. */
+export function supportsNativeFullscreen(target: HTMLElement): boolean {
+  const doc = target.ownerDocument as Document & {webkitFullscreenEnabled?: boolean};
+  const legacy = target as HTMLElement & {webkitRequestFullscreen?: unknown};
+  return (!!target.requestFullscreen && doc.fullscreenEnabled !== false)
+    || (typeof legacy.webkitRequestFullscreen === 'function' && doc.webkitFullscreenEnabled !== false);
+}

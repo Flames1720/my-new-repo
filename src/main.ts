@@ -1,5 +1,5 @@
 import { GAME_BUILD } from './game-build';
-import { bindFullscreenAction, requestNativeFullscreen } from './display-mode';
+import { bindFullscreenAction, requestNativeFullscreen, supportsNativeFullscreen } from './display-mode';
 import { ACHIEVEMENTS, achievementValue, eligibleAchievements, type AchievementProgress } from './achievements';
 import { findSanctuarySites } from './sanctuary-sites';
 import { initializePilot, pilot, savePilotProgress } from './pilot';
@@ -3157,7 +3157,7 @@ bindAction(upgradeBtn, () => {
   say(`🎉 Home upgraded to ${HOME_UPGRADE_COSTS[nextLevel].title}!`);
 });
 
-// Survival only opens after a user gesture enters native fullscreen in landscape.
+// Enter native fullscreen where supported, otherwise explicitly enter landscape browser mode.
 // Browser chrome cannot be hidden by script without this explicit fullscreen API.
 const fullscreenBtn = document.querySelector('#fullscreenBtn') as HTMLButtonElement | null;
 const displayModeGate = document.querySelector('#displayModeGate') as HTMLDivElement | null;
@@ -3167,6 +3167,11 @@ const displayModeMessage = document.querySelector('.displayModeFullscreenHint') 
 let displayGatePausedRun = false;
 let fullscreenRequestPending = false;
 let fullscreenFailureMessage = '';
+let browserDisplayMode = false;
+let offerBrowserDisplayMode = false;
+function needsBrowserDisplayMode(): boolean {
+  return offerBrowserDisplayMode || !supportsNativeFullscreen(document.documentElement);
+}
 
 function isLandscapeDisplay(): boolean {
   // Require the actual viewport to be wider than tall. The orientation
@@ -3176,13 +3181,13 @@ function isLandscapeDisplay(): boolean {
 
 function syncDisplayMode(): void {
   const fullscreen = !!(document.fullscreenElement || (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement);
-  const ready = fullscreen && isLandscapeDisplay();
+  const ready = (fullscreen || browserDisplayMode) && isLandscapeDisplay();
   document.body.classList.toggle('native-fullscreen', fullscreen);
   document.body.classList.toggle('display-mode-ready', ready);
   for (const layer of Array.from(document.body.children)) {
     if (layer.id !== 'displayModeGate' && layer instanceof HTMLElement) layer.inert = !ready;
   }
-  if (fullscreenBtn) fullscreenBtn.hidden = fullscreen;
+  if (fullscreenBtn) fullscreenBtn.hidden = fullscreen || browserDisplayMode;
   if (!ready) hideAchievementReveal();
   else if (survivalLobby?.classList.contains('show')) showAchievementReveal();
 
@@ -3199,16 +3204,20 @@ function syncDisplayMode(): void {
     displayGatePausedRun = false;
   }
 
-  if (displayModeTitle) displayModeTitle.textContent = isLandscapeDisplay() ? 'FULLSCREEN REQUIRED' : 'LANDSCAPE REQUIRED';
+  if (displayModeTitle) displayModeTitle.textContent = isLandscapeDisplay() ? (needsBrowserDisplayMode() ? 'LANDSCAPE GAME MODE' : 'FULLSCREEN REQUIRED') : 'LANDSCAPE REQUIRED';
   if (displayModeMessage) displayModeMessage.textContent = isLandscapeDisplay()
-    ? fullscreenFailureMessage || 'Enter fullscreen to open the island. The run stays paused if fullscreen is exited.'
+    ? fullscreenFailureMessage || (needsBrowserDisplayMode() ? 'This browser cannot enter native fullscreen. Continue in landscape; browser controls may remain visible. Add the game to your Home Screen for a standalone view.' : 'Enter fullscreen to open the island. The run stays paused if fullscreen is exited.')
     : 'Rotate your phone to landscape to continue.';
-  if (enterGameDisplayMode) enterGameDisplayMode.disabled = fullscreenRequestPending || !isLandscapeDisplay();
+  if (enterGameDisplayMode) {
+    enterGameDisplayMode.disabled = fullscreenRequestPending || !isLandscapeDisplay();
+    enterGameDisplayMode.textContent = fullscreenRequestPending ? 'OPENING GAME…' : needsBrowserDisplayMode() ? 'CONTINUE IN BROWSER →' : 'ENTER FULLSCREEN →';
+  }
 }
 
 async function enterRequiredDisplayMode(): Promise<void> {
   if (fullscreenRequestPending) return;
   if (!isLandscapeDisplay()) { syncDisplayMode(); return; }
+  if (needsBrowserDisplayMode()) { browserDisplayMode = true; fullscreenFailureMessage = ''; syncDisplayMode(); return; }
   fullscreenRequestPending = true;
   fullscreenFailureMessage = '';
   if (enterGameDisplayMode) { enterGameDisplayMode.disabled = true; enterGameDisplayMode.textContent = 'ENTERING FULLSCREEN…'; }
@@ -3221,7 +3230,8 @@ async function enterRequiredDisplayMode(): Promise<void> {
     const orientation = screen.orientation as unknown as { lock?: (orientation:string)=>Promise<void> };
     try { void orientation?.lock?.('landscape').catch(() => {}); } catch { /* The physical landscape gate still applies. */ }
   } catch {
-    fullscreenFailureMessage = 'Fullscreen was blocked. Tap ENTER FULLSCREEN to retry, or open the game directly in your browser.';
+    offerBrowserDisplayMode = true;
+    fullscreenFailureMessage = 'Native fullscreen was unavailable or blocked. Tap CONTINUE IN BROWSER to play in landscape with browser controls visible.';
   } finally {
     fullscreenRequestPending = false;
     if (enterGameDisplayMode) enterGameDisplayMode.textContent = 'ENTER FULLSCREEN →';
