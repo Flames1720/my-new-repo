@@ -105,3 +105,8 @@ body.pilot-auth #displayModeGate {
 }
 
 .pilot-owner-link { display:inline-block; margin:14px 0; padding:12px 16px; border:1px solid #b99b4b; border-radius:8px; color:#f2d18a; text-decoration:none; }
+
+.pilot-password { position: relative; margin: -6px 0 12px; }
+.pilot-password input { padding-right: 56px; }
+.pilot-card .pilot-password button { position: absolute; right: 1px; top: 1px; margin: 0; width: 48px; height: calc(100% - 2px); padding: 10px; border: 0; background: transparent; display: grid; place-items: center; }
+.pilot-password button[aria-pressed="true"] { color: #c0e397; }

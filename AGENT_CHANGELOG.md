@@ -1162,3 +1162,10 @@ Owner requested new-data-only telemetry uploads after games and reported a signu
 - Next/Back navigation, keyboard focus containment, background input blocking, immediate visible panels and responsive highlighting. Finishing returns to Mission without changing equipment or spending XP.
 - Production build and full gameplay tutorial passed. Lobby tour audit verifies phone layouts, real pages, completion across reload, existing-account replay and unchanged loadout; no live account writes used in tests.
 - Added a discussion-only Quick Run proposal based on player feedback; gameplay modes and reward amounts are unchanged.
+
+## 2026-10-11 — Wave announcements, house clearance and password controls
+- Keep borderless wave/event announcements visible for 2.4 seconds independently of global reduced-motion animation durations; animate only the entrance when motion is allowed.
+- Show the contextual DOOR control only when aiming at the home door during survival, rather than showing Use for scenery/resources.
+- Raise and fully flatten home/village building pads, blend their edges into terrain, and align initial player height with the new ground. Prevent initial zombie spawns within padded house footprints while preserving movement through entrances.
+- Add stable login field IDs, username/current-password autofill hints, signup new-password hints and an accessible eye toggle that preserves the typed password. Keep password recovery submit targeting correct.
+- Validation: production build; real-terrain flat/dry pad checks; survival controller spawn exclusions and existing reload/sanctuary regression; mobile mocked-transport browser checks for password visibility/autofill, contextual HUD and reduced-motion wave visibility.

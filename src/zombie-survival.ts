@@ -66,6 +66,7 @@ export interface ZombieSurvivalOptions {
   isWater: (x: number, z: number) => boolean;
   getWaterDepth: (x: number, z: number) => number;
   canOccupy: (x: number, z: number) => boolean;
+  canSpawnAt?: (x: number, z: number) => boolean;
   getSightBlockers: () => THREE.Object3D[];
   safeZones: SafeZoneDefinition[];
   lowPowerMode: boolean;
@@ -1065,7 +1066,7 @@ export class ZombieSurvivalSystem {
       const x = player.x + Math.cos(angle) * radius;
       const z = player.z + Math.sin(angle) * radius;
       if (this.inSafeZone(x, z) || this.options.isWater(x, z) && this.options.getWaterDepth(x, z) > 0.55) continue;
-      if (!this.options.canOccupy(x, z)) continue;
+      if (!this.options.canOccupy(x, z) || this.options.canSpawnAt?.(x, z) === false) continue;
       const roll = Math.random();
       const nightFactor = clamp(this.options.getNightFactor?.() ?? 0, 0, 1);
       let type: ZombieActor['type'] = this.wave >= 3 && roll > 0.88 - nightFactor * 0.08 ? 'brute' : this.wave >= 2 && roll > 0.60 - nightFactor * 0.08 ? 'runner' : 'walker';

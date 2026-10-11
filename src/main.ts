@@ -21,7 +21,6 @@ import {
   ROAD_WIDTH,
   HOME_X,
   HOME_Z,
-  HOME_BASE_HEIGHT,
   VILLAGE_X,
   VILLAGE_Z,
   terrainHeightAt,
@@ -38,6 +37,7 @@ import {
   isRiverAt,
   isBridgeAt,
   nearHome,
+  insideBuildingFootprint,
   nearVillage,
   hash,
   clamp,
@@ -1588,7 +1588,7 @@ const chunks = new Chunks();
 
 let save: Save = {
   version: 2,
-  player: { x: HOME_X, y: HOME_BASE_HEIGHT + 0.1, z: HOME_Z + 7.5, ry: Math.PI, mode: 'tpp' },
+  player: { x: HOME_X, y: terrainHeightAt(HOME_X, HOME_Z + 7.5) + 0.1, z: HOME_Z + 7.5, ry: Math.PI, mode: 'tpp' },
   camera: { yaw: 0, pitch: -0.15, distance: 6 },
   changes: {},
   inventory: {},
@@ -1611,7 +1611,7 @@ if (
   !Number.isFinite(player.root.position.y) ||
   player.root.position.y < terrainHeightAt(player.root.position.x, player.root.position.z)
 ) {
-  player.root.position.set(HOME_X, HOME_BASE_HEIGHT + 0.1, HOME_Z + 7.5);
+  player.root.position.set(HOME_X, terrainHeightAt(HOME_X, HOME_Z + 7.5) + 0.1, HOME_Z + 7.5);
   player.root.rotation.y = Math.PI;
 } else {
   player.root.rotation.y = save.player.ry;
@@ -2478,12 +2478,18 @@ let firstRunTutorial: FirstRunTutorial | undefined;
 let lastBossKills = 0, lastTravelMeters = 0, lastTravelSaveSecond = -1;
 let nearDeathWave: number | null = null;
 
+let survivalEventHideTimer: ReturnType<typeof setTimeout> | undefined;
 function announceSurvivalEvent(label: string, cue: 'wave-start' | 'wave-clear' | 'boss-warning' | 'level-up' | 'game-over'): void {
   if (survivalEventBanner) {
     survivalEventBanner.textContent = label;
-    survivalEventBanner.classList.remove('show');
-    if (!reducedMotion) void survivalEventBanner.offsetWidth;
+    clearTimeout(survivalEventHideTimer);
+    survivalEventBanner.getAnimations().forEach(animation => animation.cancel());
     survivalEventBanner.classList.add('show');
+    if (!reducedMotion) survivalEventBanner.animate([
+      { transform: 'translate(-50%, -50%) scale(.88)' },
+      { transform: 'translate(-50%, -50%) scale(1)' },
+    ], { duration: 220, easing: 'ease-out' });
+    survivalEventHideTimer = setTimeout(() => survivalEventBanner.classList.remove('show'), 2400);
   }
   survivalSound.playCue(cue);
 }
@@ -3948,6 +3954,7 @@ survival = new ZombieSurvivalSystem({
   isWater: waterAt,
   getWaterDepth: waterDepthAt,
   canOccupy: (x, z) => canOccupy(x, z),
+  canSpawnAt: (x, z) => !insideBuildingFootprint(x, z),
   getSightBlockers: () => {
     const pcx = chunks.coord(player.root.position.x), pcz = chunks.coord(player.root.position.z);
     const cacheX = Math.floor(player.root.position.x / 8);
@@ -4842,7 +4849,9 @@ function update(dt: number) {
   const aimStartedAt = diagnosticMeasureFrame ? performance.now() : 0;
   const aimed = getAimTarget();
   if (aimStartedAt) recordDiagnosticCost('aimQuery', performance.now() - aimStartedAt);
-  const canInteractWithAimed = !!aimed && !!(aimed.userData.resource || aimed.userData.interactable);
+  const canInteractWithAimed = aimed?.userData.interactable?.action === 'toggleDoor';
+  const doorButton = document.querySelector<HTMLButtonElement>('#interactBtn');
+  if (doorButton) setHudText(doorButton, 'DOOR');
   document.body.classList.toggle('survival-can-interact', !!survival?.enabled && canInteractWithAimed);
   // Combat actions still request their own forced raycast when triggered. The
   // old second per-frame query had no consumer (its marker is always hidden).

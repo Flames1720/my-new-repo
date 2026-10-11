@@ -2389,3 +2389,6 @@ body.survival-mode #prompt { padding: 0; border: 0; background: none; box-shadow
 @media (orientation: portrait) { .lobby-tour-panel { width: min(340px, calc(100vw - 32px)); } }
 @media (max-height: 340px) { .lobby-tour-panel { padding: 12px; } .lobby-tour-panel h2 { font-size: 17px; margin: 6px 0; } .lobby-tour-panel p { font-size: 12px; line-height: 1.35; margin-bottom: 8px; } }
 body.lobby-tour-active #survivalLobby :is(.lobbyPage.active, .lobbyDeploy) { animation: none !important; opacity: 1 !important; }
+
+/* Visibility has a real-time lifetime, independent of reduced-motion CSS. */
+#survivalEventBanner.show { animation: none !important; opacity: 1; transform: translate(-50%, -50%) scale(1); }
