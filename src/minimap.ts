@@ -21,7 +21,19 @@ export interface SurvivalRadarData {
   zombies: Array<{ x: number; z: number; type: 'walker' | 'runner' | 'brute' }>;
 }
 
+// Both maps sample fixed chunk centres. Geography is deterministic, so avoid
+// repeating hydrology/climate queries for these same tiles on every radar paint.
+const tileColors = new Map<string, string>();
 function getMapTileColor(wx: number, wz: number): string {
+  const key = `${wx},${wz}`;
+  const cached = tileColors.get(key);
+  if (cached) return cached;
+  const color = computeMapTileColor(wx, wz);
+  tileColors.set(key, color);
+  return color;
+}
+
+function computeMapTileColor(wx: number, wz: number): string {
   if (roadAt(wx, wz)) return '#525861';
 
   const wf = queryWorldFields(wx, wz);

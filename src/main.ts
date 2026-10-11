@@ -46,6 +46,8 @@ import { voxelWorld, buildVoxelWorldVolumeMesh, buildVoxelWorldWaterVolumeMesh, 
 import { environmentAssets } from './environment-assets';
 import { ZombieSurvivalSystem, type SurvivalStatus, type SurvivalWeaponId } from './zombie-survival';
 import { survivalSound } from './survival-audio';
+import { compactStaticResource } from './static-meshes';
+import { instanceChunkResources } from './resource-instances';
 
 type Save = {
   version: 2;
@@ -61,11 +63,9 @@ type Save = {
 const IS_TOUCH_DEVICE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 const LOW_POWER_MODE = IS_TOUCH_DEVICE || (navigator.hardwareConcurrency || 4) <= 4;
 const SAVE_KEY = 'virtual-family-core-v2';
-// Per-frame time budget for incremental chunk building (perf: chunk-queue-1).
-// A straight boundary crossing queues ~16 builds (11 new LOD1 + 5 LOD1->LOD0 upgrades)
-// and cost 89-240 ms in the Android capture, i.e. roughly 6-15 ms per chunk (derived, not
-// timed per chunk). A 5 ms budget therefore builds about one chunk per frame on low power.
-const CHUNK_BUILD_BUDGET_LOW_MS = 5;
+// Cooperative terrain/water/resource work slices. The budget is checked between
+// slices, rather than after constructing a whole chunk (mobile-perf-2).
+const CHUNK_BUILD_BUDGET_LOW_MS = 3;
 const CHUNK_BUILD_BUDGET_MS = 8;
 
 const angleLerp = (a: number, b: number, t: number) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * Math.min(1, t);
@@ -133,13 +133,16 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
     // Share one geometry/material, and skip them on LOD1+ chunks where a 0.18 m
     // sphere is under one pixel at that distance. (chunk-queue-1)
     if (kind === 'fruit' && lod === 0) {
+      const fruitGroup = new THREE.Group();
       const fruitMat = getSharedFruitMaterial(def.fruitColor ?? 0xcc4433);
       for (let f = 0; f < 5; f++) {
         const fruit = new THREE.Mesh(sharedFruitGeometry, fruitMat);
         const a = f * ((Math.PI * 2) / 5);
         fruit.position.set(Math.cos(a) * 1.05, 2.2 + Math.sin(f * 1.7) * 0.28, Math.sin(a) * 1.05);
-        assetTree.add(fruit);
+        fruitGroup.add(fruit);
       }
+      compactStaticResource(fruitGroup, geometry => sharedWorldGeometries.has(geometry));
+      assetTree.add(fruitGroup);
     }
     if (lod === 0) {
       assetTree.traverse(o => {
@@ -225,6 +228,7 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
       }
     });
   }
+  compactStaticResource(g);
   return g;
 }
 function buildRock(kind: ResourceKind, lod: number): THREE.Group {
@@ -462,10 +466,18 @@ scene.fog = new THREE.Fog(0x82877f, 105, 700);
 const gameplayFog = scene.fog;
 
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 1200);
-const renderer = new THREE.WebGLRenderer({ antialias: !LOW_POWER_MODE, powerPreference: 'high-performance', preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, LOW_POWER_MODE ? 1.25 : 1.65));
+const renderer = new THREE.WebGLRenderer({ antialias: !LOW_POWER_MODE, powerPreference: 'high-performance' });
+function applyGraphicsSettings() {
+  const quality = settings.current.graphics;
+  const ratio = LOW_POWER_MODE
+    ? (quality === 'low' ? 0.85 : quality === 'med' ? 1 : 1.25)
+    : (quality === 'low' ? 1 : quality === 'med' ? 1.3 : 1.6);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, ratio));
+  renderer.shadowMap.enabled = !LOW_POWER_MODE && quality !== 'low';
+}
+applyGraphicsSettings();
 renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = !LOW_POWER_MODE;
+renderer.shadowMap.enabled = !LOW_POWER_MODE && settings.current.graphics !== 'low';
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.querySelector('#game')!.appendChild(renderer.domElement);
 
@@ -473,7 +485,7 @@ const hemisphere = new THREE.HemisphereLight(0xb6b8a9, 0x302f2b, 1.65);
 scene.add(hemisphere);
 const sun = new THREE.DirectionalLight(0xcac2a4, 2.4);
 sun.position.set(35, 70, 25);
-sun.castShadow = !LOW_POWER_MODE;
+sun.castShadow = renderer.shadowMap.enabled;
 sun.shadow.mapSize.set(LOW_POWER_MODE ? 512 : 1024, LOW_POWER_MODE ? 512 : 1024);
 sun.shadow.camera.left = -90;
 sun.shadow.camera.right = 90;
@@ -877,6 +889,7 @@ function disposeWorldObjects(root: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
   root.traverse(o => {
     if (!(o instanceof THREE.Mesh)) return;
+    if (o instanceof THREE.InstancedMesh) o.dispose();
     if (!sharedWorldGeometries.has(o.geometry) && !environmentAssets.isSharedGeometry(o.geometry) && !geometries.has(o.geometry)) {
       geometries.add(o.geometry);
       o.geometry.dispose();
@@ -913,8 +926,20 @@ class Chunks {
   private streamCx = 0;
   private streamCz = 0;
   private streamRadius = 0;
+  private activeBuild: Generator<void, void, unknown> | null = null;
+  private assetRevision = 0;
   get pendingBuilds() {
-    return this.streamQueue.length;
+    return this.streamQueue.length + (this.activeBuild ? 1 : 0);
+  }
+
+  private cancelBuild() {
+    this.activeBuild?.return();
+    this.activeBuild = null;
+  }
+
+  refreshAssets() {
+    this.assetRevision++;
+    this.streamQueued(player.root.position.x, player.root.position.z);
   }
 
   private indexChunk(g: THREE.Group) {
@@ -940,6 +965,7 @@ class Chunks {
   }
 
   unregisterObject(o: THREE.Object3D) {
+    o.userData.removeInstances?.();
     this.aimTargets.delete(o);
     this.cameraBlockers.delete(o);
     if (aimCache === o) {
@@ -971,361 +997,402 @@ class Chunks {
   }
 
   build(cx: number, cz: number, lod = 0) {
+    // Initial loading/survey can exhaust the same builder synchronously.
+    for (const _step of this.buildSteps(cx, cz, lod)) { /* drain */ }
+  }
+
+  private *buildSteps(cx: number, cz: number, lod = 0): Generator<void, void, unknown> {
     const key = this.key(cx, cz), g = new THREE.Group();
-    g.name = `chunk:${key}`;
-    g.userData.lod = lod;
-    // Chunks partition the physical voxel volume too. The actual base material
-    // is deterministic, while edits remain sparse inside VoxelChunk.
-    g.userData.voxelChunk = voxelWorld.chunk(cx, cz);
+    const changesSnapshot = JSON.stringify(this.changes[key] || []);
+    const expiredEntries: string[] = [];
+    let committed = false;
+    try {
+      g.name = `chunk:${key}`;
+      g.userData.lod = lod;
+      g.userData.assetRevision = this.assetRevision;
+      // Chunks partition the physical voxel volume too. The actual base material
+      // is deterministic, while edits remain sparse inside VoxelChunk.
+      g.userData.voxelChunk = voxelWorld.chunk(cx, cz);
 
-    const lodSetting = settings.current.lodDetail || 'ultra';
-    // Match the visible terrain tessellation to the water mesh at every LOD.
-    // Misaligned grids let the water sample finer terrain cuts than the ground
-    // mesh can display, creating apparent raised riverbank ledges.
-    const segs =
-      lod === 0
-        ? (LOW_POWER_MODE ? 24 : lodSetting === 'ultra' ? 64 : lodSetting === 'balanced' ? 40 : 24)
-        : lod === 1
-        ? 20
-        : 8;
-    const terrain = new THREE.PlaneGeometry(SIZE, SIZE, segs, segs);
-    terrain.rotateX(-Math.PI / 2);
-    const pos = terrain.getAttribute('position');
-    const colors = new Float32Array(pos.count * 3);
-    const waterMasks = new Float32Array(pos.count);
-    const terrainWaterDepths = new Float32Array(pos.count);
-    const chunkBiome = biomeAt(cx * SIZE + SIZE / 2, cz * SIZE + SIZE / 2);
+      const lodSetting = settings.current.lodDetail || 'ultra';
+      // Match the visible terrain tessellation to the water mesh at every LOD.
+      // Misaligned grids let the water sample finer terrain cuts than the ground
+      // mesh can display, creating apparent raised riverbank ledges.
+      const segs =
+        lod === 0
+          ? (LOW_POWER_MODE ? 24 : lodSetting === 'ultra' ? 64 : lodSetting === 'balanced' ? 40 : 24)
+          : lod === 1
+          ? 20
+          : 8;
+      const terrain = new THREE.PlaneGeometry(SIZE, SIZE, segs, segs);
+      // Attach owned geometry before yielding, so cancellation can release it.
+      const ground = new THREE.Mesh(terrain, terrainMaterial);
+      g.add(ground);
+      terrain.rotateX(-Math.PI / 2);
+      const pos = terrain.getAttribute('position');
+      const colors = new Float32Array(pos.count * 3);
+      const waterMasks = new Float32Array(pos.count);
+      const terrainWaterDepths = new Float32Array(pos.count);
+      const chunkBiome = biomeAt(cx * SIZE + SIZE / 2, cz * SIZE + SIZE / 2);
 
-    for (let i = 0; i < pos.count; i++) {
-      const lx = pos.getX(i) + cx * SIZE + SIZE / 2;
-      const lz = pos.getZ(i) + cz * SIZE + SIZE / 2;
-      const h = terrainHeightAt(lx, lz);
-      pos.setY(i, h);
-      const wetDepth = waterDepthAt(lx, lz);
-      waterMasks[i] = clamp(wetDepth / 0.42, 0, 1);
-      terrainWaterDepths[i] = wetDepth;
-      const c = terrainColorAt(h, lx, lz, chunkBiome);
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
-    }
-    terrain.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    terrain.setAttribute('aWaterMask', new THREE.BufferAttribute(waterMasks, 1));
-    terrain.setAttribute('aWaterDepth', new THREE.BufferAttribute(terrainWaterDepths, 1));
-    terrain.computeVertexNormals();
-
-    const ground = new THREE.Mesh(terrain, terrainMaterial);
-    ground.position.set(cx * SIZE + SIZE / 2, 0, cz * SIZE + SIZE / 2);
-    ground.receiveShadow = lod === 0;
-    ground.name = 'terrain';
-    g.add(ground);
-
-    const roadMat = sharedRoadMaterial;
-
-    // Roads
-    for (let k = -WORLD_RADIUS; k <= WORLD_RADIUS; k++) {
-      const center = k * ROAD_SPACING;
-      if (center >= cz * SIZE - ROAD_WIDTH / 2 && center <= (cz + 1) * SIZE + ROAD_WIDTH / 2) {
-        const rx = new THREE.Mesh(new THREE.PlaneGeometry(SIZE, ROAD_WIDTH, 16, 2), roadMat);
-        rx.rotation.x = -Math.PI / 2;
-        const xp = rx.geometry.getAttribute('position');
-        for (let i = 0; i < xp.count; i++) {
-          const lx = xp.getX(i) + cx * SIZE + SIZE / 2, lz = xp.getZ(i) + center;
-          xp.setY(i, terrainHeightAt(lx, lz) + 0.055);
-        }
-        rx.geometry.computeVertexNormals();
-        rx.position.set(cx * SIZE + SIZE / 2, 0, center);
-        rx.name = 'road-x';
-        g.add(rx);
+      for (let i = 0; i < pos.count; i++) {
+        const lx = pos.getX(i) + cx * SIZE + SIZE / 2;
+        const lz = pos.getZ(i) + cz * SIZE + SIZE / 2;
+        const h = terrainHeightAt(lx, lz);
+        pos.setY(i, h);
+        const wetDepth = waterDepthAt(lx, lz);
+        waterMasks[i] = clamp(wetDepth / 0.42, 0, 1);
+        terrainWaterDepths[i] = wetDepth;
+        const c = terrainColorAt(h, lx, lz, chunkBiome);
+        colors[i * 3] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+        if (i % 32 === 31) yield;
       }
-      if (center >= cx * SIZE - ROAD_WIDTH / 2 && center <= (cx + 1) * SIZE + ROAD_WIDTH / 2) {
-        const rz = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, SIZE, 2, 16), roadMat);
-        rz.rotation.x = -Math.PI / 2;
-        const zp = rz.geometry.getAttribute('position');
-        for (let i = 0; i < zp.count; i++) {
-          const lx = zp.getX(i) + center, lz = zp.getZ(i) + cz * SIZE + SIZE / 2;
-          zp.setY(i, terrainHeightAt(lx, lz) + 0.055);
-        }
-        rz.geometry.computeVertexNormals();
-        rz.position.set(center, 0, cz * SIZE + SIZE / 2);
-        rz.name = 'road-z';
-        g.add(rz);
-      }
-    }
+      terrain.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      terrain.setAttribute('aWaterMask', new THREE.BufferAttribute(waterMasks, 1));
+      terrain.setAttribute('aWaterDepth', new THREE.BufferAttribute(terrainWaterDepths, 1));
+      terrain.computeVertexNormals();
 
-    // Bridges where road crosses river in this chunk
-    const chunkMidX = cx * SIZE + SIZE / 2, chunkMidZ = cz * SIZE + SIZE / 2;
-    if (isBridgeAt(chunkMidX, chunkMidZ)) {
-      const bridge = buildBridge(chunkMidX, chunkMidZ);
-      g.add(bridge);
-    }
+      ground.position.set(cx * SIZE + SIZE / 2, 0, cz * SIZE + SIZE / 2);
+      ground.receiveShadow = lod === 0;
+      ground.name = 'terrain';
+      yield;
 
-    // Physical Seamless Water Mesh
-    const waterGroup = new THREE.Group();
-    waterGroup.name = 'water';
-    waterGroup.position.set(cx * SIZE, 0, cz * SIZE);
+      const roadMat = sharedRoadMaterial;
 
-    // Terrain and water now share the same vertices at each LOD.
-    const waterGrid = segs;
-    const step = SIZE / waterGrid;
-    const waterPositions: number[] = [], waterColors: number[] = [], waterIndices: number[] = [];
-    // Per-vertex real water depth and surface flow (m/s), consumed by the water shader.
-    const waterDepthAttr: number[] = [], waterFlowAttr: number[] = [];
-
-    const deepNavy = new THREE.Color(0x0e2b47);
-    const emeraldMid = new THREE.Color(0x23757a);
-    const turquoiseShallow = new THREE.Color(0x56b8ad);
-    const shorelineFoam = new THREE.Color(0xf4f9fa);
-
-    // Build grid vertices for wet cells and a one-cell shoreline skirt.
-    // Triangle inclusion below still uses the authoritative wet mask, so a
-    // dry island cannot become covered by a bridge of water triangles.
-    const vertIndex = new Int32Array((waterGrid + 1) * (waterGrid + 1)).fill(-1);
-    const wetVertex = new Uint8Array((waterGrid + 1) * (waterGrid + 1));
-    let nextIdx = 0;
-
-    for (let iz = 0; iz <= waterGrid; iz++) {
-      for (let ix = 0; ix <= waterGrid; ix++) {
-        const wx = cx * SIZE + ix * step;
-        const wz = cz * SIZE + iz * step;
-        if (nearHome(wx, wz)) continue;
-
-        const depth = waterDepthAt(wx, wz);
-        // A water-surface vertex must be genuinely wet. Do not create a dry
-        // shoreline vertex and then bridge it to wet vertices: that produces a
-        // thin sheet of "water" over grass/high ground. The shoreline is now
-        // represented only by the physical water edge/side wall below.
-        if (depth > 0.005) {
-          const vertexSlot = iz * (waterGrid + 1) + ix;
-          vertIndex[vertexSlot] = nextIdx++;
-          wetVertex[vertexSlot] = 1;
-          const surfaceY = waterSurfaceAt(wx, wz);
-          waterPositions.push(ix * step, surfaceY, iz * step);
-
-          waterDepthAttr.push(depth);
-          const flow = waterFlowAt(wx, wz);
-          waterFlowAttr.push(flow.flowVector.x * flow.flowSpeed, flow.flowVector.y * flow.flowSpeed);
-
-          // Base tint by depth. White shoreline foam is added in the shader
-          // (animated, depth-driven), so shallows here stay a clear turquoise.
-          const c = new THREE.Color();
-          if (depth < 0.45) {
-            c.copy(turquoiseShallow).lerp(shorelineFoam, (1 - depth / 0.45) * 0.3);
-          } else if (depth < 1.1) {
-            c.copy(turquoiseShallow).lerp(emeraldMid, (depth - 0.45) / 0.65);
-          } else {
-            c.copy(emeraldMid).lerp(deepNavy, clamp((depth - 1.1) / 1.2, 0, 1));
+      // Roads
+      for (let k = -WORLD_RADIUS; k <= WORLD_RADIUS; k++) {
+        const center = k * ROAD_SPACING;
+        if (center >= cz * SIZE - ROAD_WIDTH / 2 && center <= (cz + 1) * SIZE + ROAD_WIDTH / 2) {
+          const rx = new THREE.Mesh(new THREE.PlaneGeometry(SIZE, ROAD_WIDTH, 16, 2), roadMat);
+          rx.rotation.x = -Math.PI / 2;
+          const xp = rx.geometry.getAttribute('position');
+          for (let i = 0; i < xp.count; i++) {
+            const lx = xp.getX(i) + cx * SIZE + SIZE / 2, lz = xp.getZ(i) + center;
+            xp.setY(i, terrainHeightAt(lx, lz) + 0.055);
           }
-          waterColors.push(c.r, c.g, c.b);
+          rx.geometry.computeVertexNormals();
+          rx.position.set(cx * SIZE + SIZE / 2, 0, center);
+          rx.name = 'road-x';
+          g.add(rx);
         }
-      }
-    }
-
-    // Connect quads
-    for (let iz = 0; iz < waterGrid; iz++) {
-      for (let ix = 0; ix < waterGrid; ix++) {
-        const i00 = vertIndex[iz * (waterGrid + 1) + ix];
-        const i10 = vertIndex[iz * (waterGrid + 1) + ix + 1];
-        const i01 = vertIndex[(iz + 1) * (waterGrid + 1) + ix];
-        const i11 = vertIndex[(iz + 1) * (waterGrid + 1) + ix + 1];
-
-        const wxMid = cx * SIZE + (ix + 0.5) * step;
-        const wzMid = cz * SIZE + (iz + 0.5) * step;
-        if (nearHome(wxMid, wzMid)) continue;
-
-        // Never span a triangle across dry land. This is the renderer-side
-        // enforcement of the hydrology rule: if a location has insufficient
-        // water to occupy the cell, it stays grass/terrain and the water ends.
-        const hasWaterInCell =
-          waterDepthAt(wxMid, wzMid) > 0.005 &&
-          i00 >= 0 && i10 >= 0 && i11 >= 0 && i01 >= 0;
-
-        if (hasWaterInCell) {
-          waterIndices.push(i00, i01, i11);
-          waterIndices.push(i00, i11, i10);
-        }
-      }
-    }
-
-    if (waterIndices.length) {
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.Float32BufferAttribute(waterPositions, 3));
-      geom.setAttribute('color', new THREE.Float32BufferAttribute(waterColors, 3));
-      geom.setAttribute('aDepth', new THREE.Float32BufferAttribute(waterDepthAttr, 1));
-      geom.setAttribute('aFlow', new THREE.Float32BufferAttribute(waterFlowAttr, 2));
-      geom.setIndex(waterIndices);
-      geom.computeVertexNormals();
-      const waterMesh = new THREE.Mesh(geom, waterMaterial);
-      waterMesh.name = 'water-surface';
-      waterGroup.add(waterMesh);
-
-      // Do not extrude a vertical wall around every wet/dry grid edge.
-      // The carved terrain forms the natural bank; the old cell-by-cell walls
-      // looked like raised platforms and could snag the player at the shore.
-
-      g.add(waterGroup);
-      g.userData.water = true;
-    }
-
-    // Natural waterfalls and alpine spring pools are driven by the same
-    // drainage field as terrain and water.
-    if (lod <= 1) {
-      const sampleStep = lod === 0 ? 4 : 8;
-      let waterfallCount = 0;
-      for (let fz = sampleStep * 0.5; fz < SIZE && waterfallCount < 2; fz += sampleStep) {
-        for (let fx = sampleStep * 0.5; fx < SIZE && waterfallCount < 2; fx += sampleStep) {
-          const wx = cx * SIZE + fx;
-          const wz = cz * SIZE + fz;
-          if (nearHome(wx, wz) || nearVillage(wx, wz) || !waterAt(wx, wz)) continue;
-
-          const flow = waterFlowAt(wx, wz);
-          if (flow.flowDrop < 1.25 || flow.flowSpeed < 1.05) continue;
-
-          const ux = flow.flowVector.x;
-          const uz = flow.flowVector.y;
-          const downX = wx + ux * SIZE * 0.35;
-          const downZ = wz + uz * SIZE * 0.35;
-          const topY = waterSurfaceAt(wx, wz);
-          const bottomY = waterSurfaceAt(downX, downZ);
-          const fallHeight = topY - bottomY;
-          if (fallHeight < 0.85) continue;
-
-          const visibleHeight = Math.min(8.0, fallHeight);
-          const width = clamp(0.8 + flow.flowSpeed * 0.62 + flow.flowAccumulation / 4200, 0.9, 4.5);
-          const waterfall = new THREE.Mesh(
-            new THREE.PlaneGeometry(width, visibleHeight, 1, 6),
-            waterfallMaterial
-          );
-          waterfall.name = 'waterfall';
-          waterfall.position.set(
-            wx + ux * 0.9,
-            bottomY + visibleHeight * 0.5,
-            wz + uz * 0.9
-          );
-          waterfall.rotation.y = Math.atan2(ux, uz);
-          g.add(waterfall);
-          waterfallCount++;
+        if (center >= cx * SIZE - ROAD_WIDTH / 2 && center <= (cx + 1) * SIZE + ROAD_WIDTH / 2) {
+          const rz = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, SIZE, 2, 16), roadMat);
+          rz.rotation.x = -Math.PI / 2;
+          const zp = rz.geometry.getAttribute('position');
+          for (let i = 0; i < zp.count; i++) {
+            const lx = zp.getX(i) + center, lz = zp.getZ(i) + cz * SIZE + SIZE / 2;
+            zp.setY(i, terrainHeightAt(lx, lz) + 0.055);
+          }
+          rz.geometry.computeVertexNormals();
+          rz.position.set(center, 0, cz * SIZE + SIZE / 2);
+          rz.name = 'road-z';
+          g.add(rz);
         }
       }
 
-      if (lod === 0) {
-        const springStep = 8;
-        let springCount = 0;
-        for (let fz = springStep * 0.5; fz < SIZE && springCount < 1; fz += springStep) {
-          for (let fx = springStep * 0.5; fx < SIZE && springCount < 1; fx += springStep) {
+      // Bridges where road crosses river in this chunk
+      const chunkMidX = cx * SIZE + SIZE / 2, chunkMidZ = cz * SIZE + SIZE / 2;
+      if (isBridgeAt(chunkMidX, chunkMidZ)) {
+        const bridge = buildBridge(chunkMidX, chunkMidZ);
+        g.add(bridge);
+      }
+
+      // Physical Seamless Water Mesh
+      const waterGroup = new THREE.Group();
+      waterGroup.name = 'water';
+      waterGroup.position.set(cx * SIZE, 0, cz * SIZE);
+
+      // Terrain and water now share the same vertices at each LOD.
+      const waterGrid = segs;
+      const step = SIZE / waterGrid;
+      const waterPositions: number[] = [], waterColors: number[] = [], waterIndices: number[] = [];
+      // Per-vertex real water depth and surface flow (m/s), consumed by the water shader.
+      const waterDepthAttr: number[] = [], waterFlowAttr: number[] = [];
+
+      const deepNavy = new THREE.Color(0x0e2b47);
+      const emeraldMid = new THREE.Color(0x23757a);
+      const turquoiseShallow = new THREE.Color(0x56b8ad);
+      const shorelineFoam = new THREE.Color(0xf4f9fa);
+
+      // Build grid vertices for wet cells and a one-cell shoreline skirt.
+      // Triangle inclusion below still uses the authoritative wet mask, so a
+      // dry island cannot become covered by a bridge of water triangles.
+      const vertIndex = new Int32Array((waterGrid + 1) * (waterGrid + 1)).fill(-1);
+      const wetVertex = new Uint8Array((waterGrid + 1) * (waterGrid + 1));
+      let nextIdx = 0;
+
+      for (let iz = 0; iz <= waterGrid; iz++) {
+        yield;
+        for (let ix = 0; ix <= waterGrid; ix++) {
+          const wx = cx * SIZE + ix * step;
+          const wz = cz * SIZE + iz * step;
+          if (nearHome(wx, wz)) continue;
+
+          const depth = waterDepthAt(wx, wz);
+          // A water-surface vertex must be genuinely wet. Do not create a dry
+          // shoreline vertex and then bridge it to wet vertices: that produces a
+          // thin sheet of "water" over grass/high ground. The shoreline is now
+          // represented only by the physical water edge/side wall below.
+          if (depth > 0.005) {
+            const vertexSlot = iz * (waterGrid + 1) + ix;
+            vertIndex[vertexSlot] = nextIdx++;
+            wetVertex[vertexSlot] = 1;
+            const surfaceY = waterSurfaceAt(wx, wz);
+            waterPositions.push(ix * step, surfaceY, iz * step);
+
+            waterDepthAttr.push(depth);
+            const flow = waterFlowAt(wx, wz);
+            waterFlowAttr.push(flow.flowVector.x * flow.flowSpeed, flow.flowVector.y * flow.flowSpeed);
+
+            // Base tint by depth. White shoreline foam is added in the shader
+            // (animated, depth-driven), so shallows here stay a clear turquoise.
+            const c = new THREE.Color();
+            if (depth < 0.45) {
+              c.copy(turquoiseShallow).lerp(shorelineFoam, (1 - depth / 0.45) * 0.3);
+            } else if (depth < 1.1) {
+              c.copy(turquoiseShallow).lerp(emeraldMid, (depth - 0.45) / 0.65);
+            } else {
+              c.copy(emeraldMid).lerp(deepNavy, clamp((depth - 1.1) / 1.2, 0, 1));
+            }
+            waterColors.push(c.r, c.g, c.b);
+          }
+        }
+      }
+
+      // Connect quads
+      for (let iz = 0; iz < waterGrid; iz++) {
+        yield;
+        for (let ix = 0; ix < waterGrid; ix++) {
+          const i00 = vertIndex[iz * (waterGrid + 1) + ix];
+          const i10 = vertIndex[iz * (waterGrid + 1) + ix + 1];
+          const i01 = vertIndex[(iz + 1) * (waterGrid + 1) + ix];
+          const i11 = vertIndex[(iz + 1) * (waterGrid + 1) + ix + 1];
+
+          const wxMid = cx * SIZE + (ix + 0.5) * step;
+          const wzMid = cz * SIZE + (iz + 0.5) * step;
+          if (nearHome(wxMid, wzMid)) continue;
+
+          // Never span a triangle across dry land. This is the renderer-side
+          // enforcement of the hydrology rule: if a location has insufficient
+          // water to occupy the cell, it stays grass/terrain and the water ends.
+          const hasWaterInCell =
+            waterDepthAt(wxMid, wzMid) > 0.005 &&
+            i00 >= 0 && i10 >= 0 && i11 >= 0 && i01 >= 0;
+
+          if (hasWaterInCell) {
+            waterIndices.push(i00, i01, i11);
+            waterIndices.push(i00, i11, i10);
+          }
+        }
+      }
+
+      if (waterIndices.length) {
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(waterPositions, 3));
+        geom.setAttribute('color', new THREE.Float32BufferAttribute(waterColors, 3));
+        geom.setAttribute('aDepth', new THREE.Float32BufferAttribute(waterDepthAttr, 1));
+        geom.setAttribute('aFlow', new THREE.Float32BufferAttribute(waterFlowAttr, 2));
+        geom.setIndex(waterIndices);
+        geom.computeVertexNormals();
+        const waterMesh = new THREE.Mesh(geom, waterMaterial);
+        waterMesh.name = 'water-surface';
+        waterGroup.add(waterMesh);
+
+        // Do not extrude a vertical wall around every wet/dry grid edge.
+        // The carved terrain forms the natural bank; the old cell-by-cell walls
+        // looked like raised platforms and could snag the player at the shore.
+
+        g.add(waterGroup);
+        g.userData.water = true;
+      }
+
+      // Natural waterfalls and alpine spring pools are driven by the same
+      // drainage field as terrain and water.
+      if (lod <= 1) {
+        const sampleStep = lod === 0 ? 4 : 8;
+        let waterfallCount = 0;
+        for (let fz = sampleStep * 0.5; fz < SIZE && waterfallCount < 2; fz += sampleStep) {
+          yield;
+          for (let fx = sampleStep * 0.5; fx < SIZE && waterfallCount < 2; fx += sampleStep) {
             const wx = cx * SIZE + fx;
             const wz = cz * SIZE + fz;
-            const flow = waterFlowAt(wx, wz);
-            if (flow.waterType !== 'spring' || !waterAt(wx, wz)) continue;
+            if (nearHome(wx, wz) || nearVillage(wx, wz) || !waterAt(wx, wz)) continue;
 
-            const pool = new THREE.Mesh(
-              new THREE.CylinderGeometry(0.34, 0.58, 0.08, 18),
-              springMaterial
+            const flow = waterFlowAt(wx, wz);
+            if (flow.flowDrop < 1.25 || flow.flowSpeed < 1.05) continue;
+
+            const ux = flow.flowVector.x;
+            const uz = flow.flowVector.y;
+            const downX = wx + ux * SIZE * 0.35;
+            const downZ = wz + uz * SIZE * 0.35;
+            const topY = waterSurfaceAt(wx, wz);
+            const bottomY = waterSurfaceAt(downX, downZ);
+            const fallHeight = topY - bottomY;
+            if (fallHeight < 0.85) continue;
+
+            const visibleHeight = Math.min(8.0, fallHeight);
+            const width = clamp(0.8 + flow.flowSpeed * 0.62 + flow.flowAccumulation / 4200, 0.9, 4.5);
+            const waterfall = new THREE.Mesh(
+              new THREE.PlaneGeometry(width, visibleHeight, 1, 6),
+              waterfallMaterial
             );
-            pool.name = 'spring-pool';
-            pool.position.set(wx, waterSurfaceAt(wx, wz) + 0.035, wz);
-            g.add(pool);
-            springCount++;
+            waterfall.name = 'waterfall';
+            waterfall.position.set(
+              wx + ux * 0.9,
+              bottomY + visibleHeight * 0.5,
+              wz + uz * 0.9
+            );
+            waterfall.rotation.y = Math.atan2(ux, uz);
+            g.add(waterfall);
+            waterfallCount++;
+          }
+        }
+
+        if (lod === 0) {
+          const springStep = 8;
+          let springCount = 0;
+          for (let fz = springStep * 0.5; fz < SIZE && springCount < 1; fz += springStep) {
+            yield;
+            for (let fx = springStep * 0.5; fx < SIZE && springCount < 1; fx += springStep) {
+              const wx = cx * SIZE + fx;
+              const wz = cz * SIZE + fz;
+              const flow = waterFlowAt(wx, wz);
+              if (flow.waterType !== 'spring' || !waterAt(wx, wz)) continue;
+
+              const pool = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.34, 0.58, 0.08, 18),
+                springMaterial
+              );
+              pool.name = 'spring-pool';
+              pool.position.set(wx, waterSurfaceAt(wx, wz) + 0.035, wz);
+              g.add(pool);
+              springCount++;
+            }
           }
         }
       }
-    }
 
-    // Trees and Rocks (Rule: Tree will never spawn into a rock)
-    const removed = this.changes[key] || [];
-    const placedProps: { x: number; z: number }[] = [];
+      // Trees and Rocks (Rule: Tree will never spawn into a rock)
+      const removed = this.changes[key] || [];
+      const placedProps: { x: number; z: number }[] = [];
 
-    if (lod < 2) {
-      const maxTrees = lod === 0 ? 10 : 5;
-      for (let i = 0; i < maxTrees; i++) {
-        if (hash(cx * 17 + i, cz * 23 - i) <= 0.52) continue;
-        const tx = cx * SIZE + 2 + hash(cx + i, cz - i) * (SIZE - 4);
-        const tz = cz * SIZE + 2 + hash(cx - i, cz + i) * (SIZE - 4);
-        if (roadAt(tx, tz) || waterAt(tx, tz) || nearHome(tx, tz) || nearVillage(tx, tz)) continue;
+      if (lod < 2) {
+        const maxTrees = lod === 0 ? 10 : 5;
+        for (let i = 0; i < maxTrees; i++) {
+          yield;
+          if (hash(cx * 17 + i, cz * 23 - i) <= 0.52) continue;
+          const tx = cx * SIZE + 2 + hash(cx + i, cz - i) * (SIZE - 4);
+          const tz = cz * SIZE + 2 + hash(cx - i, cz + i) * (SIZE - 4);
+          if (roadAt(tx, tz) || waterAt(tx, tz) || nearHome(tx, tz) || nearVillage(tx, tz)) continue;
 
-        // Collision rule: Tree will not spawn into any existing prop/rock
-        if (placedProps.some(p => Math.hypot(p.x - tx, p.z - tz) < 3.2)) continue;
-        placedProps.push({ x: tx, z: tz });
+          // Collision rule: Tree will not spawn into any existing prop/rock
+          if (placedProps.some(p => Math.hypot(p.x - tx, p.z - tz) < 3.2)) continue;
+          placedProps.push({ x: tx, z: tz });
 
-        const kind = pickTreeKind(cx, cz, i, tx, tz);
-        const def = RESOURCE_DEFS[kind];
-        const name = `tree-${i}`;
-        const entry = removed.find(e => e === name || e.startsWith(name + '@'));
-        if (entry) {
-          const at = entry.includes('@') ? Number(entry.split('@')[1]) : 0;
-          const elapsed = (Date.now() - at) / 1000;
-          if (elapsed < def.regrowSeconds) {
-            const stump = new THREE.Mesh(sharedStumpGeometry, sharedStumpMaterial);
-            stump.name = `stump-${i}`;
-            stump.position.set(tx, terrainHeightAt(tx, tz) + 0.15, tz);
-            g.add(stump);
+          const kind = pickTreeKind(cx, cz, i, tx, tz);
+          const def = RESOURCE_DEFS[kind];
+          const name = `tree-${i}`;
+          const entry = removed.find(e => e === name || e.startsWith(name + '@'));
+          if (entry) {
+            const at = entry.includes('@') ? Number(entry.split('@')[1]) : 0;
+            const elapsed = (Date.now() - at) / 1000;
+            if (elapsed < def.regrowSeconds) {
+              const stump = new THREE.Mesh(sharedStumpGeometry, sharedStumpMaterial);
+              stump.name = `stump-${i}`;
+              stump.position.set(tx, terrainHeightAt(tx, tz) + 0.15, tz);
+              g.add(stump);
+              continue;
+            }
+            expiredEntries.push(entry);
+          }
+
+          const tree = buildTree(kind, lod);
+          tree.name = name;
+          tree.userData.resource = { kind, hits: def.hitsToFell, maxHits: def.hitsToFell };
+          tree.userData.colliderRadius = def.colliderRadius;
+          tree.position.set(tx, terrainHeightAt(tx, tz), tz);
+          g.add(tree);
+        }
+
+        const maxRocks = lod === 0 ? 5 : 2;
+        for (let i = 0; i < maxRocks; i++) {
+          yield;
+          if (hash(cx * 41 + i * 7, cz * 47 - i * 5) <= 0.6) continue;
+          const tx = cx * SIZE + 2 + hash(cx - i * 3, cz + i * 5) * (SIZE - 4);
+          const tz = cz * SIZE + 2 + hash(cx + i * 5, cz - i * 3) * (SIZE - 4);
+          if (roadAt(tx, tz) || waterAt(tx, tz) || nearHome(tx, tz) || nearVillage(tx, tz)) continue;
+
+          // Collision rule: Rock will not spawn into any tree
+          if (placedProps.some(p => Math.hypot(p.x - tx, p.z - tz) < 3.2)) continue;
+          placedProps.push({ x: tx, z: tz });
+
+          const mtn = mountainMaskAt(tx, tz);
+          if (mtn < 0.15 && hash(cx * 3 + i, cz * 5 - i) > 0.25) continue;
+
+          const kind: ResourceKind = mtn > 0.55 && hash(cx * 13 + i, cz * 17 - i) < 0.4 ? 'boulder' : 'rock';
+          const def = RESOURCE_DEFS[kind];
+          const name = `rock-${i}`;
+          const entry = removed.find(e => e === name || e.startsWith(name + '@'));
+          if (entry) {
+            const rubble = new THREE.Mesh(sharedRubbleGeometry, sharedRubbleMaterial);
+            rubble.name = `rubble-${i}`;
+            rubble.position.set(tx, terrainHeightAt(tx, tz) + 0.07, tz);
+            g.add(rubble);
             continue;
           }
-          const idx = removed.indexOf(entry);
-          if (idx >= 0) removed.splice(idx, 1);
-        }
 
-        const tree = buildTree(kind, lod);
-        tree.name = name;
-        tree.userData.resource = { kind, hits: def.hitsToFell, maxHits: def.hitsToFell };
-        tree.userData.colliderRadius = def.colliderRadius;
-        tree.position.set(tx, terrainHeightAt(tx, tz), tz);
-        g.add(tree);
+          const rock = buildRock(kind, lod);
+          rock.name = name;
+          rock.userData.resource = { kind, hits: def.hitsToFell, maxHits: def.hitsToFell };
+          rock.userData.colliderRadius = def.colliderRadius;
+          rock.position.set(tx, terrainHeightAt(tx, tz), tz);
+          g.add(rock);
+        }
       }
 
-      const maxRocks = lod === 0 ? 5 : 2;
-      for (let i = 0; i < maxRocks; i++) {
-        if (hash(cx * 41 + i * 7, cz * 47 - i * 5) <= 0.6) continue;
-        const tx = cx * SIZE + 2 + hash(cx - i * 3, cz + i * 5) * (SIZE - 4);
-        const tz = cz * SIZE + 2 + hash(cx + i * 5, cz - i * 3) * (SIZE - 4);
-        if (roadAt(tx, tz) || waterAt(tx, tz) || nearHome(tx, tz) || nearVillage(tx, tz)) continue;
-
-        // Collision rule: Rock will not spawn into any tree
-        if (placedProps.some(p => Math.hypot(p.x - tx, p.z - tz) < 3.2)) continue;
-        placedProps.push({ x: tx, z: tz });
-
-        const mtn = mountainMaskAt(tx, tz);
-        if (mtn < 0.15 && hash(cx * 3 + i, cz * 5 - i) > 0.25) continue;
-
-        const kind: ResourceKind = mtn > 0.55 && hash(cx * 13 + i, cz * 17 - i) < 0.4 ? 'boulder' : 'rock';
-        const def = RESOURCE_DEFS[kind];
-        const name = `rock-${i}`;
-        const entry = removed.find(e => e === name || e.startsWith(name + '@'));
-        if (entry) {
-          const rubble = new THREE.Mesh(sharedRubbleGeometry, sharedRubbleMaterial);
-          rubble.name = `rubble-${i}`;
-          rubble.position.set(tx, terrainHeightAt(tx, tz) + 0.07, tz);
-          g.add(rubble);
-          continue;
-        }
-
-        const rock = buildRock(kind, lod);
-        rock.name = name;
-        rock.userData.resource = { kind, hits: def.hitsToFell, maxHits: def.hitsToFell };
-        rock.userData.colliderRadius = def.colliderRadius;
-        rock.position.set(tx, terrainHeightAt(tx, tz), tz);
-        g.add(rock);
+      // Spawn Home in (0,0) chunk
+      if (cx === 0 && cz === 0) {
+        const isDoorOpen = (this.changes['0,0'] || []).includes('door-open');
+        const home = buildHome(this.homeLevel, isDoorOpen);
+        g.add(home);
       }
-    }
 
-    // Spawn Home in (0,0) chunk
-    if (cx === 0 && cz === 0) {
-      const isDoorOpen = (this.changes['0,0'] || []).includes('door-open');
-      const home = buildHome(this.homeLevel, isDoorOpen);
-      g.add(home);
-    }
+      // Spawn Riverwood Village in (Math.floor(VILLAGE_X/SIZE), Math.floor(VILLAGE_Z/SIZE)) chunk
+      if (cx === Math.floor(VILLAGE_X / SIZE) && cz === Math.floor(VILLAGE_Z / SIZE)) {
+        buildVillage(g);
+      }
 
-    // Spawn Riverwood Village in (Math.floor(VILLAGE_X/SIZE), Math.floor(VILLAGE_Z/SIZE)) chunk
-    if (cx === Math.floor(VILLAGE_X / SIZE) && cz === Math.floor(VILLAGE_Z / SIZE)) {
-      buildVillage(g);
+      // Harvest/door edits can happen while a replacement is being constructed.
+      // Retry rather than publish a stale tree or door state over the player's edit.
+      if (JSON.stringify(this.changes[key] || []) !== changesSnapshot) {
+        this.streamQueue.push({ x: cx, z: cz });
+        return;
+      }
+      for (const entry of expiredEntries) {
+        const index = removed.indexOf(entry);
+        if (index >= 0) removed.splice(index, 1);
+      }
+      instanceChunkResources(g, geometry => environmentAssets.isSharedGeometry(geometry) || sharedWorldGeometries.has(geometry));
+      // Replace an upgraded chunk only when its complete replacement is ready.
+      // Interaction/collision remain available throughout the incremental build.
+      const existing = this.loaded.get(key);
+      if (existing) {
+        this.releaseChunk(existing);
+        world.remove(existing);
+      }
+      this.indexChunk(g);
+      world.add(g);
+      this.loaded.set(key, g);
+      committed = true;
+    } finally {
+      if (!committed) disposeWorldObjects(g);
     }
-
-    this.indexChunk(g);
-    world.add(g);
-    this.loaded.set(key, g);
   }
 
   stream(px: number, pz: number) {
+    this.cancelBuild();
     // Synchronous path (initial load, respawn, rebuildAll, survey exit): builds
     // everything now, so any queued work is obsolete.
     this.streamQueue.length = 0;
@@ -1354,7 +1421,7 @@ class Chunks {
         const key = this.key(x, z), existing = this.loaded.get(key);
         if (!existing) {
           this.build(x, z, lod);
-        } else if (existing.userData.lod > lod) {
+        } else if (existing.userData.lod > lod || existing.userData.assetRevision !== this.assetRevision) {
           this.releaseChunk(existing);
           world.remove(existing);
           this.loaded.delete(key);
@@ -1372,6 +1439,7 @@ class Chunks {
   // (cheap); building is deferred to pumpBuilds() so no single frame pays for a
   // whole row/column of chunks. Same radius and LOD rules as stream().
   streamQueued(px: number, pz: number) {
+    this.cancelBuild();
     const cx = this.coord(px), cz = this.coord(pz);
     const configuredRadius = settings.current.chunkRadius;
     const radius = LOW_POWER_MODE ? Math.min(configuredRadius, 5) : configuredRadius;
@@ -1395,7 +1463,7 @@ class Chunks {
       for (let z = minZ; z <= maxZ; z++) {
         const dist = Math.max(Math.abs(x - cx), Math.abs(z - cz));
         const existing = this.loaded.get(this.key(x, z));
-        if (!existing || existing.userData.lod > this.lodForDistance(dist)) queue.push({ x, z, dist });
+        if (!existing || existing.userData.lod > this.lodForDistance(dist) || existing.userData.assetRevision !== this.assetRevision) queue.push({ x, z, dist });
       }
     }
     // Nearest first; ties broken by true distance so the chunk under/ahead of the player wins.
@@ -1403,35 +1471,36 @@ class Chunks {
     this.streamQueue = queue.map(({ x, z }) => ({ x, z }));
   }
 
-  // Builds queued chunks until budgetMs is spent. At least one chunk is built per
-  // call when work is pending, so the queue always drains. Entries are re-validated
-  // against the latest player chunk, because the player may have moved on.
+  // Advance construction slices until budgetMs is spent. A single slice can
+  // overrun, but expensive terrain/water loops no longer run as one atomic chunk.
   pumpBuilds(budgetMs: number) {
-    if (!this.streamQueue.length) return 0;
+    if (!this.pendingBuilds) return 0;
     const startedAt = performance.now();
     let built = 0;
     let head = 0;
-    while (head < this.streamQueue.length) {
+    while (this.activeBuild || head < this.streamQueue.length) {
+      if (this.activeBuild) {
+        if (this.activeBuild.next().done) {
+          this.activeBuild = null;
+          built++;
+        }
+        if (performance.now() - startedAt >= budgetMs) break;
+        continue;
+      }
       const { x, z } = this.streamQueue[head++];
       const dist = Math.max(Math.abs(x - this.streamCx), Math.abs(z - this.streamCz));
       if (dist > this.streamRadius) continue;
       const lod = this.lodForDistance(dist);
       const key = this.key(x, z), existing = this.loaded.get(key);
-      if (existing && existing.userData.lod <= lod) continue;
-      if (existing) {
-        this.releaseChunk(existing);
-        world.remove(existing);
-        this.loaded.delete(key);
-      }
-      this.build(x, z, lod);
-      built++;
-      if (performance.now() - startedAt >= budgetMs) break;
+      if (existing && existing.userData.lod <= lod && existing.userData.assetRevision === this.assetRevision) continue;
+      this.activeBuild = this.buildSteps(x, z, lod);
     }
     this.streamQueue.splice(0, head);
     return built;
   }
 
   async surveyAll(active: boolean, onProgress?: (done: number, total: number) => void) {
+    this.cancelBuild();
     if (active) {
       // The survey is deliberately expensive: materialize the complete finite
       // world at gameplay-quality LOD0, but yield to the browser between batches
@@ -1496,6 +1565,7 @@ class Chunks {
   }
 
   rebuildAll() {
+    this.cancelBuild();
     for (const [k, g] of this.loaded) {
       this.releaseChunk(g);
       world.remove(g);
@@ -2387,6 +2457,7 @@ function updateLobbyProgressionUi(): void {
   if (homeXp) homeXp.textContent = `${survivalMeta.xp} XP`;
   if (homeWave) homeWave.textContent = `BEST WAVE ${survivalMeta.bestWave}`;
   if (navLevel) navLevel.textContent = `LV ${level}`;
+  setHudText(document.querySelector('#lobbyOperatorLevel'), `LEVEL ${level} · ACTIVE`);
   if (lobbyBestWaveMetric) lobbyBestWaveMetric.textContent = `${survivalMeta.bestWave} / 100`;
   if (lobbyBestTimeMetric) lobbyBestTimeMetric.textContent = survivalMeta.bestTimeSeconds ? formatRunTime(survivalMeta.bestTimeSeconds) : '—';
   if (lobbyTotalKillsMetric) lobbyTotalKillsMetric.textContent = String(survivalMeta.totalKills);
@@ -2478,7 +2549,7 @@ function updateWildcardHud(): void {
     const remaining = Math.ceil(wildcardCooldowns[id] || 0);
     button.classList.toggle('recharging', remaining > 0);
     const small = button.querySelector('small');
-    if (small) small.textContent = remaining > 0 ? `${remaining}s` : 'READY';
+    setHudText(small, remaining > 0 ? `${remaining}s` : 'READY');
   });
 }
 function activateWildcard(id: WildcardId): void {
@@ -2891,9 +2962,8 @@ weatherSelect.addEventListener('change', () => {
 graphicsSelect.addEventListener('change', () => {
   const g = graphicsSelect.value as 'low' | 'med' | 'high';
   settings.update({ graphics: g });
-  renderer.shadowMap.enabled = g !== 'low';
-  sun.castShadow = g !== 'low';
-  renderer.setPixelRatio(Math.min(devicePixelRatio, g === 'low' ? 1.0 : g === 'med' ? 1.3 : 1.6));
+  applyGraphicsSettings();
+  sun.castShadow = renderer.shadowMap.enabled;
   say(`Graphics preset: ${g.toUpperCase()}`);
 });
 
@@ -3436,7 +3506,8 @@ renderInventory();
 
 chunks.stream(save.player.x, save.player.z);
 void environmentAssets.preload().then(() => {
-  chunks.rebuildAll();
+  // A late CDN response must not synchronously rebuild the whole world mid-run.
+  chunks.refreshAssets();
 });
 
 function hitResource(obj: THREE.Object3D) {
@@ -3447,6 +3518,7 @@ function hitResource(obj: THREE.Object3D) {
   if (Math.hypot(player.velocity.x, player.velocity.z) < 1.0) player.playEmote('inspect');
   res.hits--;
   obj.scale.setScalar(Math.max(0.7, 1 - 0.08 * (res.maxHits - res.hits)));
+  obj.userData.syncInstances?.();
 
   if (res.hits > 0) {
     say(`Hit ${res.kind.replace('_', ' ')} (${res.maxHits - res.hits}/${res.maxHits})`);
@@ -3825,23 +3897,23 @@ survival = new ZombieSurvivalSystem({
     lastMetaKills = state.kills;
     lastMetaWave = state.wave;
     if (metaChanged) saveSurvivalMeta();
-    if (survivalHealthText) survivalHealthText.textContent = `${state.health} / ${state.maxHealth}`;
+    setHudText(survivalHealthText, `${state.health} / ${state.maxHealth}`);
     if (survivalHealthBar) {
       survivalHealthBar.style.width = `${Math.max(0, Math.min(100, (state.health / state.maxHealth) * 100))}%`;
       survivalHealthBar.style.background = state.health <= 25 ? '#ef4444' : state.health <= 50 ? '#f59e0b' : 'linear-gradient(90deg, #e87942, #f5c26b)';
     }
-    if (survivalWeapon) survivalWeapon.textContent = state.weaponLabel;
+    setHudText(survivalWeapon, state.weaponLabel);
     if (survivalSkillButton) {
       const cooldown = state.skillCooldownSeconds ?? 0;
       survivalSkillButton.textContent = cooldown > 0 ? `${cooldown}s` : 'PULSE';
       survivalSkillButton.title = cooldown > 0 ? `Shockwave recharging · ${cooldown}s` : 'Shockwave pulse · 18s cooldown';
       survivalSkillButton.classList.toggle('recharging', cooldown > 0);
     }
-    if (survivalAmmo) survivalAmmo.textContent = String(state.ammoInMag).padStart(2, '0');
-    if (survivalReserve) survivalReserve.textContent = state.reloading ? 'RELOADING' : `/ ${state.ammoReserve}`;
-    if (survivalKills) survivalKills.textContent = `KILLS ${state.kills}`;
-    if (survivalWave) survivalWave.textContent = state.preparationSeconds ? `PREP ${state.preparationSeconds}s` : state.runComplete ? 'ISLAND SECURED' : state.wave ? `WAVE ${state.wave} / 100` : 'SAFE START';
-    if (survivalZombies) survivalZombies.textContent = state.livingZombies ? `${state.livingZombies} INFECTED` : '';
+    setHudText(survivalAmmo, String(state.ammoInMag).padStart(2, '0'));
+    setHudText(survivalReserve, state.reloading ? 'RELOADING' : `/ ${state.ammoReserve}`);
+    setHudText(survivalKills, `KILLS ${state.kills}`);
+    setHudText(survivalWave, state.preparationSeconds ? `PREP ${state.preparationSeconds}s` : state.runComplete ? 'ISLAND SECURED' : state.wave ? `WAVE ${state.wave} / 100` : 'SAFE START');
+    setHudText(survivalZombies, state.livingZombies ? `${state.livingZombies} INFECTED` : '');
     if (state.runComplete && !runResultShown) recordSurvivalRun('VICTORY', state);
     if (safeZoneDirection) {
       const hasTarget = Number.isFinite(state.safeZoneX) && Number.isFinite(state.safeZoneZ);
@@ -3852,15 +3924,15 @@ survival = new ZombieSurvivalSystem({
         const bearing = Math.atan2(dx, dz);
         const relative = Math.atan2(Math.sin(bearing - camYaw), Math.cos(bearing - camYaw));
         safeZoneArrowIcon.style.transform = `rotate(${relative * 180 / Math.PI - 90}deg)`;
-        if (safeZoneArrowDistance) safeZoneArrowDistance.textContent = `${Math.round(Math.hypot(dx, dz))}m`;
+        setHudText(safeZoneArrowDistance, `${Math.round(Math.hypot(dx, dz))}m`);
       }
-      if (safeZoneArrowLabel) safeZoneArrowLabel.textContent = state.zonePhase === 'weakening' ? 'SANCTUARY FAILING' : state.nearestZone.startsWith('NEXT') ? 'NEXT SANCTUARY' : 'SAFE ZONE';
+      setHudText(safeZoneArrowLabel, state.zonePhase === 'weakening' ? 'SANCTUARY FAILING' : state.nearestZone.startsWith('NEXT') ? 'NEXT SANCTUARY' : 'SAFE ZONE');
     }
     if (survivalZoneStatus) {
-      survivalZoneStatus.textContent = state.zonePhase === 'weakening'
+      setHudText(survivalZoneStatus, state.zonePhase === 'weakening'
         ? `WEAKENING · ${state.nearestZone} ${Math.round(state.zoneIntegrity ?? 0)}%`
         : state.inSafeZone ? `SAFE · ${state.nearestZone}`
-          : state.nearestZone ? `DANGER · ${state.nearestZone} ${Math.round(state.zoneDistance)}m` : 'NO SAFE ZONE · RELOCATING';
+          : state.nearestZone ? `DANGER · ${state.nearestZone} ${Math.round(state.zoneDistance)}m` : 'NO SAFE ZONE · RELOCATING');
       survivalZoneStatus.classList.toggle('safe', state.inSafeZone && state.zonePhase !== 'weakening');
       survivalZoneStatus.classList.toggle('danger', !state.inSafeZone || state.zonePhase === 'weakening');
     }
@@ -4023,7 +4095,7 @@ const cameraBlockerObjects: THREE.Object3D[] = [];
 const cameraHits: THREE.Intersection[] = [];
 let cameraProbeTimer = 0, cameraClearance = camDistance;
 
-type DiagnosticCostKey = 'simulation' | 'render' | 'survivalUpdate' | 'aimQuery' | 'chunkStream' | 'chunkPump';
+type DiagnosticCostKey = 'simulation' | 'render' | 'survivalUpdate' | 'aimQuery' | 'chunkStream' | 'chunkPump' | 'mapUpdate';
 type DiagnosticCost = { totalMs: number; maxMs: number; count: number };
 type OutbreakDiagnosticsWindow = Window & { __islandOutbreakPerfEnabled?: boolean };
 const newDiagnosticCost = (): DiagnosticCost => ({ totalMs: 0, maxMs: 0, count: 0 });
@@ -4034,6 +4106,9 @@ const diagnosticFrameWindow: {
   frames: number;
   slowFrames: number;
   frameDurations: number[];
+  drawCallsTotal: number;
+  drawCallsMin: number;
+  drawCallsMax: number;
   costs: Record<DiagnosticCostKey, DiagnosticCost>;
 } = {
   active: false,
@@ -4042,6 +4117,9 @@ const diagnosticFrameWindow: {
   frames: 0,
   slowFrames: 0,
   frameDurations: [],
+  drawCallsTotal: 0,
+  drawCallsMin: Infinity,
+  drawCallsMax: 0,
   costs: {
     simulation: newDiagnosticCost(),
     render: newDiagnosticCost(),
@@ -4049,6 +4127,7 @@ const diagnosticFrameWindow: {
     aimQuery: newDiagnosticCost(),
     chunkStream: newDiagnosticCost(),
     chunkPump: newDiagnosticCost(),
+    mapUpdate: newDiagnosticCost(),
   },
 };
 let diagnosticMeasureFrame = false;
@@ -4066,6 +4145,9 @@ function resetDiagnosticWindow(now: number): void {
   diagnosticFrameWindow.frames = 0;
   diagnosticFrameWindow.slowFrames = 0;
   diagnosticFrameWindow.frameDurations.length = 0;
+  diagnosticFrameWindow.drawCallsTotal = 0;
+  diagnosticFrameWindow.drawCallsMin = Infinity;
+  diagnosticFrameWindow.drawCallsMax = 0;
   for (const key of Object.keys(diagnosticFrameWindow.costs) as DiagnosticCostKey[]) {
     diagnosticFrameWindow.costs[key] = newDiagnosticCost();
   }
@@ -4088,6 +4170,10 @@ function input() {
   if (keys.has('s') || keys.has('arrowdown')) y += 1;
   const l = Math.hypot(x, y);
   return l > 1 ? { x: x / l, y: y / l } : { x, y };
+}
+
+function setHudText(element: Element | null | undefined, value: string) {
+  if (element && element.textContent !== value) element.textContent = value;
 }
 
 function update(dt: number) {
@@ -4474,9 +4560,8 @@ function update(dt: number) {
   if (aimStartedAt) recordDiagnosticCost('aimQuery', performance.now() - aimStartedAt);
   const canInteractWithAimed = !!aimed && !!(aimed.userData.resource || aimed.userData.interactable);
   document.body.classList.toggle('survival-can-interact', !!survival?.enabled && canInteractWithAimed);
-  const combatAimStartedAt = diagnosticMeasureFrame ? performance.now() : 0;
-  const combatTarget = getAimTarget(false, true);
-  if (combatAimStartedAt) recordDiagnosticCost('aimQuery', performance.now() - combatAimStartedAt);
+  // Combat actions still request their own forced raycast when triggered. The
+  // old second per-frame query had no consumer (its marker is always hidden).
   combatTargetMarker.visible = false;
   if (aimed) {
     const r = aimed.userData.resource as { kind: string; hits: number; maxHits: number } | undefined;
@@ -4486,7 +4571,9 @@ function update(dt: number) {
     else if (interactable) label = interactable.label;
     else label = aimed.name.replace('front-door', 'Front Door').replace('tree-', 'Tree ');
 
-    prompt.innerHTML = `<span class="promptKey">E</span> <span class="promptAction">${label}</span>`;
+    const action = prompt.querySelector('.promptAction');
+    if (action) setHudText(action, label);
+    else prompt.innerHTML = `<span class="promptKey">E</span> <span class="promptAction">${label}</span>`;
     prompt.classList.add('show');
   } else if (promptTimer <= 0) {
     prompt.classList.remove('show');
@@ -4499,25 +4586,27 @@ function update(dt: number) {
 
   const deg = ((-camYaw * 180) / Math.PI + 360) % 360;
   const cardinal = deg >= 337.5 || deg < 22.5 ? 'N' : deg < 67.5 ? 'NE' : deg < 112.5 ? 'E' : deg < 157.5 ? 'SE' : deg < 202.5 ? 'S' : deg < 247.5 ? 'SW' : deg < 292.5 ? 'W' : 'NW';
-  compass.textContent = `${Math.round(deg)}° ${cardinal}`;
+  setHudText(compass, `${Math.round(deg)}° ${cardinal}`);
 
   // Update Mini-Map & Full Map
   mapAccumulator += dt;
   if (mapAccumulator >= 0.08) {
+    const mapStartedAt = diagnosticMeasureFrame ? performance.now() : 0;
     mapAccumulator = 0;
     const survivalRadar = survival.enabled ? survival.getRadarState() : undefined;
     minimap.renderMini(p, camYaw, [], survivalRadar);
     if (minimap.isOpen()) minimap.renderFull(p, camYaw, [], survivalRadar);
+    if (mapStartedAt) recordDiagnosticCost('mapUpdate', performance.now() - mapStartedAt);
 
     // Distance to Home & Village on HUD
     const dHome = Math.round(Math.hypot(p.x - HOME_X, p.z - HOME_Z));
-    minimapHomeDist.textContent = `⌂ ${dHome}m`;
+    setHudText(minimapHomeDist, `⌂ ${dHome}m`);
 
     const wp = minimap.getWaypoint();
     if (wp) {
       const dWp = Math.round(Math.hypot(p.x - wp.x, p.z - wp.z));
       waypointBadge.style.display = 'block';
-      waypointBadge.textContent = `★ ${wp.label} · ${dWp}m`;
+      setHudText(waypointBadge, `★ ${wp.label} · ${dWp}m`);
     } else {
       waypointBadge.style.display = 'none';
     }
@@ -4535,19 +4624,19 @@ function update(dt: number) {
     // In TPP mode, hide center reticle for cinematic BR perspective; in FPP mode, show clean dot
     target.style.display = mode === 'tpp' ? 'none' : 'grid';
     target.classList.toggle('active', !!aimed);
-    target.textContent = aimed ? '✦' : '•';
-    (document.querySelector('#modeBtn') as HTMLButtonElement).textContent = mode.toUpperCase();
-    (document.querySelector('#runBtn') as HTMLButtonElement).textContent = sprintToggle ? 'RUN' : 'WALK';
+    setHudText(target, aimed ? '✦' : '•');
+    setHudText(document.querySelector('#modeBtn'), mode.toUpperCase());
+    setHudText(document.querySelector('#runBtn'), sprintToggle ? 'RUN' : 'WALK');
     if (survivalStaminaBar) {
       survivalStaminaBar.style.width = `${Math.round(stamina / staminaCapacity * 100)}%`;
       survivalStaminaBar.style.background = stamina <= staminaCapacity * 0.2 ? '#f59e0b' : '#a3e635';
     }
-    (document.querySelector('#jumpBtn') as HTMLButtonElement).textContent = player.swimming ? 'RISE' : 'JUMP';
+    setHudText(document.querySelector('#jumpBtn'), player.swimming ? 'RISE' : 'JUMP');
 
     const hour = Math.floor(worldTime);
     const minute = Math.floor((worldTime - hour) * 60);
     const biome = biomeAt(p.x, p.z);
-    status.textContent = `${player.swimming ? 'SWIM' : mode.toUpperCase()} · ${sprinting ? 'RUN' : 'WALK'} · ${biome.toUpperCase()} · ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    setHudText(status, `${player.swimming ? 'SWIM' : mode.toUpperCase()} · ${sprinting ? 'RUN' : 'WALK'} · ${biome.toUpperCase()} · ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
   }
 }
 
@@ -4555,7 +4644,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   survey.resize(innerWidth / innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, LOW_POWER_MODE ? 1.25 : 1.65));
+  applyGraphicsSettings();
   renderer.setSize(innerWidth, innerHeight);
 });
 
@@ -4603,6 +4692,7 @@ function loop() {
     diagnosticMeasureFrame = false;
     diagnosticFrameWindow.active = false;
     lobbyRenderAccumulator += dt;
+    if (chunks.pendingBuilds) chunks.pumpBuilds(CHUNK_BUILD_BUDGET_LOW_MS);
     if (!lobbyHasRendered || lobbyRenderAccumulator >= 0.25) {
       lobbyRenderAccumulator = 0;
       renderer.render(scene, camera);
@@ -4637,15 +4727,18 @@ function loop() {
   // timings and raw frame interval are kept complete so rare stalls remain visible.
   diagnosticMeasureFrame = diagnosticFrameWindow.frames % 4 === 0;
 
-  // Keep the diagnostic probe cheap: only time these phases on the same 1-in-4
-  // frames used by the detailed subphase probes. Raw frame intervals still cover every frame.
-  const simulationStartedAt = diagnosticMeasureFrame ? performance.now() : 0;
+  // Core timings cover every frame; only detailed subphases are sampled.
+  const simulationStartedAt = performance.now();
   update(dt);
-  if (diagnosticMeasureFrame) recordDiagnosticCost('simulation', performance.now() - simulationStartedAt);
+  recordDiagnosticCost('simulation', performance.now() - simulationStartedAt);
 
-  const renderStartedAt = diagnosticMeasureFrame ? performance.now() : 0;
+  const renderStartedAt = performance.now();
   renderer.render(scene, camera);
-  if (diagnosticMeasureFrame) recordDiagnosticCost('render', performance.now() - renderStartedAt);
+  recordDiagnosticCost('render', performance.now() - renderStartedAt);
+  const drawCalls = renderer.info.render.calls;
+  diagnosticFrameWindow.drawCallsTotal += drawCalls;
+  diagnosticFrameWindow.drawCallsMin = Math.min(diagnosticFrameWindow.drawCallsMin, drawCalls);
+  diagnosticFrameWindow.drawCallsMax = Math.max(diagnosticFrameWindow.drawCallsMax, drawCalls);
 
   if (diagnosticMeasureFrame) {
     const diagnosticsNow = performance.now();
@@ -4667,11 +4760,16 @@ function loop() {
         worstFrameMs: round1(sortedFrames[sortedFrames.length - 1] || 0),
         p95FrameMs: round1(sortedFrames[Math.min(sortedFrames.length - 1, Math.floor((sortedFrames.length - 1) * 0.95))] || 0),
         slowFramesOver50ms: diagnosticFrameWindow.slowFrames,
-        timingSampleRate: 'simulation/render every frame; subphases every 4th frame',
+        timingSampleRate: 'simulation/render every frame; chunk work every call; survival/aim/map every 4th frame',
         simulationAvgMs: diagnosticCostSummary('simulation').avgMs,
         simulationMaxMs: diagnosticCostSummary('simulation').maxMs,
+        simulationSamples: diagnosticCostSummary('simulation').samples,
         renderAvgMs: diagnosticCostSummary('render').avgMs,
         renderMaxMs: diagnosticCostSummary('render').maxMs,
+        renderSamples: diagnosticCostSummary('render').samples,
+        mapUpdateAvgMs: diagnosticCostSummary('mapUpdate').avgMs,
+        mapUpdateMaxMs: diagnosticCostSummary('mapUpdate').maxMs,
+        mapUpdateSamples: diagnosticCostSummary('mapUpdate').samples,
         survivalUpdateAvgMs: diagnosticCostSummary('survivalUpdate').avgMs,
         survivalUpdateMaxMs: diagnosticCostSummary('survivalUpdate').maxMs,
         survivalUpdateSamples: diagnosticCostSummary('survivalUpdate').samples,
@@ -4687,8 +4785,11 @@ function loop() {
         chunkPumpMaxMs: diagnosticCostSummary('chunkPump').maxMs,
         chunkPumpCount: diagnosticCostSummary('chunkPump').samples,
         chunkQueueDepth: chunks.pendingBuilds,
-        perfBuildTag: 'chunk-queue-1',
+        perfBuildTag: 'mobile-perf-2',
         drawCalls: renderer.info.render.calls,
+        drawCallsAvg: round1(diagnosticFrameWindow.drawCallsTotal / diagnosticFrameWindow.frames),
+        drawCallsMin: diagnosticFrameWindow.drawCallsMin,
+        drawCallsMax: diagnosticFrameWindow.drawCallsMax,
         triangles: renderer.info.render.triangles,
         points: renderer.info.render.points,
         lines: renderer.info.render.lines,

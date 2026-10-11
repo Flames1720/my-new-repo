@@ -83,6 +83,23 @@
 - [ ] Validate physical-phone ergonomics, keyboard/safe areas, Android/iOS fullscreen support, audio, shot-impact accuracy and sustained performance with the user.
 - [ ] Finalize only with user approval. This pass is **browser verified**, not physical-device verified.
 
+## 4.3 Mobile performance pass — 2026-10-11
+- [x] Inspect Android capture: sustained ~20–23 FPS, slow frames even without chunk work/enemies; avoid treating chunk pumping as the sole bottleneck.
+- [x] Split terrain/water construction into cooperative slices (3ms mobile target); retain old upgraded chunks until replacements finish, cancel/release partial builds on requeue/restart, and preserve edits made during construction.
+- [x] Queue late environment-asset refresh instead of synchronously rebuilding the whole world during gameplay.
+- [x] Instance repeated shared scenery per chunk while preserving individual resource raycasts, colliders, harvest shrinking/removal and save identity; compact matching opaque resource parts.
+- [x] Cache deterministic map tile colors; avoid rewriting unchanged HUD text; remove unused background combat-target raycast.
+- [x] Apply saved graphics quality at startup, resize and selection; keep mobile shadows off. Mobile render scales: Low 0.85, Medium 1.0, High 1.25, capped by device DPR.
+- [x] Disable persistent drawing-buffer retention; verify immediate rendered PNG export still works.
+- [x] Wire Records operator level to the same saved XP-derived level as the header; remove fixed LEVEL 1 subtitle.
+- [x] Correct diagnostic core timings to cover every frame; add sample counts, map timings and draw-call average/min/max. New build tag: `mobile-perf-2`.
+- [x] Run 27 deterministic regression checks for batching, exact resource rays, harvest transforms/removal, edit preservation, atomic replacement, cancellation and queue drainage.
+- [x] Run 17 production-browser checks at **800×360, DPR 2, mobile/touch**: graphics selection/reload/orientation, real photo export, zero unchanged Wildcard text mutations, ~120m held-touch movement across chunks and drained queue, complete timing counts.
+- [x] Repeat 854×393 / 915×412 lobby/settings/gameplay browser audit after fixes: **180 checks, 42 screenshots, zero failures/page errors**. Inspect page/settings/combat screenshots.
+- [ ] Measure the new preview on the user's Android phone at the same graphics quality first; compare FPS/p95/slow frames and feel, then test Low/Medium separately.
+- [ ] Follow up on remaining CPU/GPU/browser scheduling stalls. The cooperative budget is a target, not a guaranteed hard maximum; cloud probes still show occasional long calls.
+- [ ] Finalize only with user approval. Browser verification is not proof of physical-phone performance.
+
 ## 5. Settings
 - [x] Make settings navigation actually switch sections. (code/source verified; mobile checks pending where relevant)
 - [x] Keep camera/aiming controls and HUD editor. (code/source verified; mobile checks pending where relevant)
@@ -122,3 +139,9 @@
 - 2026-10-11: Applied further short-landscape card density/touch-target refinements. Vercel build for `cf6c7a1a5` reported READY; exact mobile screenshot comparison still open.
 
 - 2026-10-11: Mobile landscape UI browser pass verified on the existing feature branch: inherited lobby grid tracks and Settings compression corrected; native-fullscreen Chromium mobile/touch regression passed 180 checks with 42 screenshots at both requested CSS viewport sizes. Physical-device review pending; NOT FINALIZED.
+
+## Follow-up ideas retained — 2026-10-11
+- [ ] Extend HUD customization to every HUD object, including minimap. Preserve saved Wildcard button position/size/opacity support.
+- [ ] Automatically reload an empty magazine when reserve ammo exists; preserve manual reload, dry-fire/no-reserve feedback, weapon switching and pause.
+- [ ] Later difficulty/world-design pass: relocate safe zones to more destinations with progressively longer travel.
+- Field Medic already exists; user identified likely accidental unequip during card inspection.

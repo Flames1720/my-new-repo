@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { compactStaticResource } from './static-meshes';
 
 type EnvironmentAssetKind = 'oak' | 'pine' | 'palm' | 'rock' | 'boulder';
 
@@ -39,6 +40,7 @@ function loadOne(kind: EnvironmentAssetKind): Promise<void> {
           object.castShadow = true;
           object.receiveShadow = true;
         });
+        compactStaticResource(template);
         markShared(template);
         templates.set(kind, template);
         resolve();
