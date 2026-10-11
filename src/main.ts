@@ -2422,7 +2422,7 @@ const WILDCARDS: WildcardDefinition[] = [
 ];
 type SurvivalMetaState = { xp: number; bestWave: number; bestTimeSeconds: number; totalRuns: number; totalKills: number; upgrades: Record<UpgradeKey, number>; waveClearCounts: Record<string, number>; unlockedWildcards: WildcardId[]; equippedWildcards: WildcardId[] };
 const SURVIVAL_META_KEY = 'island-outbreak-meta-v1' + (pilot.enabled ? ':' + pilot.userId : '');
-if (pilot.enabled && Object.keys(pilot.progress).length) localStorage.setItem(SURVIVAL_META_KEY, JSON.stringify(pilot.progress));
+if (pilot.enabled && typeof pilot.progress.xp === 'number') localStorage.setItem(SURVIVAL_META_KEY, JSON.stringify(pilot.progress));
 function loadSurvivalMeta(): SurvivalMetaState {
   const fallback: SurvivalMetaState = { xp: 0, bestWave: 0, bestTimeSeconds: 0, totalRuns: 0, totalKills: 0, upgrades: { health: 0, stamina: 0, damage: 0 }, waveClearCounts: {}, unlockedWildcards: ['shockwave', 'field-medic'], equippedWildcards: ['shockwave', 'field-medic'] };
   try {
@@ -2438,6 +2438,7 @@ function loadSurvivalMeta(): SurvivalMetaState {
   } catch { return fallback; }
 }
 let survivalMeta = loadSurvivalMeta();
+if (pilot.enabled) pilot.progress = { ...pilot.progress, ...survivalMeta };
 let lastMetaKills = 0;
 let lastMetaWave = 0;
 let lastSurvivalState: SurvivalStatus | null = null;

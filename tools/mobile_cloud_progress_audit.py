@@ -13,8 +13,12 @@ server={'xp':300,'hudLayout':{'shoot':{'x':25,'y':30,'size':60,'opacity':0.7}}}
 saves=[]
 with sync_playwright() as pw:
  browser=pw.chromium.launch(args=['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
- for visit in range(2):
+ for visit in range(3):
   context=browser.new_context(viewport={'width':854,'height':393},is_mobile=True,has_touch=True)
+  if visit==2:
+   local_progress=dict(server)
+   server={'hudLayout':server['hudLayout']}
+   context.add_init_script('localStorage.setItem('+json.dumps('island-outbreak-meta-v1:'+UID)+','+json.dumps(json.dumps(local_progress))+')')
   page=context.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
   def auth(route):route.fulfill(json=USER if '/user' in route.request.url else SESSION)
   def rpc(route):
@@ -40,15 +44,16 @@ with sync_playwright() as pw:
    page.wait_for_timeout(1800);assert server['hudLayout']['shoot']['size']==72 and server['xp']==180
   else:
    assert page.locator('#shootBtn').evaluate('e=>e.style.getPropertyValue("--hud-size")')=='72px'
-   assert server['upgrades']['health']==1
-   page.evaluate('window.testWindows=[];addEventListener("island-outbreak-performance",e=>testWindows.push(e.detail.windowMs))')
-   page.locator('#startRunBtn').tap()
-   page.wait_for_function('testWindows.length>0',timeout=30000)
-   page.evaluate('const originalNow=performance.now.bind(performance);performance.now=()=>originalNow()+125000')
-   page.wait_for_function('testWindows.length>1',timeout=30000)
-   page.wait_for_timeout(1200)
-   assert page.evaluate('testWindows.every(ms=>ms>=5000)'),page.evaluate('testWindows')
+   assert (server if visit==1 else local_progress)['upgrades']['health']==1
+   if visit==1:
+    page.evaluate('window.testWindows=[];addEventListener("island-outbreak-performance",e=>testWindows.push(e.detail.windowMs))')
+    page.locator('#startRunBtn').tap()
+    page.wait_for_function('testWindows.length>0',timeout=30000)
+    page.evaluate('const originalNow=performance.now.bind(performance);performance.now=()=>originalNow()+125000')
+    page.wait_for_function('testWindows.length>1',timeout=30000)
+    page.wait_for_timeout(1200)
+    assert page.evaluate('testWindows.every(ms=>ms>=5000)'),page.evaluate('testWindows')
   assert not errors,errors
   context.close()
  browser.close()
- print('PASS: HUD cloud restore, account-scoped cache, real XP display, upgrade cloud save, merged HUD/progression writes, fresh-browser restore and no short telemetry windows after two minutes. Auth/RPC transport explicitly mocked.')
+ print('PASS: HUD cloud restore, account-scoped cache, real XP display, upgrade cloud save, merged HUD/progression writes, fresh-browser restore, preservation of local progress with HUD-only cloud records and no short telemetry windows after two minutes. Auth/RPC transport explicitly mocked.')
