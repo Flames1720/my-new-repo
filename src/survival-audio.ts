@@ -18,6 +18,7 @@ class SoundEngine {
   private musicGain: GainNode | null = null;
   private musicTracks: HTMLAudioElement[] = [];
   private musicMode: 'lobby' | 'gameplay' | 'silent' = 'silent';
+  private lastSoundtrackMode: 'lobby' | 'gameplay' | null = null;
   private musicUnlocked = false;
   private musicVolume = 0.45;
 
@@ -36,6 +37,13 @@ class SoundEngine {
     if (mode === this.musicMode) return;
     this.musicMode = mode;
     this.musicTracks.forEach(track => track.pause());
+    // A new lobby/run soundtrack begins at zero. Silence from settings or a
+    // hidden tab preserves the current track's position for the same state.
+    if (mode !== 'silent' && mode !== this.lastSoundtrackMode) {
+      const track = this.musicTracks[mode === 'lobby' ? 0 : 1];
+      if (track) track.currentTime = 0;
+      this.lastSoundtrackMode = mode;
+    }
     this.playSelectedMusic();
   }
 

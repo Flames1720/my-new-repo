@@ -19,12 +19,16 @@ def run(url):
                 assert page.locator('audio').evaluate_all('(as)=>as.filter(a=>!a.paused).length')==1
             playing('chaos')
             for name in ['chaos','island-outbreak']:
-                if name=='island-outbreak':page.locator('#startRunBtn').tap();playing(name)
+                if name=='island-outbreak':
+                    page.locator('#startRunBtn').tap();playing(name)
+                    assert page.locator('audio[data-soundtrack="island-outbreak"]').evaluate('a=>a.currentTime<5')
                 page.wait_for_function('name=>Number.isFinite(document.querySelector(`audio[data-soundtrack="${name}"]`).duration)',arg=name)
                 page.locator(f'audio[data-soundtrack="{name}"]').evaluate('a=>a.currentTime=a.duration-.3')
                 page.wait_for_function('name=>document.querySelector(`audio[data-soundtrack="${name}"]`).currentTime<5',arg=name)
                 playing(name)
+                page.locator(f'audio[data-soundtrack="{name}"]').evaluate('a=>a.currentTime=35')
             page.locator('#survivalPauseBtn').tap();playing('island-outbreak')
+            assert page.locator('audio[data-soundtrack="island-outbreak"]').evaluate('a=>a.currentTime>=35')
             page.locator('#pauseSettingsBtn').tap();page.locator('[data-settings-tab="graphics"]').tap()
             slider=page.locator('#musicVolumeSlider');slider.scroll_into_view_if_needed()
             assert slider.is_visible()
@@ -48,7 +52,12 @@ def run(url):
             assert page.locator('audio').evaluate_all('(as)=>as.every(a=>a.paused)')
             page.evaluate('delete document.hidden;document.dispatchEvent(new Event("visibilitychange"))')
             playing('island-outbreak')
+            assert page.locator('audio[data-soundtrack="island-outbreak"]').evaluate('a=>a.currentTime>=35')
             page.locator('#leaveSurvivalBtn').tap();playing('chaos')
+            assert page.locator('audio[data-soundtrack="chaos"]').evaluate('a=>a.currentTime<5')
+            page.locator('#startRunBtn').tap();playing('island-outbreak')
+            assert page.locator('audio[data-soundtrack="island-outbreak"]').evaluate('a=>a.currentTime<5')
+            page.locator('#survivalPauseBtn').tap();page.locator('#leaveSurvivalBtn').tap();playing('chaos')
             page.reload(wait_until='domcontentloaded')
             page.wait_for_function('document.querySelector("#survivalLobby").classList.contains("show")',timeout=45000)
             if page.locator('#displayModeGate').is_visible():page.locator('#enterGameDisplayMode').tap()
@@ -66,7 +75,7 @@ def run(url):
             page.wait_for_timeout(300)
             assert page.locator('audio').evaluate_all('(as)=>as.length===2 && as.every(a=>a.paused)')
             assert not errors,errors
-            print(f'{width}x{height}: both tracks play and loop, exclusive switching, gameplay track retained during pause, independent music off/master mute, background suspension, controls accessible, preferences persisted; no page errors',flush=True)
+            print(f'{width}x{height}: both tracks play and loop, exclusive switching restarts each soundtrack, gameplay track retained during pause, independent music off/master mute, background suspension, controls accessible, preferences persisted; no page errors',flush=True)
             ctx.close()
         browser.close()
 if __name__=='__main__':
