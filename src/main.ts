@@ -1,3 +1,4 @@
+import { LobbyTour } from './lobby-tour';
 import { FirstRunTutorial } from './first-run-tutorial';
 import { GAME_BUILD } from './game-build';
 import { bindFullscreenAction, requestNativeFullscreen, supportsNativeFullscreen, browserDisplayGuidance } from './display-mode';
@@ -2894,6 +2895,8 @@ function updateAccelerationControlsUI() {
 }
 
 function openSettings(open: boolean) {
+  const tourButton = document.querySelector<HTMLButtonElement>('#lobbyTourBtn');
+  if (tourButton) { tourButton.disabled = survival?.enabled === true; tourButton.textContent = survival?.enabled ? 'Lobby tour · return to lobby first' : 'Lobby tour'; }
   const practiceButton = document.querySelector<HTMLButtonElement>('#practiceTutorialBtn');
   if (practiceButton) { practiceButton.disabled = survival?.enabled === true; practiceButton.textContent = survival?.enabled ? 'Practice tutorial · return to lobby first' : 'Practice tutorial'; }
   settingsOverlay.classList.toggle('show', open);
@@ -3203,7 +3206,7 @@ function syncDisplayMode(): void {
   document.body.classList.toggle('native-fullscreen', fullscreen);
   document.body.classList.toggle('display-mode-ready', ready);
   for (const layer of Array.from(document.body.children)) {
-    if (layer.id !== 'displayModeGate' && layer instanceof HTMLElement) layer.inert = !ready;
+    if (layer.id !== 'displayModeGate' && layer instanceof HTMLElement) layer.inert = !ready || (layer.id === 'survivalLobby' && document.body.classList.contains('lobby-tour-active'));
   }
   if (fullscreenBtn) fullscreenBtn.hidden = fullscreen || browserDisplayMode;
   if (!ready) hideAchievementReveal();
@@ -4310,6 +4313,29 @@ document.body.classList.add('survival-mode');
 survivalLobby?.classList.add('show');
 if (awardAchievements()) saveSurvivalMeta();
 showAchievementReveal();
+
+const lobbyTourKey = 'island-lobby-tour-v1:' + (pilot.userId || 'local');
+let lobbyTourCompleted = pilot.progress.lobbyTourCompleted === true;
+try { lobbyTourCompleted ||= localStorage.getItem(lobbyTourKey) === 'complete'; } catch {}
+const lobbyTour = survivalLobby ? new LobbyTour(survivalLobby, showLobbyPage, () => {
+  lobbyTourCompleted = true;
+  try { localStorage.setItem(lobbyTourKey, 'complete'); } catch {}
+  savePilotProgress({ lobbyTourCompleted: true });
+}) : undefined;
+const lobbyTourButton = document.querySelector<HTMLButtonElement>('#lobbyTourBtn');
+if (lobbyTourButton) bindAction(lobbyTourButton, () => {
+  if (survival.enabled) return;
+  openSettings(false);
+  lobbyTour?.start();
+});
+if (tutorialNewAccount && !tutorialCompleted && !lobbyTourCompleted) {
+  const readyForLobbyTour = () => document.body.classList.contains('display-mode-ready') && survivalLobby?.classList.contains('show') && !survival.enabled;
+  if (readyForLobbyTour()) lobbyTour?.start();
+  else {
+    const observer = new MutationObserver(() => { if (readyForLobbyTour()) { observer.disconnect(); lobbyTour?.start(); } });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  }
+}
 
 // Pointer/touch interaction is the browser-safe point to unlock procedural Web Audio.
 // Capture phase makes this work for the joystick and HUD buttons as well as the canvas.

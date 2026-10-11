@@ -1155,3 +1155,10 @@ Owner requested new-data-only telemetry uploads after games and reported a signu
 - Completion persists to account progress and a per-account local fallback. Accounts created before this release bypass automatic practice, including accounts without completed runs. Settings provides a lobby-only Practice tutorial button. Normal run restores resources and starts telemetry after practice.
 - Removed boxed combat status relays, retaining HUD feedback and plain wave/boss announcements.
 - Verified production build, mobile control bounds/hit targets at three landscape sizes, custom HUD preservation, and full interactive tutorial with mocked account transport.
+
+## 2026-10-11 — First-run lobby tour
+- Added a four-step visual tour of the real Mission, Field Kit and Wildcards pages and Settings entry. Describes starting weapons, starter cards, XP purchases and the shared upgrade balance.
+- Automatic tour follows the display gate for eligible first-time players; completion persists to account progress and per-account local storage. Existing players can replay from Settings → Camera & Controls → Lobby tour while in the lobby.
+- Next/Back navigation, keyboard focus containment, background input blocking, immediate visible panels and responsive highlighting. Finishing returns to Mission without changing equipment or spending XP.
+- Production build and full gameplay tutorial passed. Lobby tour audit verifies phone layouts, real pages, completion across reload, existing-account replay and unchanged loadout; no live account writes used in tests.
+- Added a discussion-only Quick Run proposal based on player feedback; gameplay modes and reward amounts are unchanged.
