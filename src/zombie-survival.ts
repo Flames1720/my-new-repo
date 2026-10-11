@@ -642,21 +642,59 @@ export class ZombieSurvivalSystem {
     // High-contrast chest strip gives each silhouette a readable focal point.
     const warningMat = new THREE.MeshBasicMaterial({ color: bossTier === 2 ? 0xff315b : bossTier === 1 ? 0xff8a35 : type === 'brute' ? 0xf1c453 : type === 'runner' ? 0xff6a35 : 0xd9e8b1 });
     const chestMark = makeMesh(new THREE.BoxGeometry(0.34, 0.095, 0.018), warningMat, 'zombie-chest-mark');
-    chestMark.position.set(0, 1.22, 0.158);
+    chestMark.position.set(0, 1.22, -0.158);
     root.add(chestMark);
 
     const head = makeMesh(new THREE.IcosahedronGeometry(0.22, 1), flesh, 'zombie-head');
-    head.scale.set(0.88, 1.08, 0.86);
+    head.scale.set(type === 'brute' ? 1.12 : type === 'runner' ? 0.78 : 0.88, type === 'runner' ? 1.16 : 1.08, 0.86);
     head.position.set(0, 1.68, -0.015);
     head.userData.survivalHead = true;
     root.add(head);
 
-    const eyeMat = new THREE.MeshBasicMaterial({ color: type === 'runner' ? 0xffbd55 : 0xf14a45 });
+    // Bake facial features into one vertex-colored mesh: sockets, brow, jaw and
+    // teeth stay readable on mobile without adding a draw call per feature.
+    const facePositions: number[] = [];
+    const faceNormals: number[] = [];
+    const faceColors: number[] = [];
+    const faceWidth = type === 'brute' ? 1.2 : type === 'runner' ? 0.85 : 1;
+    const skin = flesh.color.getHex();
+    const feature = (size: [number, number, number], position: [number, number, number], color: number, tilt = 0) => {
+      const geometry = new THREE.BoxGeometry(...size).toNonIndexed();
+      geometry.rotateZ(tilt);
+      geometry.translate(position[0] * faceWidth, position[1], position[2]);
+      const positions = geometry.getAttribute('position');
+      const normals = geometry.getAttribute('normal');
+      const tint = new THREE.Color(color);
+      for (let i = 0; i < positions.count; i++) {
+        facePositions.push(positions.getX(i), positions.getY(i), positions.getZ(i));
+        faceNormals.push(normals.getX(i), normals.getY(i), normals.getZ(i));
+        faceColors.push(tint.r, tint.g, tint.b);
+      }
+      geometry.dispose();
+    };
     for (const sign of [-1, 1]) {
-      const eye = makeMesh(new THREE.SphereGeometry(0.035, 5, 4), eyeMat, 'zombie-eye');
-      eye.position.set(sign * 0.075, 1.71, -0.2);
-      root.add(eye);
+      feature([0.105, 0.078, 0.035], [sign * 0.075, 1.715, -0.193], 0x20251d, sign * -0.14);
+      feature([0.043, 0.024, 0.015], [sign * 0.076, 1.714, -0.218], type === 'runner' ? 0xffbc62 : bossTier ? 0xff614b : 0xe5dd99);
+      feature([0.125, type === 'brute' ? 0.048 : 0.032, 0.045], [sign * 0.076, 1.766, -0.192], skin, sign * 0.18);
+      feature([0.065, 0.055, 0.038], [sign * 0.116, 1.65, -0.183], skin, sign * -0.2);
     }
+    feature([0.045, 0.078, 0.063], [0, 1.681, -0.217], skin);
+    feature([0.143, type === 'runner' ? 0.084 : 0.057, 0.03], [0, 1.602, -0.181], 0x29201e, -0.08);
+    feature([0.145, 0.044, 0.054], [0.008, 1.557, -0.15], skin, -0.08);
+    for (const x of [-0.047, -0.018, 0.039]) {
+      feature([0.019, 0.026, 0.014], [x, 1.624, -0.204], 0xc6baa0);
+    }
+    feature([0.019, 0.088, 0.014], [-0.135, 1.755, -0.153], 0x61443b, -0.28);
+    const faceGeometry = new THREE.BufferGeometry();
+    faceGeometry.setAttribute('position', new THREE.Float32BufferAttribute(facePositions, 3));
+    faceGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(faceNormals, 3));
+    faceGeometry.setAttribute('color', new THREE.Float32BufferAttribute(faceColors, 3));
+    const face = makeMesh(faceGeometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }), 'zombie-face');
+    face.userData.survivalHead = true;
+    root.add(face);
+    // The runners are narrow and hunched; brutes carry a broader upper body.
+    torso.scale.set(type === 'brute' ? 1.24 : type === 'runner' ? 0.82 : 1, 1, 1);
+    if (type === 'runner') torso.rotation.x = -0.12;
 
     const makeLimb = (name: string, x: number, y: number, material: THREE.Material, size: [number, number, number]) => {
       const pivot = new THREE.Group();
