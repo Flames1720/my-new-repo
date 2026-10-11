@@ -1,3 +1,4 @@
+import { ReportOutbox } from './report-outbox';
 import { GAME_BUILD } from './game-build';
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import "./pilot.css";
@@ -17,14 +18,9 @@ const sessionId = crypto.randomUUID();
 let samples: Record<string, unknown>[] = [];
 let actions: Record<string, number> = {};
 let sending = false;
-let pending:
-  | {
-      samples: Record<string, unknown>[];
-      epoch: string;
-      sequence: number;
-      device: ReturnType<typeof device>;
-    }
-  | undefined;
+let outbox: ReportOutbox | undefined;
+let runActive = false;
+let sendingSequence: number | undefined;
 let retryAfter = 0;
 let failures = 0;
 let longTasks = 0;
@@ -35,12 +31,19 @@ const status = (node: HTMLElement, message: string) => {
 };
 const disclosure =
   "Share performance timings, frame rates, graphics settings, broad device information and counts of game actions to improve Island Outbreak. No passwords, typed text, audio or screen recordings are included. Reports are kept for up to 91 days and reviewed by the developer, potentially with AI analysis tools. Sharing is optional; you can play without it and turn it off in Game Data to delete your reports.";
-function setReporting(allowed: boolean) {
+function setReporting(allowed: boolean, purge = true) {
   pilot.consent = allowed;
-  capture.__islandOutbreakPerfEnabled = allowed;
+  capture.__islandOutbreakPerfEnabled = allowed && runActive;
   samples = [];
   actions = {};
-  pending = undefined;
+  if (!allowed && purge) { outbox?.clear();
+    if (pilot.userId) { try { localStorage.removeItem('island-report-outbox:' + pilot.userId); } catch {} }
+  }
+  else {
+    outbox = new ReportOutbox(localStorage, 'island-report-outbox:' + pilot.userId);
+    outbox.batches = outbox.batches.filter(b => b.epoch === pilot.epoch);
+    outbox.persist();
+  }
   retryAfter = 0;
   failures = 0;
   observer?.disconnect();
@@ -57,7 +60,7 @@ function setReporting(allowed: boolean) {
   }
 }
 export function recordPilotAction(id: string) {
-  if (!pilot.consent) return;
+  if (!pilot.consent || !runActive) return;
   const known =
     /^(shoot|reload|jump|slide|aim|pause|resume|restart|leaveSurvival|map|wildcard|hud|settings|graphics)/i;
   if (!known.test(id)) return;
@@ -87,49 +90,50 @@ function device() {
     dpr: devicePixelRatio,
   };
 }
+function queueSamples(): void {
+  if (!pilot.consent || !outbox) return;
+  while (samples.length) {
+    const last = outbox.batches[outbox.batches.length - 1];
+    if (last?.sessionId === sessionId && !last.sealed && last.sequence !== sendingSequence && last.samples.length < 12) {
+      last.samples.push(...samples.splice(0, 12 - last.samples.length)); outbox.persist();
+    } else outbox.add({ samples: samples.splice(0, 12), epoch: pilot.epoch,
+      sequence: sequence++, sessionId, build: GAME_BUILD, device: device() });
+  }
+}
+export function startPilotRun(): void {
+  if (runActive) finishPilotRun();
+  runActive = true; actions = {}; longTasks = 0;
+  capture.__islandOutbreakPerfEnabled = pilot.consent;
+}
+export function finishPilotRun(): void {
+  runActive = false;
+  capture.__islandOutbreakPerfEnabled = false;
+  queueSamples();
+  void flush();
+}
 async function flush() {
-  if (
-    !client ||
-    !pilot.consent ||
-    sending ||
-    (!pending && !samples.length) ||
-    !navigator.onLine ||
-    Date.now() < retryAfter
-  )
-    return;
+  if (!client || !pilot.consent || runActive || sending || !outbox?.batches.length || !navigator.onLine || Date.now() < retryAfter) return;
   sending = true;
-  const batch = (pending ||= {
-    samples: samples.splice(0, 12),
-    epoch: pilot.epoch,
-    sequence: sequence++,
-    device: device(),
-  });
+  const batch = outbox.batches[0];
+  batch.sealed = true; outbox.persist();
+  sendingSequence = batch.sessionId === sessionId ? batch.sequence : undefined;
   try {
-    const { error } = await client.rpc("pilot_report", {
-      epoch: batch.epoch,
-      session_id: sessionId,
-      sequence: batch.sequence,
-      build: GAME_BUILD,
-      device: batch.device,
-      samples: batch.samples,
-    });
+    const { error } = await client.rpc('pilot_report', { epoch: batch.epoch,
+      session_id: batch.sessionId, sequence: batch.sequence, build: batch.build,
+      device: batch.device, samples: batch.samples });
     if (error) throw error;
-    if (pending === batch) pending = undefined;
-    failures = 0;
-    retryAfter = 0;
+    if (pilot.consent && pilot.epoch === batch.epoch) outbox?.acknowledge(batch);
+    failures = 0; retryAfter = 0;
   } catch {
-    if (pilot.consent && pilot.epoch === batch.epoch) {
-      failures++;
-      retryAfter =
-        Date.now() + Math.min(300000, 15000 * 2 ** Math.min(failures, 5));
-    }
+    failures++; retryAfter = Date.now() + Math.min(300000, 15000 * 2 ** Math.min(failures, 5));
   } finally {
-    sending = false;
+    sending = false; sendingSequence = undefined;
+    if (!runActive && failures === 0 && outbox?.batches.length) setTimeout(() => void flush(), 1000);
   }
 }
 function setupReports() {
   addEventListener("island-outbreak-performance", (event) => {
-    if (!pilot.consent) return;
+    if (!pilot.consent || !runActive) return;
     const d = (event as CustomEvent<Record<string, number>>).detail;
     const sample: Record<string, unknown> = { actions, longTasks };
     actions = {};
@@ -180,12 +184,11 @@ function setupReports() {
     ).frameHistogram;
     if (histogram) sample.histogram = histogram;
     samples.push(sample);
-    samples = samples.slice(-24);
-    if (samples.length >= 6) void flush();
+    queueSamples();
   });
   // The game finishes each capture after two minutes; rearm on the next task only with consent.
   setInterval(() => {
-    if (pilot.consent) capture.__islandOutbreakPerfEnabled = true;
+    if (pilot.consent && runActive) capture.__islandOutbreakPerfEnabled = true;
     void flush();
   }, 30000);
   const recordButton = (e: Event) => {
@@ -202,13 +205,13 @@ function setupReports() {
     true,
   );
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) void flush();
+    if (document.hidden) queueSamples();
   });
   addEventListener("error", () => {
-    if (pilot.consent) actions.runtimeError = (actions.runtimeError || 0) + 1;
+    if (pilot.consent && runActive) actions.runtimeError = (actions.runtimeError || 0) + 1;
   });
   addEventListener("unhandledrejection", () => {
-    if (pilot.consent)
+    if (pilot.consent && runActive)
       actions.unhandledRejection = (actions.unhandledRejection || 0) + 1;
   });
 }
@@ -276,7 +279,8 @@ function settings(admin: boolean) {
   const logout = document.createElement("button");
   logout.textContent = "SIGN OUT";
   logout.onclick = async () => {
-    setReporting(false);
+    queueSamples();
+    setReporting(false, false);
     await client!.auth.signOut();
     location.reload();
   };
@@ -304,7 +308,7 @@ export async function initializePilot() {
   document.body.classList.add("pilot-auth");
   document.body.append(overlay);
   const card = overlay.querySelector<HTMLElement>("section")!;
-  const message = card.querySelector<HTMLElement>('[role="status"]')!;
+  const message = card.querySelector<HTMLElement>('[role="status"]:not([data-availability])')!;
   if (
     !env.VITE_SUPABASE_URL ||
     !env.VITE_SUPABASE_PUBLISHABLE_KEY ||
@@ -341,6 +345,11 @@ export async function initializePilot() {
   const refreshVisibleSpots = () => { if (!document.hidden) void refreshSpots(); };
   document.addEventListener('visibilitychange', refreshVisibleSpots);
   await new Promise<void>((resolve) => {
+    let authRequestPending = false;
+    const lockAuth = (locked: boolean) => {
+      authRequestPending = locked;
+      for (const button of Array.from(card.querySelectorAll<HTMLButtonElement>('form button'))) button.disabled = locked;
+    };
     let working = false;
     const enter = async () => {
       if (working || pilot.canPlay) return;
@@ -434,14 +443,20 @@ export async function initializePilot() {
     };
     form.onsubmit = async (e) => {
       e.preventDefault();
+      if (authRequestPending) return;
+      lockAuth(true);
+      try {
       status(message, "Signing in…");
       const { error } = await client!.auth.signInWithPassword(credentials());
       if (error) status(message, error.message);
       else await enter();
+      } finally { lockAuth(false); }
     };
     card.querySelector<HTMLButtonElement>("[data-signup]")!.onclick =
       async () => {
-        if (!form.reportValidity()) return;
+        if (authRequestPending || !form.reportValidity()) return;
+        lockAuth(true);
+        try {
         const { error } = await client!.auth.signUp({
           ...credentials(),
           options: { emailRedirectTo: location.origin },
@@ -449,12 +464,16 @@ export async function initializePilot() {
         status(
           message,
           error
-            ? error.message
+            ? (error.message.includes("Database error saving new user") ? "Account creation could not finish. If you already requested this account, check your confirmation email (including spam/junk), or try SIGN IN / RESET PASSWORD. Otherwise wait a minute and try again." : error.message)
             : "Check your email to confirm your account, then sign in. If you don’t see it, check your spam or junk folder. A place is assigned after confirmation.",
         );
+        } finally { lockAuth(false); }
       };
     card.querySelector<HTMLButtonElement>("[data-reset]")!.onclick =
       async () => {
+        if (authRequestPending) return;
+        lockAuth(true);
+        try {
         const { error } = await client!.auth.resetPasswordForEmail(
           credentials().email,
           { redirectTo: location.origin + "/?recovery=1" },
@@ -465,6 +484,7 @@ export async function initializePilot() {
             ? error.message
             : "If that account exists, a password reset email has been requested. If you don’t see it, check your spam or junk folder.",
         );
+        } finally { lockAuth(false); }
       };
     client!.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
@@ -487,7 +507,7 @@ export async function initializePilot() {
           }
         };
       } else if (event === "SIGNED_OUT" && pilot.canPlay) {
-        setReporting(false);
+        setReporting(false, false);
         location.reload();
       }
     });
@@ -534,7 +554,8 @@ export async function fetchControlCenter(days: number, build: string | null): Pr
 }
 
 export async function signOutPilot(): Promise<void> {
-  setReporting(false);
+  queueSamples();
+  setReporting(false, false);
   if (client) {
     const { error } = await client.auth.signOut();
     if (error) throw error;

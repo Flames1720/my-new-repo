@@ -2,7 +2,7 @@ import { GAME_BUILD } from './game-build';
 import { bindFullscreenAction, requestNativeFullscreen, supportsNativeFullscreen, browserDisplayGuidance } from './display-mode';
 import { ACHIEVEMENTS, achievementValue, eligibleAchievements, type AchievementProgress } from './achievements';
 import { findSanctuarySites } from './sanctuary-sites';
-import { initializePilot, pilot, savePilotProgress } from './pilot';
+import { initializePilot, pilot, savePilotProgress, startPilotRun, finishPilotRun } from './pilot';
 await initializePilot();
 import * as THREE from 'three';
 import './style.css';
@@ -4126,6 +4126,7 @@ survival = new ZombieSurvivalSystem({
 function recordSurvivalRun(result: 'OVERRUN' | 'VICTORY', state: SurvivalStatus | null = null) {
   if (runResultShown) return;
   runResultShown = true;
+  finishPilotRun();
   const wave = state?.wave ?? survival.wave;
   const kills = state?.kills ?? survival.kills;
   const duration = state?.durationSeconds ?? lastSurvivalState?.durationSeconds ?? 0;
@@ -4192,6 +4193,7 @@ function releaseSurvivalInputs() {
 
 function beginSurvivalRun(selectedWeapon: SurvivalWeaponId) {
   if (!document.body.classList.contains('display-mode-ready')) return;
+  startPilotRun();
   runResultShown = false;
   survivalDeathOverlay?.classList.remove('show');
   for (const id of Object.keys(wildcardCooldowns) as WildcardId[]) delete wildcardCooldowns[id];
@@ -4237,6 +4239,7 @@ if (resumeRunBtn) bindAction(resumeRunBtn, () => {
 if (pauseSettingsBtn) bindAction(pauseSettingsBtn, () => openSettings(true));
 if (restartPausedRunBtn) bindAction(restartPausedRunBtn, () => beginSurvivalRun(survival.weapon));
 if (leaveSurvivalBtn) bindAction(leaveSurvivalBtn, () => {
+  finishPilotRun();
   survivalPauseOverlay?.classList.remove('show');
   setSurvivalEnabled(false);
   survivalLobby?.classList.add('show');
