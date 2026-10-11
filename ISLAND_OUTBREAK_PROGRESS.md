@@ -60,6 +60,7 @@
 - [x] Move currency/level beside signal in compact header; prevent navigation overlap (committed, preview build READY).
 - [x] Use two-column Mission layout so map and statistics are visible together (committed, preview build READY).
 - [x] Remove legacy 9:16 aspect ratio in lobby Wildcards; render six compact cards across and two rows for ten cards (committed, preview build READY).
+- [x] Apply extra CSS-viewport-height rules so both rows fit more reliably on short landscape phones; preserve 40px Deploy/navigation targets (Vercel build READY; device check pending).
 - [x] Display Records operator slots and stats in side-by-side groups; compact Challenges and other wrappers (committed, preview build READY).
 - [x] Replace runtime settings control tagging with four real mutually exclusive page containers; place old background diagnostics under Diagnostics (committed, preview build READY).
 - [x] Raise Settings layer above lobby and keep inactive categories hidden/inert (committed, preview build READY).
@@ -103,3 +104,4 @@
 - 2026-10-10: Latest gameplay-code preview at commit `fa031e5` reported Vercel READY. TypeScript+Vite build passed; **on-device accuracy/input/UI/performance validation still pending**. Work remains NOT FINALIZED.
 - 2026-10-10: Added saved master and SFX volume sliders; replaced fixed per-shot volume override with preferences. Awaiting final combined preview build and Android sound check.
 - 2026-10-11: User screenshot review identified oversized navigation/footer, clipped Mission, 9:16 Wildcards, and settings all together. Applied 2-column Mission, compact shell, 6-across Wildcards, side-by-side records, and real settings pages. Inline local background diagnostics now injects only into Diagnostics. Vercel preview for `bc2eae87d8` reported READY. Android visual/touch regression check pending; project remains NOT FINALIZED.
+- 2026-10-11: Applied further short-landscape card density/touch-target refinements. Vercel build for `cf6c7a1a5` reported READY; exact mobile screenshot comparison still open.
