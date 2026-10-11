@@ -1142,3 +1142,6 @@ Native HTML fullscreen is unavailable on some Safari/iPhone versions. Detect sta
 
 ### October 11 authorized World V2 production merge
 Owner explicitly authorized merging all current World V2 changes into main. Added capability-based fullscreen fallback guidance for all browsers, with iPhone/iPad Safari page-menu Hide Toolbar and Share/Add to Home Screen instructions. Guidance states availability/version limits and does not claim script can hide browser chrome. Fullscreen requests continue to use direct user gestures and native/prefixed APIs. Build and touch fallback audit passed before merge.
+
+### October 11 live pilot availability and request budget
+Added public aggregate-only availability RPC and sign-in label with 30-second visible-page polling, return-to-tab refresh and cleanup after admission. Capacity remains server enforced; claiming occurs after confirmation/first sign-in. Hosted anonymous execution verified remaining14/cap20, with no player SELECT or analytics EXECUTE access; security advisors unchanged. Documented application request estimates and SQL-work caveats in docs/database-request-budget.md. Build/typecheck passed.
