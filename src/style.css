@@ -2280,8 +2280,19 @@ body.survival-mode #surveyBtn{display:none!important}
   #survivalLobby .lobbyQuickStats{margin:8px 0 5px;gap:5px}
   #survivalLobby .lobbyHomeSummary{margin-top:4px}
   #survivalLobby .lobbyFooter #startRunBtn{height:36px;min-height:36px}
-  #survivalLobby .wildcardCollection .wildcardCard{height:clamp(105px,22dvh,135px)!important}
-  #survivalLobby .wildcardCollection .wildcardFront .wildcardArt{max-height:55px}
+  #survivalLobby .lobbyWildcards{padding:6px 9px}
+  #survivalLobby .wildcardIntro{margin-bottom:4px;font-size:9px}
+  #survivalLobby .wildcardCollection{gap:6px!important}
+  #survivalLobby .wildcardCollection .wildcardCard{height:clamp(78px,21dvh,104px)!important}
+  #survivalLobby .wildcardCollection .wildcardFace{padding:5px!important;gap:2px}
+  #survivalLobby .wildcardCollection .wildcardFront .wildcardArt{max-height:35px}
+  #survivalLobby .wildcardCollection .wildcardFront>strong{font-size:8px!important;line-height:1}
+  #survivalLobby .wildcardCollection .wildcardFront>i{font-size:7px!important}
+  #survivalLobby .lobbyPartyPanel.lobbyPage.active{padding:10px 12px;gap:7px}
+  #survivalLobby .lobbyOperator{min-height:48px;padding:6px}
+  #survivalLobby .lobbyPanelMetric{padding:7px;gap:3px}
+  #survivalLobby .lobbyPanelMetric strong{font-size:14px}
+  #survivalLobby .lobbyOpsNote{display:none}
   #settingsOverlay .settingsCard{height:calc(100dvh - 12px)}
 }
 @media (orientation:portrait){
