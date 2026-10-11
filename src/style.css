@@ -2271,7 +2271,7 @@ body.survival-mode #surveyBtn{display:none!important}
 #settingsOverlay .settingsPage[data-settings-page="player"]{grid-template-columns:minmax(0,1fr)}
 #settingsOverlay .settingGroup[hidden]{display:none!important}
 @media (orientation:landscape) and (max-height:540px){
-  #survivalLobby .survivalLobbyCard{grid-template-rows:35px 32px minmax(0,1fr) 46px}
+  #survivalLobby .survivalLobbyCard{grid-template-rows:40px 32px minmax(0,1fr) 46px}
   #survivalLobby .lobbyHeaderRight{gap:8px}
   #survivalLobby .lobbyTopline .lobbyMark{font-size:9px}
   #survivalLobby .lobbyNav button{padding:0 10px;font-size:9px}
@@ -2279,7 +2279,7 @@ body.survival-mode #surveyBtn{display:none!important}
   #survivalLobby .missionVisual .lobbyMissionBoard{height:clamp(118px,33dvh,170px)}
   #survivalLobby .lobbyQuickStats{margin:8px 0 5px;gap:5px}
   #survivalLobby .lobbyHomeSummary{margin-top:4px}
-  #survivalLobby .lobbyFooter #startRunBtn{height:36px;min-height:36px}
+  #survivalLobby .lobbyFooter #startRunBtn{height:40px;min-height:40px}
   #survivalLobby .lobbyWildcards{padding:6px 9px}
   #survivalLobby .wildcardIntro{margin-bottom:4px;font-size:9px}
   #survivalLobby .wildcardCollection{gap:6px!important}
