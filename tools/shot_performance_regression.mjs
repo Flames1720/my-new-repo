@@ -26,6 +26,7 @@ root.position.x=0;wall.rotation.y=Math.PI/2;assert(ray.intersectObjects(index.pr
 const deps={
  './terrain':data('export const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));'),
  './survival-weapons':await module('survival-weapons'), './combat-effects':await module('combat-effects'),
+ './hunter-brain':await module('hunter-brain'),
  './shot-targets':await module('shot-targets'),'./zombie-body':await module('zombie-body'),
  './survival-audio':data('export const survivalSound=new Proxy({}, {get:()=>()=>{}});'),
  './settings':data('export const settings={current:{audioMaster:1,audioSfx:1}};')

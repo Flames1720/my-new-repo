@@ -13,6 +13,7 @@ async function module(name, dependencies = {}) {
 const weapons = await module('survival-weapons');
 const effects = await module('combat-effects');
 const controller = await module('zombie-survival', {
+  './hunter-brain': await module('hunter-brain'),
   './shot-targets': await module('shot-targets'),
   './zombie-body': await module('zombie-body'),
   './terrain': data('export const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));'),
@@ -73,3 +74,20 @@ game.update(2,false,false);assert(!events.includes('spawn'));
 game.update(3,false,false);assert(events.includes('spawn'));
 game.spawnZombie=realSpawn;
 console.log('PASS: first and later wave announcements clear before enemies, including delayed frames');
+
+// Preview duel: one ordinary body/health enemy; tactics never grant invulnerability.
+game.restart();game.enabled=true;game.options.hunterPreview=true;game.zones=[];game.options.canSpawnAt=()=>true;
+game.options.onStatus=()=>{};game.spawnZombie();const hunter=game.zombies[0];
+assert.equal(game.zombies.length,1);assert.equal(hunter.hp,90);assert.equal(hunter.damage,15);assert.equal(hunter.bossTier,0);assert.equal(hunter.root.scale.x,1);assert(hunter.hunter);
+game.spawnZombie();assert.equal(game.zombies.length,1);
+hunter.position.copy(camera.position);hunter.position.x+=1;hunter.lastAttack=-100;
+const hp=game.health;game.updateZombie(hunter,.016,camera.position,false);assert.equal(game.health,hp);assert(game.hunterWindup>0);
+camera.position.x-=10;game.updateZombie(hunter,.3,camera.position,false);assert.equal(game.health,hp,'moving out of reach avoids windup attack');
+game.damageZombie(hunter,45,false);assert.equal(hunter.hp,45);game.damageZombie(hunter,45,false);assert(hunter.dead);assert(game.runComplete);assert.equal(game.waveQueue,0);
+game.restart();assert.equal(game.hunterWindup,0);assert.equal(game.zombies.length,0);
+console.log('PASS: 1v1 normal size/HP/damage, one enemy only, telegraphed avoidable attack, ordinary damage and duel victory/reset');
+game.enabled=true;game.beginPreparation(12);game.update(.016,false,false);assert.equal(game.wave,0);assert.equal(game.zombies.length,0);
+game.update(12,false,false);assert.equal(game.wave,1);assert.equal(game.zombies.length,0);
+game.options.canSpawnAt=()=>false;game.update(3,false,false);assert.equal(game.waveQueue,1);assert.equal(game.zombies.length,0);
+game.options.canSpawnAt=()=>true;game.update(3,false,false);assert.equal(game.zombies.length,1);assert.equal(game.waveQueue,0);
+console.log('PASS: full duel preparation respected; failed spawn placement retries instead of advancing waves');

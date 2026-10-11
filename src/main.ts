@@ -1,3 +1,4 @@
+import { HUNTER_PREVIEW } from './hunter-brain';
 import { LobbyTour } from './lobby-tour';
 import { FirstRunTutorial } from './first-run-tutorial';
 import { GAME_BUILD } from './game-build';
@@ -2527,6 +2528,7 @@ function updateLobbyProgressionUi(): void {
   }
 }
 function saveSurvivalMeta(): void {
+  if (HUNTER_PREVIEW) return;
   try { localStorage.setItem(SURVIVAL_META_KEY, JSON.stringify(survivalMeta)); } catch {}
   try { localStorage.setItem('island-outbreak-best-wave' + (pilot.enabled ? ':' + pilot.userId : ''), String(survivalMeta.bestWave)); } catch {}
   savePilotProgress({ ...survivalMeta });
@@ -2551,6 +2553,7 @@ function purchaseWildcard(id: WildcardId): void {
 }
 
 function awardAchievements(): boolean {
+  if (HUNTER_PREVIEW) return false;
   const rewards = eligibleAchievements(survivalMeta, survivalMeta.earnedAchievements);
   for (const reward of rewards) {
     survivalMeta.earnedAchievements.push(reward.id);
@@ -4017,7 +4020,8 @@ survival = new ZombieSurvivalSystem({
     };
     return sightBlockerCache.filter(isVisibleInWorld);
   },
-  safeZones: survivalSanctuaries,
+  safeZones: HUNTER_PREVIEW ? [] : survivalSanctuaries,
+  hunterPreview: HUNTER_PREVIEW,
   lowPowerMode: LOW_POWER_MODE,
   respawnPlayer: () => {
     const start = survivalSanctuaries[0];
@@ -4066,12 +4070,13 @@ survival = new ZombieSurvivalSystem({
     }
     if (state.wave > lastEventWave) {
       lastEventWave = state.wave;
-      if (state.wave > 0 && state.waveIntroActive && !state.livingZombies) announceSurvivalEvent(`WAVE ${state.wave}`, state.wave >= 5 && state.wave % 5 === 0 ? 'boss-warning' : 'wave-start');
+      if (state.wave > 0 && state.waveIntroActive && !state.livingZombies) announceSurvivalEvent(HUNTER_PREVIEW ? 'HUNTER' : `WAVE ${state.wave}`, state.wave >= 5 && state.wave % 5 === 0 ? 'boss-warning' : 'wave-start');
     }
     if (!state.waveIntroActive || state.livingZombies || state.dead || !state.enabled) {
       clearTimeout(survivalEventHideTimer);
       survivalEventBanner?.classList.remove('show');
     }
+    if (!HUNTER_PREVIEW) {
     let metaChanged = false;
     const newKills = Math.max(0, state.kills - lastMetaKills);
     if (newKills > 0) {
@@ -4108,6 +4113,7 @@ survival = new ZombieSurvivalSystem({
     lastMetaKills = state.kills;
     lastMetaWave = state.wave;
     if (metaChanged) saveSurvivalMeta();
+    }
     setHudText(survivalHealthText, `${state.health} / ${state.maxHealth}`);
     if (survivalHealthBar) {
       survivalHealthBar.style.width = `${Math.max(0, Math.min(100, (state.health / state.maxHealth) * 100))}%`;
@@ -4123,10 +4129,11 @@ survival = new ZombieSurvivalSystem({
     setHudText(survivalAmmo, String(state.ammoInMag).padStart(2, '0'));
     setHudText(survivalReserve, state.reloading ? 'RELOADING' : `/ ${state.ammoReserve}`);
     setHudText(survivalKills, `KILLS ${state.kills}`);
-    setHudText(survivalWave, state.preparationSeconds ? `PREP ${state.preparationSeconds}s` : state.runComplete ? 'ISLAND SECURED' : state.wave ? `WAVE ${state.wave} / 100` : 'SAFE START');
+    setHudText(survivalWave, HUNTER_PREVIEW ? (state.preparationSeconds ? `PREP ${state.preparationSeconds}s` : 'HUNTER DUEL') : state.preparationSeconds ? `PREP ${state.preparationSeconds}s` : state.runComplete ? 'ISLAND SECURED' : state.wave ? `WAVE ${state.wave} / 100` : 'SAFE START');
     setHudText(survivalZombies, state.livingZombies ? `${state.livingZombies} INFECTED` : '');
     if (state.runComplete && !runResultShown) recordSurvivalRun('VICTORY', state);
-    if (survivalZoneStatus) {
+    if (survivalZoneStatus && HUNTER_PREVIEW) setHudText(survivalZoneStatus, '1v1 · No sanctuary');
+    if (survivalZoneStatus && !HUNTER_PREVIEW) {
       setHudText(survivalZoneStatus, state.zonePhase === 'weakening'
         ? `Sanctuary fading · ${Math.round(state.zoneIntegrity ?? 0)}%`
         : state.inSafeZone ? 'In sanctuary'
@@ -4161,21 +4168,21 @@ function recordSurvivalRun(result: 'OVERRUN' | 'VICTORY', state: SurvivalStatus 
   const wave = state?.wave ?? survival.wave;
   const kills = state?.kills ?? survival.kills;
   const duration = state?.durationSeconds ?? lastSurvivalState?.durationSeconds ?? 0;
-  const isNewWave = wave > survivalMeta.bestWave;
-  const isNewTime = duration > survivalMeta.bestTimeSeconds;
+  const isNewWave = !HUNTER_PREVIEW && wave > survivalMeta.bestWave;
+  const isNewTime = !HUNTER_PREVIEW && duration > survivalMeta.bestTimeSeconds;
   if (isNewWave) survivalMeta.bestWave = wave;
   if (isNewTime) survivalMeta.bestTimeSeconds = duration;
-  survivalMeta.totalRuns++;
-  addSurvivalXp(result === 'VICTORY' ? 500 : Math.max(5, Math.round(wave * 0.5)));
+  if (!HUNTER_PREVIEW) survivalMeta.totalRuns++;
+  if (!HUNTER_PREVIEW) addSurvivalXp(result === 'VICTORY' ? 500 : Math.max(5, Math.round(wave * 0.5)));
   if (isNewWave) addSurvivalXp(100);
   if (isNewTime) addSurvivalXp(75);
   saveSurvivalMeta();
   const runXp = Math.max(0, survivalMeta.xp - runStartXp);
   const previousLevel = 1 + Math.floor(runStartEarnedXp / 150);
-  if (survivalResultEyebrow) survivalResultEyebrow.textContent = result === 'VICTORY' ? 'ISLAND SECURED' : 'SIGNAL LOST';
+  if (survivalResultEyebrow) survivalResultEyebrow.textContent = HUNTER_PREVIEW ? 'HUNTER PREVIEW' : result === 'VICTORY' ? 'ISLAND SECURED' : 'SIGNAL LOST';
   const title = document.querySelector('#survivalDeathTitle');
-  if (title) title.textContent = result === 'VICTORY' ? 'DAWN HOLDS' : 'ZOMBIE ATE YOUR BRAIN';
-  if (survivalResultCopy) survivalResultCopy.textContent = result === 'VICTORY' ? 'One hundred waves. The island is still standing.' : 'The island kept the score. Your run is now part of the record.';
+  if (title) title.textContent = HUNTER_PREVIEW ? (result === 'VICTORY' ? 'HUNTER DEFEATED' : 'OUTSMARTED') : result === 'VICTORY' ? 'DAWN HOLDS' : 'ZOMBIE ATE YOUR BRAIN';
+  if (survivalResultCopy) survivalResultCopy.textContent = HUNTER_PREVIEW ? 'Experimental duel · no XP or progression earned. Try another approach.' : result === 'VICTORY' ? 'One hundred waves. The island is still standing.' : 'The island kept the score. Your run is now part of the record.';
   if (survivalResultStats) survivalResultStats.innerHTML = `<span><strong>${formatRunTime(duration)}</strong>TIME SURVIVED</span><span><strong>${wave}</strong>WAVE REACHED</span><span><strong>${kills}</strong>INFECTED KILLS</span>`;
   const finalCallout = [isNewWave ? 'NEW BEST WAVE' : '', isNewTime ? 'NEW BEST TIME' : ''].filter(Boolean).join(' · ') || 'RUN COMPLETE';
   let shownLevel = previousLevel;
@@ -4251,7 +4258,7 @@ function beginSurvivalRun(selectedWeapon: SurvivalWeaponId, practice = false) {
   if (!document.body.classList.contains('display-mode-ready')) return;
   thumbAimLatched = false;
   firstRunTutorial?.stop();
-  const needsTutorial = practice || !tutorialCompleted;
+  const needsTutorial = !HUNTER_PREVIEW && (practice || !tutorialCompleted);
   survival.setTutorialMode(needsTutorial);
   if (!needsTutorial) startPilotRun();
   runResultShown = false;

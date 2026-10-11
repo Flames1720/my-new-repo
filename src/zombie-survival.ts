@@ -1,3 +1,4 @@
+import { HunterBrain } from './hunter-brain';
 import * as THREE from 'three';
 import { clamp } from './terrain';
 import { createWeaponRig, type SurvivalWeaponId, type WeaponRig, SURVIVAL_WEAPON_REGISTRY } from './survival-weapons';
@@ -73,6 +74,7 @@ export interface ZombieSurvivalOptions {
   getSightBlockers: () => THREE.Object3D[];
   safeZones: SafeZoneDefinition[];
   lowPowerMode: boolean;
+  hunterPreview?: boolean;
   respawnPlayer: () => void;
   notify: (message: string) => void;
   onStatus: (status: SurvivalStatus) => void;
@@ -174,6 +176,7 @@ interface ZombieActor {
   flesh: THREE.MeshStandardMaterial;
   clothing: THREE.MeshStandardMaterial;
   bodyMaterial: THREE.MeshStandardMaterial;
+  hunter?: HunterBrain;
 }
 
 interface LootDrop {
@@ -829,6 +832,7 @@ export class ZombieSurvivalSystem {
     if (actor.hp <= 0) {
       survivalSound.playZombieDeath();
       actor.dead = true;
+      if (actor.hunter) { this.runComplete = true; this.waveQueue = 0; }
       actor.deathAge = 0;
       this.kills++;
       if (actor.bossTier > 0) this.bossKills++;
@@ -879,6 +883,10 @@ export class ZombieSurvivalSystem {
     actor.phase += dt * actor.speed * 4.2;
     actor.root.position.set(actor.position.x, this.options.getTerrainHeight(actor.position.x, actor.position.z), actor.position.z);
 
+    if (actor.hunter) {
+      this.updateHunter(actor, dt, playerPos);
+      return;
+    }
     let dx = playerPos.x - actor.position.x;
     let dz = playerPos.z - actor.position.z;
     let dist = Math.hypot(dx, dz);
@@ -943,6 +951,46 @@ export class ZombieSurvivalSystem {
       actor.rightArm.rotation.x = swing * 0.7 - 0.18;
     }
   }
+
+  private hunterThinkTimer = 0;
+  private hunterVisible = false;
+  private hunterCoverPoint = new THREE.Vector3();
+  private hunterAim = new THREE.Vector3();
+  private updateHunter(actor: ZombieActor, dt: number, playerPos: THREE.Vector3): void {
+    const brain = actor.hunter!;
+    const dx=playerPos.x-actor.position.x,dz=playerPos.z-actor.position.z,dist=Math.hypot(dx,dz);
+    this.hunterThinkTimer -= dt;
+    if(this.hunterThinkTimer<=0){this.hunterThinkTimer=.12;this.hunterVisible=this.hasLineOfSight(actor.position,playerPos);}
+    this.camera.getWorldDirection(this.hunterAim);
+    const aimedAt=dist>.01 && (-dx*this.hunterAim.x-dz*this.hunterAim.z)/dist>.985;
+    brain.update({dt,x:actor.position.x,z:actor.position.z,playerX:playerPos.x,playerZ:playerPos.z,
+      visible:this.hunterVisible,noiseAudible:dist<18&&(this.options.getMovementSpeed?.()??0)>1.5,aimedAt,shotVisible:this.fireCooldown>0,
+      reloadAudible:this.reloadTimer>0&&dist<12,hpFraction:actor.hp/actor.maxHp,
+      canMove:(x,z)=>this.options.canOccupy(x,z)&&!(this.options.isWater(x,z)&&this.options.getWaterDepth(x,z)>.65),
+      covered:(x,z)=>{this.hunterCoverPoint.set(x,this.options.getTerrainHeight(x,z),z);return !this.hasLineOfSight(this.hunterCoverPoint,playerPos);},
+    });
+    const tx=brain.targetX-actor.position.x,tz=brain.targetZ-actor.position.z,length=Math.max(.001,Math.hypot(tx,tz));
+    const slow=this.pulseRemaining>0&&dist<=7.5?.45:1;
+    const stride=Math.min(length,brain.speed*Math.min(dt,.08)*slow);
+    this.moveZombie(actor,tx/length*stride,tz/length*stride);
+    actor.root.position.set(actor.position.x,this.options.getTerrainHeight(actor.position.x,actor.position.z),actor.position.z);
+    actor.root.rotation.y=Math.atan2(dx,dz);
+    const swing=Math.sin(actor.phase)*.66;
+    actor.leftLeg.rotation.x=swing;actor.rightLeg.rotation.x=-swing;
+    actor.leftArm.rotation.x=-swing*.7-.18;actor.rightArm.rotation.x=swing*.7-.18;
+    // Telegraph a committed close-range attack. Moving out of reach or behind cover defeats it.
+    if(this.hunterWindup>0){
+      this.hunterWindup-=dt;actor.leftArm.rotation.x=actor.rightArm.rotation.x=-1.3;
+      if(this.hunterWindup<=0){
+        if(Math.hypot(playerPos.x-actor.position.x,playerPos.z-actor.position.z)<=actor.attackRange+.2&&this.hasLineOfSight(actor.position,playerPos))this.damagePlayer(actor.damage);
+        actor.lastAttack=this.elapsed;brain.attacked();
+      }
+    }else if(dist<=actor.attackRange && this.elapsed-actor.lastAttack>=actor.attackCooldown && this.hunterVisible){
+      this.hunterWindup=.22;
+      survivalSound.playZombieGrowl(1.16);
+    }
+  }
+  private hunterWindup = 0;
 
   private hasLineOfSight(from: THREE.Vector3, to: THREE.Vector3): boolean {
     const origin = this.sightOrigin.copy(from);
@@ -1068,6 +1116,7 @@ export class ZombieSurvivalSystem {
   }
 
   private spawnZombie(): void {
+    if (this.options.hunterPreview && this.zombies.length) return;
     if (this.zombies.filter(z => !z.dead).length >= this.maxZombies) return;
     const player = this.options.getPlayerPosition();
     for (let attempt = 0; attempt < 14; attempt++) {
@@ -1079,6 +1128,12 @@ export class ZombieSurvivalSystem {
       const z = player.z + Math.sin(angle) * radius;
       if (this.inSafeZone(x, z) || this.options.isWater(x, z) && this.options.getWaterDepth(x, z) > 0.55) continue;
       if (!this.options.canOccupy(x, z) || this.options.canSpawnAt?.(x, z) === false) continue;
+      if (this.options.hunterPreview) {
+        const hunter=this.createZombie('walker',x,z);
+        hunter.hunter=new HunterBrain();hunter.hp=hunter.maxHp=90;hunter.speed=4.45;
+        hunter.damage=15;hunter.attackCooldown=1.12;hunter.brainTier=3;
+        hunter.root.name='cunning-hunter';this.zombies.push(hunter);return;
+      }
       const roll = Math.random();
       const nightFactor = clamp(this.options.getNightFactor?.() ?? 0, 0, 1);
       let type: ZombieActor['type'] = this.wave >= 3 && roll > 0.88 - nightFactor * 0.08 ? 'brute' : this.wave >= 2 && roll > 0.60 - nightFactor * 0.08 ? 'runner' : 'walker';
@@ -1190,7 +1245,7 @@ export class ZombieSurvivalSystem {
       this.preparationTimer = Math.max(0, this.preparationTimer - dt);
       if (this.preparationTimer === 0 && !this.hasEnteredHostileArea) {
         this.wave = 1;
-        this.waveQueue = 4;
+        this.waveQueue = this.options.hunterPreview ? 1 : 4;
         this.spawnTimer = 0;
         this.waveIntroTimer = 1.6;
         this.emitStatus();
@@ -1251,10 +1306,10 @@ export class ZombieSurvivalSystem {
 
     const playerPos = this.options.getPlayerPosition();
     const nearSafe = this.isPlayerProtected(playerPos.x, playerPos.z);
-    if (!this.tutorialMode && !nearSafe && !this.hasEnteredHostileArea) {
+    if (!this.tutorialMode && !nearSafe && !this.hasEnteredHostileArea && (!this.options.hunterPreview || this.preparationTimer === 0)) {
       this.hasEnteredHostileArea = true;
       this.wave = 1;
-      this.waveQueue = 4;
+      this.waveQueue = this.options.hunterPreview ? 1 : 4;
       this.spawnTimer = 0;
       this.waveIntroTimer = 1.6;
       this.emitStatus();
@@ -1272,8 +1327,9 @@ export class ZombieSurvivalSystem {
         this.spawnTimer += dt;
         if (this.spawnTimer >= 2.7 && this.zombies.filter(z => !z.dead).length < this.maxZombies) {
           this.spawnTimer = 0;
+          const countBeforeSpawn = this.zombies.length;
           this.spawnZombie();
-          this.waveQueue--;
+          if (!this.options.hunterPreview || this.zombies.length > countBeforeSpawn) this.waveQueue--;
         }
       } else if (this.zombies.every(z => z.dead) && this.zombies.length === 0) {
         this.breakTimer += dt;
@@ -1334,6 +1390,7 @@ export class ZombieSurvivalSystem {
     this.distanceMeters = 0;
     this.elapsed = 0;
     this.previousTravelPosition = null;
+    this.hunterWindup = 0; this.hunterThinkTimer = 0; this.hunterVisible = false;
     this.fieldEffects = {};
     this.wave = 0;
     this.preparationTimer = 0;

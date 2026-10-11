@@ -1183,3 +1183,10 @@ Owner requested new-data-only telemetry uploads after games and reported a signu
 - Moved sanctuary/boss/preparation notices to short 11px one-line top text, shortened sanctuary HUD status, and removed the direction-arrow overlay.
 - Added dotted player-to-nearest-sanctuary lines to rotating radar and full map, including the upcoming sanctuary during relocation.
 - Validation: production build, TypeScript lint, survival/controller delayed-frame tests, performance regressions, map-coordinate tests, and mobile UI audit with reduced motion.
+
+## 2026-10-11 — Separate Cunning Hunter 1v1 preview
+- Created preview/cunning-hunter without merging into main. One normal-sized 90 HP opponent with ordinary 15-damage melee attacks; no boss scaling or invulnerability.
+- Added movement interception, strafe observation, sustained-aim/muzzle dodges, cover selection, reload pressure, limited visual memory and approximate footstep investigation.
+- Added an avoidable melee windup and lateral recovery; capped tactical decisions/cover rays and retained collision, water and pulse checks.
+- Labelled the preview as a 1v1 lab, removed sanctuaries, ended the duel on the hunter's death, and excluded preview rewards/progression writes.
+- Validation: build/lint; tactical and actual controller tests; existing card/muzzle/shot regressions; mobile combat and preview duel checks.

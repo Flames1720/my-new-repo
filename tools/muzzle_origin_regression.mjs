@@ -13,6 +13,7 @@ async function module(name, dependencies = {}) {
 const weapons = await module('survival-weapons');
 const effects = await module('combat-effects');
 const controller = await module('zombie-survival', {
+  './hunter-brain': await module('hunter-brain'),
   './shot-targets': await module('shot-targets'),
   './zombie-body': await module('zombie-body'),
   './terrain': data('export const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));'),
