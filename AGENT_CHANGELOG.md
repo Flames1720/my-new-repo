@@ -1177,3 +1177,9 @@ Owner requested new-data-only telemetry uploads after games and reported a signu
 - Stored static scenery descendant transforms while keeping resource roots movable for harvest/instance sync.
 - Controlled local firing benchmark showed about 59–62% lower median cost and 25% fewer mesh raycast calls; this is not a phone FPS claim. Enemy counts and gameplay balance remain unchanged.
 - Validation: build; exact hit/door/hidden-source/body regressions; existing reload, card, resource and muzzle regressions; real WebGL model rendering and mobile mocked-transport combat checks.
+
+## 2026-10-11 — Unobstructed wave announcements and sanctuary navigation
+- Reserved the small centred banner for wave numbers only, with a brief 1.5-second lifetime. Added a simulation intro phase and synchronous clear before enemy spawning, including long frames; reset spawn timing between waves.
+- Moved sanctuary/boss/preparation notices to short 11px one-line top text, shortened sanctuary HUD status, and removed the direction-arrow overlay.
+- Added dotted player-to-nearest-sanctuary lines to rotating radar and full map, including the upcoming sanctuary during relocation.
+- Validation: production build, TypeScript lint, survival/controller delayed-frame tests, performance regressions, map-coordinate tests, and mobile UI audit with reduced motion.

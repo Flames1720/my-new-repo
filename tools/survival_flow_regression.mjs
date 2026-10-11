@@ -58,3 +58,18 @@ console.log(`${checks} auto-reload and real-terrain dry sanctuary checks passed;
 game.options.canSpawnAt=()=>false;game.zombies=[];game.spawnZombie();assert.equal(game.zombies.length,0);
 game.options.canSpawnAt=()=>true;game.spawnZombie();assert.equal(game.zombies.length,1);
 console.log("PASS: actual spawn controller respects building exclusion");
+
+// Wave announcements must end synchronously before spawning, including long frames.
+game.restart(); game.enabled=true; game.tutorialMode=false; game.zones=[];
+const events=[]; game.options.onStatus=state=>events.push(state.waveIntroActive?'intro':'clear');
+const realSpawn=game.spawnZombie.bind(game);
+game.spawnZombie=()=>{assert.equal(game.waveIntroTimer,0);assert.equal(events.at(-1),'clear');events.push('spawn');};
+game.update(.016,false,false);assert(events.includes('intro'));assert(!events.includes('spawn'));
+game.update(2,false,false);assert(!events.includes('spawn'));
+game.update(3,false,false);assert(events.includes('spawn'));
+game.waveQueue=0;game.zombies=[];game.breakTimer=7;game.spawnTimer=99;events.length=0;
+game.update(.016,false,false);assert.equal(game.wave,2);assert.equal(game.spawnTimer,0);assert.equal(events[0],'intro');
+game.update(2,false,false);assert(!events.includes('spawn'));
+game.update(3,false,false);assert(events.includes('spawn'));
+game.spawnZombie=realSpawn;
+console.log('PASS: first and later wave announcements clear before enemies, including delayed frames');
