@@ -964,3 +964,24 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Next tests:** Reproduce 40px-left symptom with stationary target at multiple ranges and ADS/hip modes; Android claw multi-touch; fullscreen exit/return and portrait rotation; inspect lobby card layout and all page actions; confirm save data, memory and frame time. Collect user audio files before implementing music.
 
 **Follow-up audio settings (same sprint):** Added persisted master-volume and sound-effects sliders (0–100%) to Graphics / Audio. `ZombieSurvivalSystem.activateAudio()` now reapplies saved values instead of overwriting preferences with hardcoded levels whenever firing/reloading. Browser audio and cross-session persistence still require device validation. Lobby/gameplay music files have not yet been provided.
+
+
+## 2026-10-11 — GPT-6 — landscape lobby density and settings page isolation
+
+**Branch:** `feature/zombie-survival-world-v2` only. **User confirmation:** screenshots of Mission, Wildcards, Challenges and Records at approximately 1536×691 reveal oversized vertical navigation/footer, clipped Mission text, overly tall portrait cards, and padded information panels. User reports settings still lining up together while scrolling.
+
+**Root causes from source:**
+- Lobby previously used 64px navigation + 54px branding + a bottom footer with large fixed spacing and 100px extra stage padding, despite landscape-height limitations.
+- Mission contents were a single vertical stack instead of taking advantage of landscape width.
+- `src/style.css` still declared `.wildcardCard {aspect-ratio: 9/16; height:auto}`, producing enormous portrait cards in the lobby.
+- Settings controls were all siblings, categorized by runtime `data-settings-section` tagging, and an inline log script also appended `#diagnosticsPanel` directly to `.settingsBody` without any category.
+- The settings overlay z-index (1000) was below the survival lobby (1200), making lobby settings layering unreliable.
+
+**Changes:**
+1. `index.html`: reorganized Mission as `.missionVisual` + `.missionDetails` columns; grouped Record operators and metrics into rows; moved currency/level from navigation to header; wrapped the existing controls into four explicit `.settingsPage` sections (Controls, Graphics / Audio, Player, Diagnostics) without changing input IDs or event hookups. Legacy character picker, profession and outfit controls remain present but hidden. Redirected inline background log injection into the Diagnostics section, preserving copy/clear behavior.
+2. `src/main.ts`: replaced dynamic `data-settings-section` group hiding with explicit panel switching, `hidden`, `inert`, aria-hidden and updated category titles, while retaining all settings bindings.
+3. `src/style.css`: gave the lobby a viewport-height grid shell with smaller nav/header/footer and a 40–46px Deploy touch target; Mission uses a real two-column layout. Wildcards are 6 per row, at fixed compact height with the old portrait aspect ratio canceled; Records use two operator columns and three parallel stats; Challenges use two parallel sections; large wrappers have lighter styling. Settings overlay now sits above lobby and uses separate compact grid pages. Responsive short-landscape and portrait fallbacks included.
+
+**Verification:** Vercel preview build for `bc2eae87d8` reported READY (TypeScript+Vite). This establishes build success, **not** screenshot/phone-layout or real-touch verification. The next Android review should check small landscape screenshots (especially 1536×691 or ~800×360 CSS pixels), Wildcards card flip/taps, secondary-page Deploy, Settings selection and diagnostics copy/clear, save data and landscape/fullscreen gate. No backend, game logic or previously undecided features deleted.
+
+**Status:** CHECKPOINT IMPLEMENTED; **NOT FINALIZED**. User visual feedback still required.
