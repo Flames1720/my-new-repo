@@ -33,6 +33,18 @@ for (const weapon of ['pistol','rifle','shotgun']) {
   game.reloadTimer=0;game.fireCooldown=0;game.ammo[weapon]={mag:0,reserve:0};game.fire();assert.equal(game.reloadTimer,0);checks++;
   game.reloadTimer=0;game.fireCooldown=0;game.ammo[weapon]={mag:0,reserve:9};game.fireHeld=true;game.update(.016,false,false);assert.ok(game.reloadTimer>0);checks++;game.fireHeld=false;
 }
+game.fireHeld=false;game.weapon='pistol';game.reloadTimer=0;game.ammo.pistol={mag:0,reserve:10};
+game.reload();const normalReload=game.reloadTimer;game.reloadTimer=0;
+assert(game.activateFieldEffect('quick-hands'));game.reload();assert.equal(game.reloadTimer,normalReload*.6);checks+=2;
+for(const id of ['steady-grip','reinforced-vest','sharpshooter','scavenger']){assert(game.activateFieldEffect(id));assert(game.fieldEffects[id]>0);checks+=2;}
+game.fieldEffects['quick-hands']=.01;game.update(.02,false,false);assert.equal(game.fieldEffects['quick-hands'],0);checks++;
+game.previousTravelPosition=null;game.distanceMeters=0;game.update(.016,false,false);camera.position.x+=.2;game.update(.016,false,false);assert(Math.abs(game.distanceMeters-.2)<1e-8);checks++;
+camera.position.x+=100;game.update(.016,false,false);assert(Math.abs(game.distanceMeters-.2)<1e-8);checks++;
+game.health=100;game.fieldEffects['reinforced-vest']=8;game.damagePlayer(20);assert.equal(game.health,87);checks++;
+game.fieldEffects['reinforced-vest']=0;game.damagePlayer(20);assert.equal(game.health,67);checks++;
+const boss=game.createZombie('walker',camera.position.x+5,camera.position.z,1);game.damageZombie(boss,100000,false);assert.equal(game.bossKills,1);game.damageZombie(boss,100000,false);assert.equal(game.bossKills,1);checks+=2;
+const originalWet=game.options.isWater;game.options.isWater=()=>true;camera.position.x+=.2;game.update(.016,false,false);assert(Math.abs(game.distanceMeters-.2)<1e-8);checks++;game.options.isWater=originalWet;
+game.bossKills=3;game.restart();assert.equal(game.bossKills,0);assert.equal(game.distanceMeters,0);assert.equal(game.elapsed,0);assert.deepEqual(game.fieldEffects,{});checks+=4;
 const {findSanctuarySites}=await import(await module('sanctuary-sites'));
 const world=await import(await module('world'));
 const sites=findSanctuarySites({originX:world.HOME_X,originZ:world.HOME_Z,limit:world.WORLD_RADIUS*world.SIZE,height:world.terrainHeightAt,wet:world.waterAt,buildingDistrict:(x,z)=>Math.hypot(x-world.HOME_X,z-world.HOME_Z)<30||Math.hypot(x-world.VILLAGE_X,z-world.VILLAGE_Z)<45});

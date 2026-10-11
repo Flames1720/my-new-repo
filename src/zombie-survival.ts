@@ -42,6 +42,8 @@ export interface SurvivalStatus {
   runComplete?: boolean;
   preparationSeconds?: number;
   durationSeconds?: number;
+  bossKills?: number;
+  distanceMeters?: number;
   skillCooldownSeconds?: number;
   zonePhase?: SafeZonePhase;
   zoneIntegrity?: number;
@@ -251,6 +253,18 @@ export class ZombieSurvivalSystem {
   private fireHeld = false;
   private muzzleTimer = 0;
   private elapsed = 0;
+  private bossKills = 0;
+  private distanceMeters = 0;
+  private previousTravelPosition: THREE.Vector3 | null = null;
+  private fieldEffects: Partial<Record<'quick-hands' | 'steady-grip' | 'reinforced-vest' | 'sharpshooter' | 'scavenger', number>> = {};
+  private activeReloadDuration = 1;
+
+  activateFieldEffect(id: 'quick-hands' | 'steady-grip' | 'reinforced-vest' | 'sharpshooter' | 'scavenger'): boolean {
+    if (!this.enabled || this.isDead) return false;
+    this.fieldEffects[id] = id === 'scavenger' ? 20 : id === 'reinforced-vest' ? 8 : 10;
+    return true;
+  }
+
   private spawnTimer = 0;
   private waveQueue = 0;
   private breakTimer = 0;
@@ -544,7 +558,7 @@ export class ZombieSurvivalSystem {
     // inaccuracy and centred shotgun pellet spread as intentional weapon behavior.
     const totalSpread = this.aimActive && definition.pellets === 1
       ? 0
-      : definition.spread * (this.aimActive ? 0.42 : 1);
+      : definition.spread * (this.aimActive ? 0.42 : 1) * (this.fieldEffects['steady-grip'] ? 0.5 : 1);
     const muzzle = new THREE.Vector3();
     activeRig?.muzzleFlash.getWorldPosition(muzzle);
     if (!activeRig) this.camera.getWorldPosition(muzzle);
@@ -566,7 +580,7 @@ export class ZombieSurvivalSystem {
         const actor = hit.object.userData.survivalZombie as ZombieActor | undefined;
         if (actor && !actor.dead) {
           const headshot = hit.object.userData.survivalHead === true;
-          const damage = definition.damage * (headshot ? 2.45 : 1);
+          const damage = definition.damage * (headshot ? 2.45 : 1) * (this.fieldEffects.sharpshooter ? 1.5 : 1);
           this.damageZombie(actor, damage, headshot, !registeredHit);
           registeredHit = true;
         } else {
@@ -591,7 +605,8 @@ export class ZombieSurvivalSystem {
       if (ammo.reserve <= 0) this.options.notify('No reserve ammunition');
       return;
     }
-    this.reloadTimer = definition.reloadTime;
+    this.activeReloadDuration = definition.reloadTime * (this.fieldEffects['quick-hands'] ? 0.6 : 1);
+    this.reloadTimer = this.activeReloadDuration;
     survivalSound.playReload();
     this.options.notify('RELOADING');
     this.emitStatus();
@@ -743,6 +758,7 @@ export class ZombieSurvivalSystem {
       actor.dead = true;
       actor.deathAge = 0;
       this.kills++;
+      if (actor.bossTier > 0) this.bossKills++;
       this.killedThisWave++;
       actor.root.rotation.z = -Math.PI / 2;
       actor.root.position.y = this.options.getTerrainHeight(actor.position.x, actor.position.z) + 0.25;
@@ -875,7 +891,7 @@ export class ZombieSurvivalSystem {
     this.activateAudio();
     survivalSound.playZombieAttack();
     survivalSound.playPlayerHurt();
-    this.health = Math.max(0, this.health - amount);
+    this.health = Math.max(0, this.health - Math.round(amount * (this.fieldEffects['reinforced-vest'] ? 0.65 : 1)));
     this.flashDamageTimer = 0.18;
     this.options.onDamage();
     this.options.notify(`TAKEN HIT · -${amount} HP`);
@@ -921,16 +937,17 @@ export class ZombieSurvivalSystem {
       drop.root.rotation.y += dt * 0.7;
       drop.root.position.y = this.options.getTerrainHeight(drop.root.position.x, drop.root.position.z) + 0.4 + Math.sin(this.elapsed * 2.2 + i) * 0.07;
       if (drop.root.position.distanceTo(playerPos) > 1.25) continue;
+      const pickupAmount = Math.round(drop.amount * (this.fieldEffects.scavenger ? 1.5 : 1));
       if (drop.kind === 'medkit') {
         if (this.health >= this.maxHealth) continue;
-        this.health = Math.min(this.maxHealth, this.health + drop.amount);
+        this.health = Math.min(this.maxHealth, this.health + pickupAmount);
         survivalSound.playPickup();
-        this.options.notify(`FIRST AID +${drop.amount} HP`);
+        this.options.notify(`FIRST AID +${pickupAmount} HP`);
       } else {
         const weaponAmmo = this.ammo[this.weapon];
-        weaponAmmo.reserve = Math.min(WEAPONS[this.weapon].reserveStart * 2, weaponAmmo.reserve + drop.amount);
+        weaponAmmo.reserve = Math.min(WEAPONS[this.weapon].reserveStart * 2, weaponAmmo.reserve + pickupAmount);
         survivalSound.playPickup();
-        this.options.notify(`AMMUNITION +${drop.amount}`);
+        this.options.notify(`AMMUNITION +${pickupAmount}`);
       }
       this.scene.remove(drop.root);
       disposeGroup(drop.root);
@@ -1082,6 +1099,15 @@ export class ZombieSurvivalSystem {
     // can share the same filtered sight-blocker array until the next simulation tick.
     this.currentSightBlockers = null;
     this.elapsed += dt;
+    for (const id of Object.keys(this.fieldEffects) as Array<keyof typeof this.fieldEffects>) this.fieldEffects[id] = Math.max(0, (this.fieldEffects[id] || 0) - dt);
+    const travelPosition = this.options.getPlayerPosition();
+    if (this.previousTravelPosition && !this.options.isWater(travelPosition.x, travelPosition.z) && !this.options.isWater(this.previousTravelPosition.x, this.previousTravelPosition.z)) {
+      const distance = Math.hypot(travelPosition.x - this.previousTravelPosition.x, travelPosition.z - this.previousTravelPosition.z);
+      // Ignore teleports/restarts and discontinuities rather than awarding travel.
+      if (distance <= Math.max(1, dt * 16)) this.distanceMeters += distance;
+    }
+    if (!this.previousTravelPosition) this.previousTravelPosition = new THREE.Vector3();
+    this.previousTravelPosition.copy(travelPosition);
     if (this.preparationTimer > 0) {
       this.preparationTimer = Math.max(0, this.preparationTimer - dt);
       if (this.preparationTimer === 0 && !this.hasEnteredHostileArea) {
@@ -1134,7 +1160,7 @@ export class ZombieSurvivalSystem {
       activeRig.root.rotation.z += (targetRotation.z + reloadDip * 0.16 - activeRig.root.rotation.z) * blend;
       if (activeRig.slideOrPump) {
         const baseZ = this.slideBaseZ.get(this.weapon) ?? activeRig.slideOrPump.position.z;
-        const reloadDuration = WEAPONS[this.weapon].reloadTime;
+        const reloadDuration = this.activeReloadDuration;
         const reloadProgress = this.reloadTimer > 0 ? 1 - this.reloadTimer / reloadDuration : 1;
         const travel = this.weapon === 'shotgun' ? 0.11 : 0.035;
         const reloadOffset = this.reloadTimer > 0 ? Math.sin(reloadProgress * Math.PI) * travel : 0;
@@ -1210,6 +1236,11 @@ export class ZombieSurvivalSystem {
     this.loot.length = 0;
     this.health = this.maxHealth;
     this.kills = 0;
+    this.bossKills = 0;
+    this.distanceMeters = 0;
+    this.elapsed = 0;
+    this.previousTravelPosition = null;
+    this.fieldEffects = {};
     this.wave = 0;
     this.preparationTimer = 0;
     this.skillCooldown = 0;
@@ -1285,6 +1316,7 @@ export class ZombieSurvivalSystem {
       livingZombies: living, inSafeZone: this.isPlayerProtected(p.x, p.z), runComplete: this.runComplete,
       preparationSeconds: Math.ceil(this.preparationTimer),
       durationSeconds: Math.max(0, Math.floor(this.elapsed)),
+      bossKills: this.bossKills, distanceMeters: this.distanceMeters,
       skillCooldownSeconds: Math.ceil(this.skillCooldown),
       nearestZone: guideZone?.label ?? 'SAFE ZONE',
       zoneDistance: guideZone ? Math.max(0, distToZone(p.x, p.z, guideZone) - guideZone.radius) : 0,

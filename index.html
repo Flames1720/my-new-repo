@@ -209,7 +209,7 @@
             </div>
           </section>
           <aside class="lobbyDeploy" id="lobbyFieldKit">
-            <section class="lobbyChallenges lobbyPage" data-lobby-panel="challenges" aria-label="Challenges"><div class="challengeTabs"><strong>CHALLENGES</strong><span>EVENT</span></div><div class="challengeRow"><span>FIRST CONTACT</span><b>0 / 5</b><i><em></em></i></div><div class="challengeRow"><span>HOLD THE LINE</span><b>0 / 2</b><i><em></em></i></div><small>Complete a run objective to earn XP and unlock field cards.</small></section>
+            <section class="lobbyChallenges lobbyPage" data-lobby-panel="challenges" aria-label="Achievements"><div class="challengeTabs"><strong>ACHIEVEMENTS</strong></div><small>Earn badges and bonus XP. Purchase field cards in Wildcards.</small><div id="achievementGoals"></div><button type="button" id="reviewRewards">REVIEW REWARDS</button></section>
             <section class="lobbyPage lobbyKitPage" data-lobby-panel="kit" aria-label="Choose a starting weapon">
             <div class="lobbySectionHead"><span>YOUR WEAPONS</span><small>CHOOSE ONE BEFORE DEPLOYING</small></div>
             <div id="lobbyWeaponCards" class="lobbyWeaponCards" role="radiogroup" aria-label="Starting weapon">
@@ -763,6 +763,7 @@
 })();
 </script>
 
+    <dialog id="achievementReveal"><h2>REWARD</h2><button type="button" class="rewardFlip" aria-label="Flip reward to reveal details" aria-pressed="false"><span class="rewardFront">IO<br><small>TAP TO REVEAL</small></span><span class="rewardBack"><strong class="rewardName"></strong><span class="rewardDescription"></span></span></button><button type="button" class="rewardCollect" disabled>CONTINUE</button><button type="button" class="rewardLater">REVIEW LATER</button></dialog>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
