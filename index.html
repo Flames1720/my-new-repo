@@ -262,7 +262,7 @@
 	        <div class="settingsHeader">
 	          <div class="settingsTitleBlock"><span class="settingsEyebrow">FIELD CONTROL / CONFIGURATION</span><h3>GAMEPLAY & CONTROLS</h3></div>
 	          <nav class="settingsTabs" aria-label="Settings categories"><button class="active" type="button" data-settings-tab="controls">CONTROLS</button><button type="button" data-settings-tab="graphics">GRAPHICS / AUDIO</button><button type="button" data-settings-tab="player">PLAYER</button><button type="button" data-settings-tab="diagnostics">DIAGNOSTICS</button></nav>
-	          <button id="settingsClose">✕</button>
+	          <button id="settingsClose" type="button" aria-label="Close settings">✕</button>
 	        </div>
         <div class="settingsBody">
           <section class="settingsPage active" data-settings-page="controls" aria-label="Control settings" >
@@ -382,9 +382,9 @@
             <div class="settingLabel">
               <span>Player Identity & Gender</span>
             </div>
-            <div style="display: flex; gap: 8px;">
-              <input type="text" id="playerNameInput" placeholder="Adventurer Name" value="Explorer" style="flex: 1; padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;" />
-              <select id="playerGenderSelect" style="padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;">
+            <div class="playerIdentityFields">
+              <input type="text" id="playerNameInput" aria-label="Player name" placeholder="Adventurer Name" value="Explorer" style="flex: 1; padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;" />
+              <select id="playerGenderSelect" aria-label="Player gender" style="padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;">
                 <option value="male">♂ Male</option>
                 <option value="female">♀ Female</option>
                 <option value="adventurer">⚧ Adventurer</option>
@@ -459,6 +459,7 @@
             <button id="hudEditorClose" type="button" aria-label="Close HUD editor">✕</button>
           </div>
         </div>
+        <div class="hudEditorBody">
         <p>Drag a control to place it. Tap it to select, then adjust size and transparency. Saved on this device.</p>
         <label class="hudEditorLabel">Finger layout
           <select id="hudPresetSelect">
@@ -475,6 +476,7 @@
         <label class="hudEditorLabel">Opacity <span id="hudOpacityVal">65%</span>
           <input id="hudOpacitySlider" type="range" min="15" max="100" step="5" value="65" />
         </label>
+        </div>
         <div class="hudEditorFooter">
           <button id="hudResetBtn" type="button">Reset layout</button>
           <button id="hudSaveBtn" type="button">Save & close</button>

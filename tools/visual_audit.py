@@ -25,26 +25,23 @@ def run(url, out, sizes):
     out.mkdir(parents=True, exist_ok=True)
     report = {"url": url, "screens": [], "warnings": [], "errors": []}
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True, args=["--disable-web-security"])
+        browser = pw.chromium.launch(headless=True, args=["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"])
         for width, height in sizes:
             context = browser.new_context(viewport={"width":width,"height":height},
                 device_scale_factor=1, is_mobile=True, has_touch=True, reduced_motion="reduce")
-            # The browser-run audit checks layout, not actual fullscreen permission.
-            # Mock fullscreen readiness only for screenshot capture.
-            context.add_init_script("""() => {
-              try { Object.defineProperty(document, 'fullscreenElement', {
-                configurable:true, get:()=>document.documentElement }); } catch(e) {}
-            }""")
             page = context.new_page()
             page.on("pageerror", lambda error: report["errors"].append(str(error)))
             size_name=f"{width}x{height}"
             try:
                 page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                page.locator("#enterGameDisplayMode").wait_for(state="visible", timeout=45000)
+                page.locator("#enterGameDisplayMode").tap(timeout=5000)
+                page.wait_for_function("document.body.classList.contains('display-mode-ready')")
                 page.locator("#survivalLobby").wait_for(state="visible", timeout=20000)
                 page.wait_for_timeout(750)
                 for section in PAGES:
                     button=page.locator(f'[data-lobby-page="{section}"]')
-                    button.click(timeout=5000)
+                    button.tap(timeout=5000)
                     panel=page.locator(f'[data-lobby-panel="{section}"]')
                     panel.wait_for(state="visible", timeout=5000)
                     path=out/f"{size_name}-{section}.png"
@@ -70,11 +67,11 @@ def run(url, out, sizes):
                     if panel_data["y"] < stage["y"]-1 or panel_data["y"]+panel_data["h"] > stage["y"]+stage["h"]+3:
                         report["warnings"].append(f"{size_name} {section}: panel extends beyond visible stage; check screenshot and scrolling")
                     report["screens"].append(info)
-                page.locator("#lobbyOptionsBtn").click(timeout=5000)
+                page.locator("#lobbyOptionsBtn").tap(timeout=5000)
                 overlay=page.locator("#settingsOverlay")
                 overlay.wait_for(state="visible", timeout=5000)
                 for section in SETTINGS:
-                    page.locator(f'[data-settings-tab="{section}"]').click(timeout=5000)
+                    page.locator(f'[data-settings-tab="{section}"]').tap(timeout=5000)
                     active=page.locator(f'.settingsPage[data-settings-page="{section}"]')
                     active.wait_for(state="visible", timeout=5000)
                     visible=[p.get_attribute("data-settings-page") for p in page.locator(".settingsPage").all() if p.is_visible()]

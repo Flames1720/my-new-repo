@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import './style.css';
 import './ui-modern.css';
+import './mobile-ui.css';
 import type { Mode, EmoteKind, HomeLevel, ResourceKind, ResourceDef, PlayerProfile, CharacterModelId } from './types';
 import {
   SEED,
@@ -1901,29 +1902,29 @@ type HudLayoutItem = { x: number; y: number; size: number; opacity: number };
 const HUD_LAYOUT_KEY = 'zombie-survival-hud-v1';
 const HUD_DEFAULTS: Record<string, HudLayoutItem> = {
   shoot: { x: 10, y: 23, size: 66, opacity: 0.68 },
-  ads: { x: 88, y: 24, size: 48, opacity: 0.62 },
+  ads: { x: 82, y: 24, size: 48, opacity: 0.62 },
   jump: { x: 92, y: 72, size: 46, opacity: 0.56 },
   slide: { x: 72, y: 72, size: 46, opacity: 0.58 },
   reload: { x: 80, y: 81, size: 44, opacity: 0.56 },
-  weapon: { x: 52, y: 80, size: 44, opacity: 0.68 },
+  weapon: { x: 60, y: 82, size: 44, opacity: 0.68 },
   use: { x: 69, y: 55, size: 46, opacity: 0.62 },
   skill: { x: 60, y: 58, size: 46, opacity: 0.78 },
-  'wildcard-1': { x: 36, y: 82, size: 46, opacity: 0.72 },
-  'wildcard-2': { x: 45, y: 82, size: 46, opacity: 0.72 },
-  'wildcard-3': { x: 54, y: 82, size: 46, opacity: 0.72 },
+  'wildcard-1': { x: 39, y: 82, size: 46, opacity: 0.72 },
+  'wildcard-2': { x: 46, y: 82, size: 46, opacity: 0.72 },
+  'wildcard-3': { x: 53, y: 82, size: 46, opacity: 0.72 },
 };
 const HUD_PRESETS: Record<'four' | 'three' | 'thumbs', Record<string, { x: number; y: number }>> = {
   four: {
-    shoot: { x: 10, y: 23 }, ads: { x: 88, y: 24 }, jump: { x: 92, y: 72 },
-    slide: { x: 72, y: 72 }, reload: { x: 80, y: 81 }, weapon: { x: 52, y: 80 }, use: { x: 69, y: 55 }, skill: { x: 60, y: 58 },
+    shoot: { x: 10, y: 23 }, ads: { x: 82, y: 24 }, jump: { x: 92, y: 72 },
+    slide: { x: 72, y: 72 }, reload: { x: 80, y: 81 }, weapon: { x: 60, y: 82 }, use: { x: 69, y: 55 }, skill: { x: 60, y: 58 },
   },
   three: {
     shoot: { x: 10, y: 25 }, ads: { x: 87, y: 43 }, jump: { x: 91, y: 69 },
-    slide: { x: 76, y: 70 }, reload: { x: 79, y: 82 }, weapon: { x: 52, y: 80 }, use: { x: 69, y: 56 }, skill: { x: 60, y: 58 },
+    slide: { x: 76, y: 70 }, reload: { x: 79, y: 82 }, weapon: { x: 60, y: 82 }, use: { x: 69, y: 56 }, skill: { x: 60, y: 58 },
   },
   thumbs: {
     shoot: { x: 87, y: 78 }, ads: { x: 85, y: 56 }, jump: { x: 94, y: 64 },
-    slide: { x: 76, y: 65 }, reload: { x: 75, y: 83 }, weapon: { x: 52, y: 80 }, use: { x: 67, y: 55 }, skill: { x: 60, y: 58 },
+    slide: { x: 76, y: 65 }, reload: { x: 75, y: 83 }, weapon: { x: 60, y: 82 }, use: { x: 67, y: 55 }, skill: { x: 60, y: 58 },
   },
 };
 const hudEditorOverlay = document.querySelector('#hudEditorOverlay') as HTMLDivElement;
@@ -2617,6 +2618,12 @@ const diagnosticCopyBtn = document.querySelector('#diagnosticCopyBtn') as HTMLBu
 const diagnosticClearBtn = document.querySelector('#diagnosticClearBtn') as HTMLButtonElement | null;
 const diagnosticReadout = document.querySelector('#diagnosticReadout') as HTMLElement | null;
 const captureWindow = window as Window & { __islandOutbreakPerfEnabled?: boolean };
+// Background logging starts capture in the inline bootstrap before this module.
+// Reflect that state so the first tap and the displayed action agree.
+if (diagnosticCaptureBtn && captureWindow.__islandOutbreakPerfEnabled) {
+  diagnosticCaptureBtn.textContent = 'STOP CAPTURE';
+  if (diagnosticReadout) diagnosticReadout.textContent = 'Background capture active. Return to the game to collect performance data.';
+}
 if (diagnosticCaptureBtn) bindAction(diagnosticCaptureBtn, () => {
   captureWindow.__islandOutbreakPerfEnabled = !captureWindow.__islandOutbreakPerfEnabled;
   diagnosticCaptureBtn.textContent = captureWindow.__islandOutbreakPerfEnabled ? 'STOP CAPTURE' : 'START CAPTURE';

@@ -987,3 +987,35 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Status:** CHECKPOINT IMPLEMENTED; **NOT FINALIZED**. User visual feedback still required.
 
 **Short-landscape follow-up:** The screenshots are high-resolution phone captures, so their effective CSS viewport may be much smaller than their pixel dimensions. Added a max-height:540px responsive budget: two rows of compact 78–104px Wildcards, 40px navigation and Deploy touch height, condensed Records metrics and operators. At e.g. 800×360 CSS px this is intended to fit both rows while preserving touch targets. This is source/design reasoning; a screenshot/device test is still required.
+
+
+## 2026-10-11 — Codex — verified small-landscape lobby, settings and combat UI
+
+**Branch:** `feature/zombie-survival-world-v2` only. **Status:** browser verified; physical-phone review and final user approval pending.
+
+**Inspected before edits:** actual branch/worktree and recent commits; `PROJECT_PLAN.md`, `ARCHITECTURE.md`, `UI_INPUT_DECISIONS.md`, `ISLAND_OUTBREAK_PROGRESS.md`, latest changelog, `index.html`, both UI stylesheets, settings/input/HUD/pause handlers, existing visual audit and CI. Public repository cloned into the cloud workspace after write access became available.
+
+**Baseline:** Built/served production assets on port 4173. Captured 20 lobby/settings screenshots with mobile + touch at 854×393 and 915×412; separately entered real native Chromium fullscreen and deployed. Screenshot review found half-screen lobby width, clipped Mission progress, tiny wrapped Wildcard names, Settings squeezed into one-third width with overlapping labels/collapsed name input, ADS/minimap and weapon/status overlaps, and an unstyled 28px pause Settings button. Causes: inherited legacy lobby `grid-template-columns`/areas, and later-loaded `.settingsBody {display:grid!important}` in `ui-modern.css`.
+
+**Changes:**
+- Added `src/mobile-ui.css`, imported last by `src/main.ts`, as a scoped final survival UI layer. Reset inherited lobby grid tracks/areas/spacing, reclaim full width, improve copy contrast/size and retain navigation/Deploy. Auto-fit Wildcard columns and two 92px rows fit both tested screens; starter backs show description and equip/remove actions.
+- Fix Settings body/page layout, label wrapping, identity field grid and 44px selects/buttons; enlarge slider touch area and keep header/tabs/Close visible while scrolling. Label identity inputs and Close for accessibility.
+- Move new/default four-finger ADS clear of minimap and default/preset weapon swap clear of status. Saved custom layouts still load through the existing key. Wildcard HUD controls now respect existing position/size/opacity variables instead of ignoring them in a fixed flex row. HP/ammo occupy lower left; temporary prompts sit above action controls.
+- Standardize all four pause actions as two-column 44px targets. Put HUD editor content in a scrolling body with accessible header and Save/Reset footer on short landscape screens.
+- Center the reticle exactly on viewport/camera projection (baseline relative positioning was 1px high). No shot-ray compensation or weapon/hit-math change.
+- Match initial Diagnostics action/readout to the already-active inline background capture.
+- Add `tools/mobile_landscape_audit.py`: native fullscreen, mobile/touch, real taps/CDP swipes/multi-touch, screenshots, layout/state checks. Update existing `tools/visual_audit.py` to use native fullscreen/touch entry; remove ineffective fullscreen mock and unnecessary security bypass.
+- Update progress checklist, project plan and changelog.
+
+**Verification:**
+- `npm ci`, `npm run build`, `npm run lint`, Python audit syntax, `git diff --check`.
+- Final comprehensive production-browser repeat: **180 checks passed, 42 screenshots, zero browser page errors** at **854×393 and 915×412**, DPR 1, mobile/touch emulation. All six lobby pages/four Settings pages captured and visually inspected at both sizes.
+- Panels fit stage without horizontal overflow; ten Wildcards form two rows; Deploy stays visible. Starter-card flip/equip/remove, selected-weapon deployment, saved Wildcard/audio preferences across reload.
+- Settings isolation, touch scrolling, checkbox/volume-track taps, usable name input, diagnostics capture state/copy/clear, HUD editor collapse/expand/save.
+- Native fullscreen entry; shotgun deployment; visible combat controls reachable at centers; ADS clear of minimap; exact reticle center; ADS/fire drags do not rotate camera; fire consumes ammo; reload restores magazine; swap/look-zone respond; separate simultaneous movement/look/ADS pointers and movement release.
+- Pause freezes preparation/wave, action targets fit screen, Settings returns to pause, restart/quit work, portrait/fullscreen loss restores gate and recovery stays paused until explicit Resume.
+- Failed intermediate checks corrected and rerun. Reload audit waits for actual shotgun 2.2s game timer rather than assuming 1.6s. Orientation uses CDP device metrics because Chromium rejects normal native window resizing while fullscreen.
+
+**Artifacts (local workspace):** `/workspace/scratch/island-baseline/`; `/workspace/scratch/island-interactions-1/` (failed intermediate report); `/workspace/scratch/island-interactions-2/` (final comprehensive report/screenshots/contact sheets); `/workspace/scratch/island-final-visual-audit/` (repeat existing auditor). Screenshots remain outside source control; checked-in tools reproduce them.
+
+**Limits / next review:** Software-rendered cloud Chromium is not a physical phone or mobile-GPU benchmark. Android/iOS support, browser chrome/notches/keyboard, audio perception, long combat runs and exact impact alignment still require device review. Jump/Slide taps were exercised; detailed motion/timing outcomes were not asserted. Existing currency/signal/challenge counters remain placeholder/pending gameplay-state integration; no economy/challenge mechanics invented in this layout pass. World/streaming/weapon hit logic preserved. Project NOT FINALIZED.

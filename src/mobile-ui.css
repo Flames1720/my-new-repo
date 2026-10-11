@@ -1,0 +1,150 @@
+/* Final survival UI layer. The old exploration theme remains intact; reset its
+   inherited grid tracks explicitly when using the paged lobby and settings. */
+#survivalLobby { padding: 0; }
+#survivalLobby .survivalLobbyCard {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: none;
+  gap: 0;
+  align-content: stretch;
+  width: 100%;
+  max-height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  box-sizing: border-box;
+}
+#survivalLobby .survivalLobbyCard::after { display: none; }
+#survivalLobby .lobbyNav,
+#survivalLobby .lobbyTopline,
+#survivalLobby .lobbyStage,
+#survivalLobby .lobbyFooter { grid-column: 1; min-width: 0; box-sizing: border-box; }
+#survivalLobby .lobbyFooter { min-height: 0; }
+#survivalLobby .lobbyNav button { font-size: 11px; letter-spacing: .35px; padding-inline: 14px; }
+#survivalLobby .lobbyNav button:last-child { margin-left: auto; }
+#survivalLobby .lobbyHero .lobbyQuickStats span { color: #b6c8bc; font-size: 10px; letter-spacing: .5px; }
+#survivalLobby .lobbyHero h1 { line-height: .98; }
+#survivalLobby .lobbyHero .lobbyTagline { margin-top: 0; font-size: 12px; }
+#survivalLobby .lobbyHomeSummary span { font-size: 11px; }
+#survivalLobby .lobbySectionHead { font-size: 12px; letter-spacing: .6px; }
+#survivalLobby .lobbySectionHead small { font-size: 10px; letter-spacing: .4px; color: #b2c5b7; }
+#survivalLobby .lobbyPanelTitle small,
+#survivalLobby .lobbyOperator small,
+#survivalLobby .lobbyPanelMetric span { font-size: 10px; color: #b2c5b7; }
+#survivalLobby .lobbyOperator strong { font-size: 12px; }
+#survivalLobby .challengeRow span,
+#survivalLobby .challengeRow b,
+#survivalLobby .lobbyChallenges > small { font-size: 11px; }
+#survivalLobby .lobbyUpgradeGrid button { min-height: 44px; font-size: 12px; }
+#survivalLobby .lobbyUpgradeGrid button:disabled { opacity: .7; }
+#survivalLobby .lobbyWildcards { margin-top: 0; }
+#survivalLobby .wildcardIntro { font-size: 11px; color: #b9c7ca; }
+#survivalLobby .wildcardCollection { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)) !important; }
+#survivalLobby .wildcardCollection .wildcardFront > strong { font-size: 11px !important; line-height: 1.15; overflow-wrap: normal; word-break: normal; }
+#survivalLobby .wildcardCollection .wildcardFront > i { font-size: 9px !important; }
+#survivalLobby .wildcardCollection .wildcardBack { justify-content: space-between; gap: 3px; }
+#survivalLobby .wildcardCollection .wildcardBack strong { font-size: 11px !important; }
+#survivalLobby .wildcardCollection .wildcardBack small { font-size: 10px; line-height: 1.25 !important; max-height: none; -webkit-line-clamp: unset; }
+#survivalLobby .wildcardBackEyebrow,
+#survivalLobby .wildcardBackRule { display: none; }
+#survivalLobby .wildcardCollection .wildcardBack i { font-size: 9px !important; letter-spacing: 0; }
+#survivalLobby .wildcardCard.locked { opacity: .75; }
+
+#settingsOverlay { padding: 8px !important; align-items: center !important; overflow: hidden !important; }
+#settingsOverlay .settingsCard {
+  width: min(1010px, 100%) !important;
+  height: calc(100dvh - 16px);
+  max-height: calc(100dvh - 16px) !important;
+  margin: 0 auto !important;
+  box-sizing: border-box;
+}
+#settingsOverlay .settingsHeader {
+  grid-template-columns: minmax(155px, 190px) minmax(0, 1fr) 44px;
+  min-height: 52px;
+  padding: 4px 12px !important;
+  align-items: center !important;
+  gap: 10px;
+}
+#settingsOverlay .settingsTitleBlock h3 { font-size: 12px !important; letter-spacing: .5px !important; }
+#settingsOverlay .settingsTabs { height: 44px; }
+#settingsOverlay .settingsTabs button { font-size: 11px; min-height: 44px; padding: 0 10px; letter-spacing: .25px; }
+#settingsOverlay #settingsClose { width: 44px; height: 44px; }
+#settingsOverlay .settingsBody {
+  display: block !important;
+  max-height: none;
+  padding: 10px 16px !important;
+  touch-action: pan-y;
+}
+#settingsOverlay .settingsPage.active { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 24px; }
+#settingsOverlay .settingLabel { font-size: 12px; }
+#settingsOverlay .settingLabel span:first-child { flex: 1 1 auto; min-width: 0; color: #d8e0e2; }
+#settingsOverlay .settingLabel span + span { flex: 0 0 auto; }
+#settingsOverlay .settingRow { min-height: 44px; font-size: 12px; }
+#settingsOverlay .settingRow small { display: block; font-size: 10px; color: #acbfc3; }
+#settingsOverlay .settingRow input[type="checkbox"] { width: 28px; height: 28px; flex: 0 0 28px; margin: 8px; accent-color: #e3b465; }
+#settingsOverlay .settingGroup input[type="range"] { height: 32px; margin: 0; }
+#settingsOverlay select,
+#settingsOverlay input[type="text"] { min-height: 44px; font-size: 12px !important; }
+#settingsOverlay .settingsPage[data-settings-page="player"] { grid-template-columns: minmax(0, 1fr); }
+#settingsOverlay .playerIdentityFields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(130px, 180px); gap: 8px; }
+#settingsOverlay .settingsPage[data-settings-page="diagnostics"] { grid-template-columns: minmax(0, 1fr); }
+#settingsOverlay .settingsDiagnosticActions button,
+#settingsOverlay #diagnosticsPanel button { min-height: 44px; padding: 8px 14px; border: 1px solid #486c73; border-radius: 7px; background: #1b343c; color: #f1f5f9; font-size: 11px; font-weight: 800; }
+#settingsOverlay #diagnosticReadout { font-size: 11px; }
+
+#survivalPauseOverlay .survivalPauseCard { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+#survivalPauseOverlay .survivalPauseCard > :is(div, h2, p) { grid-column: 1 / -1; }
+#survivalPauseOverlay .survivalPauseCard p { margin: 0 0 5px; }
+#survivalPauseOverlay .survivalPauseCard h2 { margin: 0; }
+#survivalPauseOverlay .survivalPauseCard button { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin: 0; padding: 10px 14px; box-sizing: border-box; border: 1px solid #ffffff30; border-radius: 10px; background: #ffffff09; color: #e6ecea; font: 900 11px system-ui, sans-serif; letter-spacing: .5px; touch-action: manipulation; }
+#survivalPauseOverlay #resumeRunBtn { background: linear-gradient(100deg, #974528, #6e321f); border-color: #e6b86f; }
+
+/* Wildcards use the same movable, persisted positions as other HUD controls. */
+body.survival-mode #wildcardHud { inset: 0; pointer-events: none; }
+body.survival-mode #wildcardHud .wildcardAction {
+  position: absolute;
+  left: var(--hud-x);
+  top: var(--hud-y);
+  width: var(--hud-size);
+  height: var(--hud-size);
+  transform: translate(-50%, -50%);
+  opacity: var(--hud-opacity);
+}
+@media (orientation: landscape) and (max-height: 540px) {
+  #survivalLobby .survivalLobbyCard { grid-template-rows: 44px 32px minmax(0, 1fr) 50px; }
+  #survivalLobby .lobbyFooter #startRunBtn { min-height: 44px; height: 44px; }
+  #survivalLobby .lobbyHero.lobbyPage.active { grid-template-columns: minmax(0, .95fr) minmax(0, 1fr); }
+  #survivalLobby .lobbyKitPage .lobbySectionHead { margin-bottom: 10px; }
+  #survivalLobby .lobbyWeaponPick { min-height: 145px; padding: 10px; gap: 6px; }
+  #survivalLobby .weaponCardIcon { height: 80px; }
+  #survivalLobby .weaponCardCopy strong { font-size: 13px; }
+  #survivalLobby .weaponCardCopy small { font-size: 11px; letter-spacing: .3px; }
+  #survivalLobby .wildcardCollection .wildcardCard { height: 92px !important; }
+  #survivalLobby .wildcardCollection .wildcardFace { padding: 6px !important; }
+  #survivalLobby .wildcardCollection .wildcardFront .wildcardArt { max-height: 40px; }
+  body.survival-mode #survivalHud { left: max(16px, env(safe-area-inset-left)); width: 250px; bottom: max(12px, env(safe-area-inset-bottom)); }
+  body.survival-mode .survivalHudTop { font-size: 10px; }
+  body.survival-mode .survivalZoneStatus { font-size: 10px; }
+  body.survival-mode #survivalWeapon { font-size: 11px; }
+  body.survival-mode #survivalKills { font-size: 10px; }
+}
+@media (max-width: 760px) {
+  #settingsOverlay .settingsHeader { grid-template-columns: minmax(0, 1fr) 44px; }
+  #settingsOverlay .settingsTitleBlock { display: none; }
+  #settingsOverlay .settingsTabs { grid-column: 1; }
+  #settingsOverlay #settingsClose { grid-column: 2; }
+}
+@media (orientation: portrait) {
+  #settingsOverlay .settingsPage.active { grid-template-columns: minmax(0, 1fr); }
+  #survivalLobby .wildcardCollection { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)) !important; }
+}
+
+/* Keep the visual reticle on the same viewport center as the camera projection. */
+body.survival-mode #target { position: fixed; left: 50%; top: 50%; margin: 0; }
+@media (orientation: landscape) and (max-height: 540px) {
+  body.survival-mode #prompt { bottom: calc(112px + env(safe-area-inset-bottom)); }
+  #hudEditorPanel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: min(360px, 92vw); height: min(330px, calc(100dvh - 24px)); max-height: calc(100dvh - 24px); overflow: hidden; }
+  #hudEditorPanel .hudEditorBody { min-height: 0; overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; }
+  #hudEditorPanel .hudEditorHeader button { min-width: 44px; min-height: 44px; }
+  #hudEditorPanel .hudEditorFooter button { min-height: 44px; }
+  #hudEditorPanel .hudEditorFooter { margin-top: 8px; }
+  #hudEditorPanel.collapsed { height: auto; grid-template-rows: auto; }
+  #hudEditorPanel.collapsed .hudEditorBody { display: none; }
+}

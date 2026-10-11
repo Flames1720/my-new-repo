@@ -232,3 +232,10 @@ Read ARCHITECTURE.md for protected decisions and AGENT_CHANGELOG.md for the chro
 - Added illustrated, flip-to-inspect Wildcards with two starter cards, two active slots, data-driven definitions, local loadout persistence and one activation button per equipped active card.
 - Added unified paused Settings/Resume/Quit behavior, a detailed defeat/victory result surface, duration and best-time persistence, XP/level feedback, wave event banners and procedural event cues.
 - Remaining verification: complete a long browser run through defeat/results/redeploy/quit, and verify physical mobile safe-area/touch ergonomics.
+
+
+### Mobile landscape UI regression pass — 2026-10-11
+- Branch: `feature/zombie-survival-world-v2`; **RUNTIME VERIFIED in emulated mobile Chromium**; physical-phone validation and final user approval pending.
+- Fixed inherited lobby/Settings grids, landscape type/target size, two-row Wildcards, default HUD overlaps, pause actions and HUD editor Save/Reset access.
+- Production assets at 854×393 and 915×412 with mobile/touch and real native Chromium fullscreen: 180 checks passed, 42 screenshots captured/inspected; build and TypeScript lint passed.
+- Reproduce with `python tools/mobile_landscape_audit.py --url http://127.0.0.1:4173 --out /workspace/scratch/island-verified` after build/preview. Exact scope/remaining device work in `AGENT_CHANGELOG.md` and `ISLAND_OUTBREAK_PROGRESS.md`. NOT FINALIZED.

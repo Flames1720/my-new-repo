@@ -68,6 +68,21 @@
 - [ ] Verify all Settings categories, master/SFX sliders, log export/clear, and HUD editor on device.
 - [ ] Verify small-screen fallbacks and record any layout feedback before finalizing.
 
+## 4.2 Mobile landscape browser audit — 2026-10-11
+- [x] Inspect the actual feature branch, source, decisions, architecture and latest changelog before edits; build and launch production assets locally.
+- [x] Capture and inspect all six lobby pages and four Settings pages at **854 × 393** and **915 × 412** with Chromium mobile/touch emulation.
+- [x] Reset inherited legacy lobby grid columns/areas; reclaim full width and fit Mission, Field Kit and all ten Wildcards inside the stage.
+- [x] Fix Settings grid compression, overlapping labels, collapsed identity input and touch scrolling; keep one Settings page active.
+- [x] Keep both Wildcard rows visible with readable names; test starter-card flip, equip/remove and saved loadout across reload.
+- [x] Separate default ADS/minimap, weapon/status, Wildcard/HP-ammo and temporary-message/action-control overlaps.
+- [x] Respect saved Wildcard HUD position, size and opacity variables.
+- [x] Give all pause actions consistent 44px targets; keep HUD editor header and Save/Reset footer accessible while its body scrolls.
+- [x] Reflect already-active background performance capture accurately in Diagnostics.
+- [x] Test native Chromium fullscreen entry, selected-weapon deployment, ADS/fire drag isolation, reload/swap, look-zone drag, simultaneous movement/look/ADS, pause/settings/restart/quit, and no-auto-resume after orientation/fullscreen recovery.
+- [x] Repeat the full browser audit after fixes: **180 checks, 42 screenshots, zero failed checks/page errors**. Build, TypeScript lint and whitespace checks passed.
+- [ ] Validate physical-phone ergonomics, keyboard/safe areas, Android/iOS fullscreen support, audio, shot-impact accuracy and sustained performance with the user.
+- [ ] Finalize only with user approval. This pass is **browser verified**, not physical-device verified.
+
 ## 5. Settings
 - [x] Make settings navigation actually switch sections. (code/source verified; mobile checks pending where relevant)
 - [x] Keep camera/aiming controls and HUD editor. (code/source verified; mobile checks pending where relevant)
@@ -105,3 +120,5 @@
 - 2026-10-10: Added saved master and SFX volume sliders; replaced fixed per-shot volume override with preferences. Awaiting final combined preview build and Android sound check.
 - 2026-10-11: User screenshot review identified oversized navigation/footer, clipped Mission, 9:16 Wildcards, and settings all together. Applied 2-column Mission, compact shell, 6-across Wildcards, side-by-side records, and real settings pages. Inline local background diagnostics now injects only into Diagnostics. Vercel preview for `bc2eae87d8` reported READY. Android visual/touch regression check pending; project remains NOT FINALIZED.
 - 2026-10-11: Applied further short-landscape card density/touch-target refinements. Vercel build for `cf6c7a1a5` reported READY; exact mobile screenshot comparison still open.
+
+- 2026-10-11: Mobile landscape UI browser pass verified on the existing feature branch: inherited lobby grid tracks and Settings compression corrected; native-fullscreen Chromium mobile/touch regression passed 180 checks with 42 screenshots at both requested CSS viewport sizes. Physical-device review pending; NOT FINALIZED.
