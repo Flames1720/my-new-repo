@@ -300,7 +300,7 @@ export async function initializePilot() {
   const overlay = document.createElement("div");
   overlay.className = "pilot-overlay";
   overlay.innerHTML =
-    '<section class="pilot-card"><h1>ISLAND OUTBREAK</h1><p>First deployment · 20-player pilot</p><form><label>Email<input name="email" type="email" autocomplete="email" required></label><label>Password<input name="password" type="password" autocomplete="current-password" minlength="8" required></label><button type="submit">SIGN IN</button><button type="button" data-signup>CREATE ACCOUNT</button><button type="button" data-reset>RESET PASSWORD</button></form><p role="status" aria-live="polite"></p></section>';
+    '<section class="pilot-card"><h1>ISLAND OUTBREAK</h1><p>First deployment · 20-player pilot</p><p data-availability role="status">Checking beta spots…</p><form><label>Email<input name="email" type="email" autocomplete="email" required></label><label>Password<input name="password" type="password" autocomplete="current-password" minlength="8" required></label><button type="submit">SIGN IN</button><button type="button" data-signup>CREATE ACCOUNT</button><button type="button" data-reset>RESET PASSWORD</button></form><p role="status" aria-live="polite"></p></section>';
   document.body.classList.add("pilot-auth");
   document.body.append(overlay);
   const card = overlay.querySelector<HTMLElement>("section")!;
@@ -322,6 +322,24 @@ export async function initializePilot() {
     env.VITE_SUPABASE_URL,
     env.VITE_SUPABASE_PUBLISHABLE_KEY,
   );
+  const availability = card.querySelector<HTMLElement>('[data-availability]')!;
+  let checkingSpots = false;
+  const refreshSpots = async () => {
+    if (checkingSpots || document.hidden || !overlay.isConnected) return;
+    checkingSpots = true;
+    try {
+      const { data, error } = await client!.rpc('pilot_availability');
+      if (error || !Number.isInteger(data?.remaining) || !Number.isInteger(data?.capacity)) throw new Error('Unavailable');
+      availability.textContent = data.remaining === 0
+        ? 'Beta is full. Existing players can still sign in.'
+        : `${data.remaining} of ${data.capacity} beta spots left. Your spot is claimed after email confirmation and your first sign-in.`;
+    } catch { availability.textContent = 'Beta availability could not be checked. Sign in to check admission.'; }
+    finally { checkingSpots = false; }
+  };
+  void refreshSpots();
+  const spotsTimer = setInterval(() => void refreshSpots(), 30000);
+  const refreshVisibleSpots = () => { if (!document.hidden) void refreshSpots(); };
+  document.addEventListener('visibilitychange', refreshVisibleSpots);
   await new Promise<void>((resolve) => {
     let working = false;
     const enter = async () => {
@@ -397,6 +415,8 @@ export async function initializePilot() {
         pilot.admin = data.admin === true;
         settings(data.admin === true);
         setupReports();
+        clearInterval(spotsTimer);
+        document.removeEventListener('visibilitychange', refreshVisibleSpots);
         overlay.remove();
         document.body.classList.remove("pilot-auth");
         resolve();
