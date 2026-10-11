@@ -19,3 +19,5 @@ console.log('PASS: flank, reload rush, aim dodge, cover, interception, attack re
 const hearing=new HunterBrain();hearing.update({...observation,visible:false,noiseAudible:true,playerX:10.5,playerZ:1.8});assert.equal(hearing.tactic,'search');assert(hearing.targetX>0);
 let coverQueries=0;const budget=new HunterBrain();budget.update({...observation,hpFraction:.3,covered:()=>{coverQueries++;return false;}});assert(coverQueries<=3);
 console.log('PASS: footsteps yield approximate search area; cover-query work is capped');
+
+const arrival=new HunterBrain();arrival.investigate(15,0);arrival.update({...observation,visible:false,playerX:1000,playerZ:1000});assert(arrival.targetX>0&&arrival.targetX<20);console.log('PASS: arrival clue starts pursuit without following hidden player movement');

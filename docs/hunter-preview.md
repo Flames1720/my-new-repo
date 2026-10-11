@@ -8,7 +8,7 @@ Its local tactical controller:
 - Predicts visible player movement and learns a short-lived preferred strafe direction.
 - Flanks, dodges sustained aiming/visible fire, and presses audible reloads at close range.
 - Prefers actual occlusion when threatened or wounded, using at most three cover rays per decision at roughly 8 Hz.
-- Searches the last seen position for five seconds; footsteps within 18 m provide an approximate three-metre search area. It does not track silent movement through walls.
+- Starts by investigating the deployment sound, then searches the last seen position for five seconds; footsteps within 18 m provide an approximate three-metre search area. It does not track silent movement through walls.
 - Winds up a melee attack for 220 ms. Leaving range or breaking sight avoids the strike. It retreats laterally after committing an attack.
 - Respects dry ground, collision and the existing pulse field. No navigation teleport or damage cancellation.
 

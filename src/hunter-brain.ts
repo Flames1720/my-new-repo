@@ -26,6 +26,9 @@ export class HunterBrain {
   private previousX = 0; private previousZ = 0;
   private stuck = 0;
   private elapsed = 0;
+  investigate(x: number, z: number): void {
+    this.lastX=Math.round(x/3)*3;this.lastZ=Math.round(z/3)*3;this.memory=8;this.think=0;
+  }
   attacked(): void { this.attackRecovery = .65; }
   update(o: HunterObservation): void {
     const dt = Math.min(.25, Math.max(0, o.dt));

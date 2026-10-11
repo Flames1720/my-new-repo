@@ -1130,7 +1130,9 @@ export class ZombieSurvivalSystem {
       if (!this.options.canOccupy(x, z) || this.options.canSpawnAt?.(x, z) === false) continue;
       if (this.options.hunterPreview) {
         const hunter=this.createZombie('walker',x,z);
-        hunter.hunter=new HunterBrain();hunter.hp=hunter.maxHp=90;hunter.speed=4.45;
+        hunter.hunter=new HunterBrain();
+        // The arrival sound gives a starting search area, never continuous wall vision.
+        hunter.hunter.investigate(player.x,player.z);hunter.hp=hunter.maxHp=90;hunter.speed=4.45;
         hunter.damage=15;hunter.attackCooldown=1.12;hunter.brainTier=3;
         hunter.root.name='cunning-hunter';this.zombies.push(hunter);return;
       }
