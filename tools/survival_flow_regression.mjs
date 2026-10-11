@@ -52,3 +52,7 @@ assert.equal(sites.length,8);checks++;
 for(const site of sites)for(let dx=-10;dx<=10;dx+=2)for(let dz=-10;dz<=10;dz+=2){if(dx*dx+dz*dz>100)continue;assert.equal(world.waterAt(site.x+dx,site.z+dz),false);assert.ok(Math.hypot(site.x+dx-world.HOME_X,site.z+dz-world.HOME_Z)>=30);assert.ok(Math.hypot(site.x+dx-world.VILLAGE_X,site.z+dz-world.VILLAGE_Z)>=45);checks+=3;}
 assert.deepEqual(findSanctuarySites({originX:0,originZ:0,limit:100,height:()=>0,wet:()=>true,buildingDistrict:()=>false}),[]);checks++;
 console.log(`${checks} auto-reload and real-terrain dry sanctuary checks passed; ${sites.length} clearings`);
+
+game.options.canSpawnAt=()=>false;game.zombies=[];game.spawnZombie();assert.equal(game.zombies.length,0);
+game.options.canSpawnAt=()=>true;game.spawnZombie();assert.equal(game.zombies.length,1);
+console.log("PASS: actual spawn controller respects building exclusion");

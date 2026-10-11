@@ -305,7 +305,7 @@ export async function initializePilot() {
   const overlay = document.createElement("div");
   overlay.className = "pilot-overlay";
   overlay.innerHTML =
-    '<section class="pilot-card"><h1>ISLAND OUTBREAK</h1><p>First deployment · 20-player pilot</p><p data-availability role="status">Checking beta spots…</p><form><label>Email<input name="email" type="email" autocomplete="email" required></label><label>Password<input name="password" type="password" autocomplete="current-password" minlength="8" required></label><button type="submit">SIGN IN</button><button type="button" data-signup>CREATE ACCOUNT</button><button type="button" data-reset>RESET PASSWORD</button></form><p role="status" aria-live="polite"></p></section>';
+    '<section class="pilot-card"><h1>ISLAND OUTBREAK</h1><p>First deployment · 20-player pilot</p><p data-availability role="status">Checking beta spots…</p><form id="island-login" autocomplete="on"><label for="island-email">Email<input id="island-email" name="email" type="email" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" required></label><label for="island-password">Password</label><div class="pilot-password"><input id="island-password" name="password" type="password" autocomplete="current-password" minlength="8" required><button type="button" data-password-toggle aria-label="Show password" aria-controls="island-password" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></svg></button></div><button type="submit">SIGN IN</button><button type="button" data-signup>CREATE ACCOUNT</button><button type="button" data-reset>RESET PASSWORD</button></form><p role="status" aria-live="polite"></p></section>';
   document.body.classList.add("pilot-auth");
   document.body.append(overlay);
   const card = overlay.querySelector<HTMLElement>("section")!;
@@ -436,6 +436,16 @@ export async function initializePilot() {
       }
     };
     const form = card.querySelector<HTMLFormElement>("form")!;
+    const passwordInput = form.elements.namedItem("password") as HTMLInputElement;
+    const passwordToggle = form.querySelector<HTMLButtonElement>("[data-password-toggle]")!;
+    passwordToggle.onclick = () => {
+      const visible = passwordInput.type === "password";
+      passwordInput.type = visible ? "text" : "password";
+      passwordToggle.setAttribute("aria-pressed", String(visible));
+      passwordToggle.setAttribute("aria-label", visible ? "Hide password" : "Show password");
+    };
+    form.querySelector<HTMLButtonElement>("[data-signup]")!.addEventListener("focus", () => { passwordInput.autocomplete = "new-password"; });
+    form.querySelector<HTMLButtonElement>('button[type="submit"]')!.addEventListener("focus", () => { if ((form.elements.namedItem("email") as HTMLInputElement).required) passwordInput.autocomplete = "current-password"; });
     const credentials = () => {
       const data = new FormData(form);
       return {
@@ -496,7 +506,7 @@ export async function initializePilot() {
         form.querySelectorAll<HTMLButtonElement>("[data-signup], [data-reset]").forEach((button) => { button.hidden = true; });
         const input = form.elements.namedItem("password") as HTMLInputElement;
         input.autocomplete = "new-password";
-        form.querySelector("button")!.textContent = "SAVE NEW PASSWORD";
+        form.querySelector('button[type="submit"]')!.textContent = "SAVE NEW PASSWORD";
         form.onsubmit = async (e) => {
           e.preventDefault();
           const { error } = await client!.auth.updateUser({

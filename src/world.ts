@@ -1241,22 +1241,41 @@ export function rawTerrainHeightAt(x: number, z: number): number {
   return broad + hills + 5.2 + mtn.elevation - geologicalBasinDepressionAt(x, z);
 }
 
+let raisedSettlementPads: { x: number; z: number; inner: number; outer: number; height: number }[] | undefined;
+function settlementPads() {
+  return raisedSettlementPads ??= [
+    { x: HOME_X, z: HOME_Z, inner: 10, outer: 28, height: HOME_BASE_HEIGHT },
+    { x: VILLAGE_X, z: VILLAGE_Z, inner: 14, outer: 30, height: VILLAGE_BASE_HEIGHT },
+  ].map(pad => {
+    let height = pad.height;
+    for (let dx = -pad.inner; dx <= pad.inner; dx += 2) {
+      for (let dz = -pad.inner; dz <= pad.inner; dz += 2) {
+        height = Math.max(height, rawTerrainHeightAt(pad.x + dx, pad.z + dz));
+      }
+    }
+    return { ...pad, height: height + 0.35 };
+  });
+}
+
+export function insideBuildingFootprint(x: number, z: number): boolean {
+  if (Math.abs(x - HOME_X) < 6.5 && Math.abs(z - HOME_Z) < 5.5) return true;
+  // Cottage rotation fits inside these padded bounds; exclude spawn points,
+  // rather than blocking zombies from moving through open entrances.
+  return [[-6, -5], [7, -4], [1, 7]].some(([dx, dz]) =>
+    Math.abs(x - VILLAGE_X - dx) < 5 && Math.abs(z - VILLAGE_Z - dz) < 5);
+}
+
 function terrainBaseHeightAt(x: number, z: number): number {
   const raw = rawTerrainHeightAt(x, z);
-
-  const dHome = Math.hypot(x - HOME_X, z - HOME_Z);
   let ground = raw;
-  if (dHome < HOME_FLATTEN_RADIUS) {
-    const t = 1 - dHome / HOME_FLATTEN_RADIUS;
-    ground = raw + (HOME_BASE_HEIGHT - raw) * (t * t * (3 - 2 * t));
-  } else if (nearHome(x, z)) {
-    ground = Math.max(HOME_BASE_HEIGHT - 1.0, raw);
-  }
 
-  const dVillage = Math.hypot(x - VILLAGE_X, z - VILLAGE_Z);
-  if (dVillage < VILLAGE_RADIUS) {
-    const t = 1 - dVillage / VILLAGE_RADIUS;
-    ground = ground + (VILLAGE_BASE_HEIGHT - ground) * (t * t * (3 - 2 * t) * 0.7);
+  // Flat raised building pads keep the rendered ground and collision surface
+  // below every floor, including the cottages away from the village centre.
+  for (const pad of settlementPads()) {
+    const distance = Math.hypot(x - pad.x, z - pad.z);
+    if (distance >= pad.outer) continue;
+    const t = clamp((pad.outer - distance) / (pad.outer - pad.inner), 0, 1);
+    ground += (pad.height - ground) * (t * t * (3 - 2 * t));
   }
 
   // Use the same outer-coast adjustment as hydrology so river surfaces, water
