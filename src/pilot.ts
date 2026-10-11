@@ -107,7 +107,7 @@ async function flush() {
       epoch: batch.epoch,
       session_id: sessionId,
       sequence: batch.sequence,
-      build: "pilot-v1",
+      build: "pilot-v2",
       device: batch.device,
       samples: batch.samples,
     });
@@ -476,10 +476,33 @@ export async function initializePilot() {
   });
 }
 let progressTimer: ReturnType<typeof setTimeout> | undefined;
+let progressDirty = false;
+let progressSending = false;
+let progressFailures = 0;
+async function flushPilotProgress() {
+  if (!client || progressSending || !progressDirty) return;
+  progressSending = true;
+  progressDirty = false;
+  try {
+    const { error } = await client.rpc("pilot_save_progress", { value: pilot.progress });
+    if (error) throw error;
+    progressFailures = 0;
+  } catch {
+    progressDirty = true;
+    progressFailures++;
+  } finally {
+    progressSending = false;
+    if (progressDirty) {
+      clearTimeout(progressTimer);
+      progressTimer = setTimeout(() => void flushPilotProgress(), progressFailures
+        ? Math.min(300000, 15000 * 2 ** Math.min(progressFailures - 1, 5)) : 1500);
+    }
+  }
+}
 export function savePilotProgress(value: Record<string, unknown>) {
   if (!pilot.enabled || !client || !pilot.canPlay) return;
+  pilot.progress = { ...pilot.progress, ...structuredClone(value) };
+  progressDirty = true;
   clearTimeout(progressTimer);
-  progressTimer = setTimeout(() => {
-    void client!.rpc("pilot_save_progress", { value });
-  }, 1500);
+  progressTimer = setTimeout(() => void flushPilotProgress(), 1500);
 }

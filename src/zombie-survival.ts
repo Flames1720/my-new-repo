@@ -572,10 +572,9 @@ export class ZombieSurvivalSystem {
           this.spawnImpact(hit.point, false);
         }
       }
-      // When aiming, the camera ray is authoritative. A muzzle-origin line
-      // produces false sideways motion near the reticle (parallax).
-      // Hip-fire retains the visible muzzle trail as an effect.
-      this.spawnTracer(this.aimActive ? this.raycaster.ray.origin : muzzle, end);
+      // Keep crosshair targeting authoritative while drawing the trail from
+      // the actual barrel to that endpoint, including each shotgun pellet.
+      this.spawnTracer(muzzle, end);
     }
     this.options.onShot?.(registeredHit);
     if (!registeredHit) this.options.notify(currentAmmo.mag === 0 ? 'Magazine empty · reload' : '');

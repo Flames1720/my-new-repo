@@ -1972,7 +1972,7 @@ function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void, onRe
 }
 // --- DRAGGABLE SURVIVAL HUD LAYOUT ---
 type HudLayoutItem = { x: number; y: number; size: number; opacity: number };
-const HUD_LAYOUT_KEY = 'zombie-survival-hud-v1';
+const HUD_LAYOUT_KEY = 'zombie-survival-hud-v1' + (pilot.enabled ? ':' + pilot.userId : '');
 const HUD_DEFAULTS: Record<string, HudLayoutItem> = {
   shoot: { x: 10, y: 23, size: 66, opacity: 0.68 },
   ads: { x: 82, y: 24, size: 48, opacity: 0.62 },
@@ -2036,6 +2036,7 @@ function applyHudItem(el: HTMLElement) {
 }
 function saveHudLayout() {
   try { localStorage.setItem(HUD_LAYOUT_KEY, JSON.stringify(hudLayout)); } catch {}
+  savePilotProgress({ hudLayout });
 }
 window.addEventListener('pagehide', saveHudLayout);
 document.addEventListener('visibilitychange', () => {
@@ -2044,7 +2045,10 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('resize', () => hudTouchButtons.forEach(applyHudItem));
 function loadHudLayout() {
   try {
-    const raw = localStorage.getItem(HUD_LAYOUT_KEY);
+    const cloudLayout = pilot.enabled ? pilot.progress.hudLayout : undefined;
+    const raw = cloudLayout && typeof cloudLayout === 'object' && !Array.isArray(cloudLayout)
+      ? JSON.stringify(cloudLayout)
+      : localStorage.getItem(HUD_LAYOUT_KEY) || (pilot.enabled ? localStorage.getItem('zombie-survival-hud-v1') : null);
     if (raw) {
       const stored = JSON.parse(raw) as Record<string, Partial<HudLayoutItem>>;
       for (const [id, defaults] of Object.entries(HUD_DEFAULTS)) {
@@ -2461,6 +2465,7 @@ function updateLobbyProgressionUi(): void {
   if (homeXp) homeXp.textContent = `${survivalMeta.xp} XP`;
   if (homeWave) homeWave.textContent = `BEST WAVE ${survivalMeta.bestWave}`;
   if (navLevel) navLevel.textContent = `LV ${level}`;
+  setHudText(document.querySelector('#lobbyCurrency'), `${survivalMeta.xp.toLocaleString()} XP`);
   setHudText(document.querySelector('#lobbyOperatorLevel'), `LEVEL ${level} · ACTIVE`);
   if (lobbyBestWaveMetric) lobbyBestWaveMetric.textContent = `${survivalMeta.bestWave} / 100`;
   if (lobbyBestTimeMetric) lobbyBestTimeMetric.textContent = survivalMeta.bestTimeSeconds ? formatRunTime(survivalMeta.bestTimeSeconds) : '—';
@@ -2479,6 +2484,7 @@ function updateLobbyProgressionUi(): void {
 function saveSurvivalMeta(): void {
   try { localStorage.setItem(SURVIVAL_META_KEY, JSON.stringify(survivalMeta)); } catch {}
   try { localStorage.setItem('island-outbreak-best-wave' + (pilot.enabled ? ':' + pilot.userId : ''), String(survivalMeta.bestWave)); } catch {}
+  savePilotProgress({ ...survivalMeta });
   updateLobbyProgressionUi();
   if (typeof renderWildcards === 'function') renderWildcards();
 }
@@ -4797,7 +4803,7 @@ function runFrame(): void {
     const diagnosticsNow = performance.now();
     const windowMs = diagnosticsNow - diagnosticFrameWindow.startedAt;
     const captureElapsedMs = diagnosticsNow - diagnosticFrameWindow.captureStartedAt;
-    const captureComplete = captureElapsedMs >= 120000;
+    const captureComplete = captureElapsedMs >= 120000 && !(pilot.enabled && pilot.consent);
     if (windowMs >= 5000 || captureComplete) {
       const sortedFrames = diagnosticFrameWindow.frameDurations.slice().sort((a, b) => a - b);
       const avgFrameMs = sortedFrames.length
