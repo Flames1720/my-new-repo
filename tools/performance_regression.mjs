@@ -40,6 +40,7 @@ const batch = chunk.children.find(o => o instanceof THREE.InstancedMesh);
 check(batch?.count === 2, 'two repeated parts use one instanced draw');
 check(resources.every(r => r.visible && !r.children[0].visible), 'only source render meshes are hidden');
 check(resources.every(r => r.userData.colliderRadius === 0.7 && r.userData.resource.hits === 3), 'resource identity/colliders stay intact');
+check(resources.every(r => r.matrixAutoUpdate && !r.children[0].matrixAutoUpdate), 'static source parts keep stored transforms while harvested roots remain movable');
 const after = ray.intersectObjects(resources, true)[0];
 check(after.object === before.object && close(after.distance, before.distance), 'exact ray hits survive instancing');
 check(ray.intersectObject(batch).length === 0, 'batch does not produce anonymous duplicate hits');

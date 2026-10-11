@@ -1169,3 +1169,11 @@ Owner requested new-data-only telemetry uploads after games and reported a signu
 - Raise and fully flatten home/village building pads, blend their edges into terrain, and align initial player height with the new ground. Prevent initial zombie spawns within padded house footprints while preserving movement through entrances.
 - Add stable login field IDs, username/current-password autofill hints, signup new-password hints and an accessible eye toggle that preserves the typed password. Keep password recovery submit targeting correct.
 - Validation: production build; real-terrain flat/dry pad checks; survival controller spawn exclusions and existing reload/sanctuary regression; mobile mocked-transport browser checks for password visibility/autofill, contextual HUD and reduced-motion wave visibility.
+
+## 2026-10-11 — Optimisation from consented gameplay reports
+- Analysed recent database windows with frame/observation-weighted timings; documented device-specific evidence and its limits in docs/performance-review-2026-10-11.md.
+- Removed forced whole-scene matrix updates on each shot, deduplicated nested collision roots, flattened exact mesh targets once per shot for pellet reuse, and precomputed geometry boxes for early ray rejection.
+- Batched rigid zombie bodies from eight to six visible meshes per enemy while retaining original headshot surfaces, animated limbs, chest markers and damage flash.
+- Stored static scenery descendant transforms while keeping resource roots movable for harvest/instance sync.
+- Controlled local firing benchmark showed about 59–62% lower median cost and 25% fewer mesh raycast calls; this is not a phone FPS claim. Enemy counts and gameplay balance remain unchanged.
+- Validation: build; exact hit/door/hidden-source/body regressions; existing reload, card, resource and muzzle regressions; real WebGL model rendering and mobile mocked-transport combat checks.

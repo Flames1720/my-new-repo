@@ -4,6 +4,8 @@ import { createWeaponRig, type SurvivalWeaponId, type WeaponRig, SURVIVAL_WEAPON
 import { survivalSound } from './survival-audio';
 import { settings } from './settings';
 import { CombatEffects } from './combat-effects';
+import { ShotTargets } from './shot-targets';
+import { batchZombieBody } from './zombie-body';
 export type { SurvivalWeaponId } from './survival-weapons';
 export type SurvivalPickupKind = 'ammo' | 'medkit';
 
@@ -170,6 +172,7 @@ interface ZombieActor {
   lastZoneDamage: number;
   flesh: THREE.MeshStandardMaterial;
   clothing: THREE.MeshStandardMaterial;
+  bodyMaterial: THREE.MeshStandardMaterial;
 }
 
 interface LootDrop {
@@ -237,6 +240,9 @@ export class ZombieSurvivalSystem {
   private readonly raycaster = new THREE.Raycaster();
   private readonly centerNdc = new THREE.Vector2(0, 0);
   private readonly intersections: THREE.Intersection[] = [];
+  private readonly shotTargets = new ShotTargets();
+  private readonly shotMuzzle = new THREE.Vector3();
+  private readonly shotEndpoint = new THREE.Vector3();
   // Reuse line-of-sight scratch state. AI checks run repeatedly as infected close in.
   private readonly sightOrigin = new THREE.Vector3();
   private readonly sightDirection = new THREE.Vector3();
@@ -611,17 +617,16 @@ export class ZombieSurvivalSystem {
     this.options.onStatus(this.status());
     this.intersections.length = 0;
 
-    this.camera.updateMatrixWorld(true);
-    this.scene.updateMatrixWorld(true);
+    this.camera.updateWorldMatrix(true, true);
     const blockers = this.options.getSightBlockers();
     const targets = this.zombies.filter(z => !z.dead).map(z => z.root);
-    const rayObjects = [...blockers, ...targets];
+    const rayObjects = this.shotTargets.prepare([...blockers, ...targets]);
     // Aimed single-projectile weapons fire through the crosshair. Keep hip-fire
     // inaccuracy and centred shotgun pellet spread as intentional weapon behavior.
     const totalSpread = this.aimActive && definition.pellets === 1
       ? 0
       : definition.spread * (this.aimActive ? 0.42 : 1) * (this.fieldEffects['steady-grip'] ? 0.5 : 1);
-    const muzzle = new THREE.Vector3();
+    const muzzle = this.shotMuzzle;
     activeRig?.muzzleFlash.getWorldPosition(muzzle);
     if (!activeRig) this.camera.getWorldPosition(muzzle);
 
@@ -634,9 +639,9 @@ export class ZombieSurvivalSystem {
       this.raycaster.setFromCamera(ndc, this.camera);
       this.raycaster.far = definition.range;
       this.intersections.length = 0;
-      this.raycaster.intersectObjects(rayObjects, true, this.intersections);
+      this.raycaster.intersectObjects(rayObjects, false, this.intersections);
       const hit = this.intersections[0];
-      let end = this.raycaster.ray.origin.clone().addScaledVector(this.raycaster.ray.direction, definition.range);
+      const end = this.shotEndpoint.copy(this.raycaster.ray.origin).addScaledVector(this.raycaster.ray.direction, definition.range);
       if (hit) {
         end.copy(hit.point);
         const actor = hit.object.userData.survivalZombie as ZombieActor | undefined;
@@ -779,6 +784,8 @@ export class ZombieSurvivalSystem {
       pivot.position.set(x, y, 0);
       const mesh = makeMesh(new THREE.BoxGeometry(...size), material, name);
       mesh.position.y = -size[1] / 2;
+      mesh.updateMatrix();
+      mesh.matrixAutoUpdate = false;
       pivot.add(mesh);
       root.add(pivot);
       return pivot;
@@ -787,6 +794,7 @@ export class ZombieSurvivalSystem {
     const rightArm = makeLimb('zombie-right-arm', 0.34, 1.39, flesh, [0.16, 0.62, 0.17]);
     const leftLeg = makeLimb('zombie-left-leg', -0.15, 0.73, clothing, [0.19, 0.72, 0.2]);
     const rightLeg = makeLimb('zombie-right-leg', 0.15, 0.73, clothing, [0.19, 0.72, 0.2]);
+    const bodyMaterial = batchZombieBody(root, [torso, head, face]);
 
     const actor: ZombieActor = {
       id: this.nextZombieId++, type, root, head, torso, leftArm, rightArm, leftLeg, rightLeg,
@@ -795,7 +803,7 @@ export class ZombieSurvivalSystem {
       attackRange: bossTier > 0 ? 2.15 : type === 'brute' ? 1.7 : 1.35, attackCooldown: bossTier > 0 ? 1.75 : type === 'runner' ? 0.82 : 1.12,
       lastAttack: 0, phase: Math.random() * Math.PI * 2, dead: false, deathAge: 0, flash: 0,
       brainTier: Math.min(3, Math.floor(this.wave / 4)), flanker: this.wave >= 7 && Math.random() < 0.32,
-      flankSide: Math.random() < 0.5 ? -1 : 1, bossTier, lastZoneDamage: 0, flesh, clothing,
+      flankSide: Math.random() < 0.5 ? -1 : 1, bossTier, lastZoneDamage: 0, flesh, clothing, bodyMaterial,
     };
     const mark = (mesh: THREE.Mesh) => { mesh.userData.survivalZombie = actor; };
     root.traverse(object => { if (object instanceof THREE.Mesh) mark(object); });
@@ -812,6 +820,7 @@ export class ZombieSurvivalSystem {
     actor.flash = 0.12;
     actor.flesh.emissive.setHex(0x7c211c);
     actor.clothing.emissive.setHex(0x3a1210);
+    actor.bodyMaterial.emissive.setHex(0x7c211c);
     this.spawnImpact(actor.head.getWorldPosition(new THREE.Vector3()), true);
     if (playHitSound) survivalSound.playHitmarker(headshot);
     if (!quiet) this.options.notify(headshot ? 'HEADSHOT!' : 'HIT');
@@ -863,6 +872,7 @@ export class ZombieSurvivalSystem {
     if (actor.flash <= 0) {
       actor.flesh.emissive.setHex(0x000000);
       actor.clothing.emissive.setHex(0x000000);
+      actor.bodyMaterial.emissive.setHex(0x000000);
     }
     actor.phase += dt * actor.speed * 4.2;
     actor.root.position.set(actor.position.x, this.options.getTerrainHeight(actor.position.x, actor.position.z), actor.position.z);
