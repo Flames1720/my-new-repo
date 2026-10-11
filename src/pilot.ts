@@ -430,7 +430,7 @@ export async function initializePilot() {
           message,
           error
             ? error.message
-            : "Check your email to confirm your account, then sign in. A place is assigned after confirmation.",
+            : "Check your email to confirm your account, then sign in. If you don’t see it, check your spam or junk folder. A place is assigned after confirmation.",
         );
       };
     card.querySelector<HTMLButtonElement>("[data-reset]")!.onclick =
@@ -443,7 +443,7 @@ export async function initializePilot() {
           message,
           error
             ? error.message
-            : "If that account exists, a password reset email has been requested.",
+            : "If that account exists, a password reset email has been requested. If you don’t see it, check your spam or junk folder.",
         );
       };
     client!.auth.onAuthStateChange((event) => {
