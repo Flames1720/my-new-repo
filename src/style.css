@@ -2319,3 +2319,12 @@ body.survival-mode #surveyBtn{display:none!important}
 /* The entire music label is a comfortable touch target. */
 label[for="musicEnabledCheck"] { min-height: 44px; align-items: center; cursor: pointer; }
 #musicEnabledCheck { width: 22px; height: 22px; }
+
+/* Avoid re-blurring the moving WebGL canvas underneath each mobile HUD control. */
+@media (pointer: coarse) {
+  body.survival-mode :is(#compass, #settingsBtn, #prompt, #stick,
+    #touch .actions button, #safeZoneDirection, #emoteBar, #photoToast) {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}

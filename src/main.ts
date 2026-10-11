@@ -4116,7 +4116,7 @@ const cameraBlockerObjects: THREE.Object3D[] = [];
 const cameraHits: THREE.Intersection[] = [];
 let cameraProbeTimer = 0, cameraClearance = camDistance;
 
-type DiagnosticCostKey = 'simulation' | 'render' | 'survivalUpdate' | 'aimQuery' | 'chunkStream' | 'chunkPump' | 'mapUpdate';
+type DiagnosticCostKey = 'frameCallback' | 'frameGap' | 'simulation' | 'render' | 'survivalUpdate' | 'aimQuery' | 'chunkStream' | 'chunkPump' | 'mapUpdate';
 type DiagnosticCost = { totalMs: number; maxMs: number; count: number };
 type OutbreakDiagnosticsWindow = Window & { __islandOutbreakPerfEnabled?: boolean };
 const newDiagnosticCost = (): DiagnosticCost => ({ totalMs: 0, maxMs: 0, count: 0 });
@@ -4142,6 +4142,8 @@ const diagnosticFrameWindow: {
   drawCallsMin: Infinity,
   drawCallsMax: 0,
   costs: {
+    frameCallback: newDiagnosticCost(),
+    frameGap: newDiagnosticCost(),
     simulation: newDiagnosticCost(),
     render: newDiagnosticCost(),
     survivalUpdate: newDiagnosticCost(),
@@ -4676,8 +4678,24 @@ addEventListener('beforeunload', saveNow);
 // GLB/environment loads appear without running terrain, weather, and AI every frame.
 let lobbyRenderAccumulator = 0;
 let lobbyHasRendered = false;
+let previousDiagnosticCallbackEnd = 0;
 function loop() {
   requestAnimationFrame(loop);
+  const callbackStartedAt = performance.now();
+  if (diagnosticFrameWindow.active && previousDiagnosticCallbackEnd) {
+    recordDiagnosticCost('frameGap', callbackStartedAt - previousDiagnosticCallbackEnd);
+  }
+  try {
+    runFrame();
+  } finally {
+    const callbackEndedAt = performance.now();
+    if (diagnosticFrameWindow.active) {
+      recordDiagnosticCost('frameCallback', callbackEndedAt - callbackStartedAt);
+      previousDiagnosticCallbackEnd = callbackEndedAt;
+    } else previousDiagnosticCallbackEnd = 0;
+  }
+}
+function runFrame(): void {
   // A deployed run keeps its soundtrack through pause, Settings and results.
   const musicMode = survivalLobby?.classList.contains('show') ? 'lobby' : 'gameplay';
   survivalSound.setMusicMode(document.hidden || !settings.current.audioMusicEnabled ? 'silent' : musicMode);
@@ -4784,7 +4802,12 @@ function loop() {
         worstFrameMs: round1(sortedFrames[sortedFrames.length - 1] || 0),
         p95FrameMs: round1(sortedFrames[Math.min(sortedFrames.length - 1, Math.floor((sortedFrames.length - 1) * 0.95))] || 0),
         slowFramesOver50ms: diagnosticFrameWindow.slowFrames,
-        timingSampleRate: 'simulation/render every frame; chunk work every call; survival/aim/map every 4th frame',
+        timingSampleRate: 'callback/gap/simulation/render every frame; chunk work every call; survival/aim/map every 4th frame',
+        frameCallbackAvgMs: diagnosticCostSummary('frameCallback').avgMs,
+        frameCallbackMaxMs: diagnosticCostSummary('frameCallback').maxMs,
+        frameGapAvgMs: diagnosticCostSummary('frameGap').avgMs,
+        frameGapMaxMs: diagnosticCostSummary('frameGap').maxMs,
+        frameGapNote: 'Time from previous callback end to next callback start; includes scheduling, other tasks and browser/GPU/compositor waits, not a GPU measurement.',
         simulationAvgMs: diagnosticCostSummary('simulation').avgMs,
         simulationMaxMs: diagnosticCostSummary('simulation').maxMs,
         simulationSamples: diagnosticCostSummary('simulation').samples,
@@ -4809,7 +4832,7 @@ function loop() {
         chunkPumpMaxMs: diagnosticCostSummary('chunkPump').maxMs,
         chunkPumpCount: diagnosticCostSummary('chunkPump').samples,
         chunkQueueDepth: chunks.pendingBuilds,
-        perfBuildTag: 'mobile-perf-2',
+        perfBuildTag: 'mobile-perf-3',
         drawCalls: renderer.info.render.calls,
         drawCallsAvg: round1(diagnosticFrameWindow.drawCallsTotal / diagnosticFrameWindow.frames),
         drawCallsMin: diagnosticFrameWindow.drawCallsMin,

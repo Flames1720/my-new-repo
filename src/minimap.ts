@@ -163,15 +163,19 @@ export class MinimapSystem {
   // --- RENDER LIVE CODM-STYLE RADAR MINI-MAP ---
   renderMini(playerPos: THREE.Vector3, camYaw: number, animals: AnimalMarker[], survival?: SurvivalRadarData): void {
     const c = this.miniCanvas;
-    if (!c || c.clientWidth < 12 || c.clientHeight < 12) return;
+    if (!c) return;
+    const cssWidth = c.clientWidth, cssHeight = c.clientHeight;
+    if (cssWidth < 12 || cssHeight < 12) return;
 
     const ctx = this.miniCtx;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    c.width = c.clientWidth * dpr;
-    c.height = c.clientHeight * dpr;
+    const width = Math.floor(cssWidth * dpr), height = Math.floor(cssHeight * dpr);
+    // Assigning even an unchanged dimension clears/reallocates the backing store.
+    if (c.width !== width) c.width = width;
+    if (c.height !== height) c.height = height;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const size = c.clientWidth;
+    const size = cssWidth;
     const radius = size / 2;
     if (radius < 10) return;
 
@@ -384,15 +388,20 @@ export class MinimapSystem {
     if (!this.isFullOpen) return;
 
     const c = this.fullCanvas;
-    if (!c || c.clientWidth < 12 || c.clientHeight < 12) return;
+    if (!c) return;
+    const cssWidth = c.clientWidth, cssHeight = c.clientHeight;
+    if (cssWidth < 12 || cssHeight < 12) return;
     const ctx = this.fullCtx;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    c.width = c.clientWidth * dpr;
-    c.height = c.clientHeight * dpr;
+    const width = Math.floor(cssWidth * dpr), height = Math.floor(cssHeight * dpr);
+    // Assigning even an unchanged dimension clears/reallocates the backing store.
+    if (c.width !== width) c.width = width;
+    if (c.height !== height) c.height = height;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const cw = c.clientWidth;
-    const ch = c.clientHeight;
+    ctx.lineWidth = 1; // Restore the baseline previously supplied by canvas resize.
+    const cw = cssWidth;
+    const ch = cssHeight;
 
     ctx.clearRect(0, 0, cw, ch);
     ctx.fillStyle = '#0e151c';
