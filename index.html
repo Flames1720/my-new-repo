@@ -114,7 +114,7 @@
 
       <!-- Compact, borderless survival HUD -->
       <section id="survivalHud" aria-live="polite" aria-label="Zombie survival status">
-        <div class="survivalHudTop"><span id="survivalZoneStatus" class="survivalZoneStatus safe">SAFE · HOMESTEAD</span><span id="survivalWave">WAVE 0</span></div>
+        <div class="survivalHudTop"><span id="survivalZoneStatus" class="survivalZoneStatus safe">SAFE · CLEARING 1</span><span id="survivalWave">WAVE 0</span></div>
         <div class="survivalBottomRow">
           <div class="survivalHealthBlock"><span class="survivalHudKicker">HP</span><div class="survivalHealthTrack"><span id="survivalHealthBar"></span></div><strong id="survivalHealthText">100</strong></div>
           <div class="survivalWeaponBlock"><div class="survivalWeaponLine"><strong id="survivalWeapon">P9 PISTOL</strong></div><div class="survivalAmmoValue"><strong id="survivalAmmo">15</strong><span id="survivalReserve">/ 60</span></div></div>
@@ -191,12 +191,12 @@
               <p class="lobbyEyebrow"><span>01</span> · SAFE STARTING AREA</p>
             <div class="lobbyMissionBoard" id="lobbyMissionBoard" aria-label="Current island mission">
               <div class="missionBoardGrid"></div><div class="missionPulse"></div><span class="missionPin pinHome">⌂</span><span class="missionPin pinThreat">!</span><span class="missionRoute"></span>
-              <div class="missionBoardLabels"><span>HOME BASE</span><span>ZOMBIES NEARBY</span><span>RIVERWOOD</span></div>
+              <div class="missionBoardLabels"><span>DRY SANCTUARY</span><span>ZOMBIES NEARBY</span><span>RIVERWOOD</span></div>
             </div>
             </div>
             <div class="missionDetails">
             <h1 id="lobbyTitle">ISLAND<br><em>OUTBREAK</em></h1>
-            <p class="lobbyTagline">PROTECT YOUR BASE<br><strong>Survive 100 zombie waves.</strong></p>
+            <p class="lobbyTagline">REACH THE NEXT SANCTUARY<br><strong>Survive 100 zombie waves.</strong></p>
             <div class="lobbyQuickStats" aria-label="Mission parameters">
               <div><strong>100</strong><span>WAVES</span></div>
               <div><strong>04</strong><span>ZOMBIES AT START</span></div>
@@ -209,7 +209,7 @@
             </div>
           </section>
           <aside class="lobbyDeploy" id="lobbyFieldKit">
-            <section class="lobbyChallenges lobbyPage" data-lobby-panel="challenges" aria-label="Challenges"><div class="challengeTabs"><strong>CHALLENGES</strong><span>EVENT</span></div><div class="challengeRow"><span>FIRST CONTACT</span><b>0 / 5</b><i><em></em></i></div><div class="challengeRow"><span>HOLD THE LINE</span><b>0 / 2</b><i><em></em></i></div><small>Complete a run objective to earn XP and unlock field cards.</small></section>
+            <section class="lobbyChallenges lobbyPage" data-lobby-panel="challenges" aria-label="Achievements"><div class="challengeTabs"><strong>ACHIEVEMENTS</strong></div><small>Earn badges and bonus XP. Purchase field cards in Wildcards.</small><div id="achievementGoals"></div><button type="button" id="reviewRewards">REVIEW REWARDS</button></section>
             <section class="lobbyPage lobbyKitPage" data-lobby-panel="kit" aria-label="Choose a starting weapon">
             <div class="lobbySectionHead"><span>YOUR WEAPONS</span><small>CHOOSE ONE BEFORE DEPLOYING</small></div>
             <div id="lobbyWeaponCards" class="lobbyWeaponCards" role="radiogroup" aria-label="Starting weapon">
@@ -763,6 +763,7 @@
 })();
 </script>
 
+    <dialog id="achievementReveal"><h2>REWARD</h2><button type="button" class="rewardFlip" aria-label="Flip reward to reveal details" aria-pressed="false"><span class="rewardFront">IO<br><small>TAP TO REVEAL</small></span><span class="rewardBack"><strong class="rewardName"></strong><span class="rewardDescription"></span></span></button><button type="button" class="rewardCollect" disabled>CONTINUE</button><button type="button" class="rewardLater">REVIEW LATER</button></dialog>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

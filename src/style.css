@@ -2328,3 +2328,34 @@ label[for="musicEnabledCheck"] { min-height: 44px; align-items: center; cursor: 
     -webkit-backdrop-filter: none !important;
   }
 }
+
+/* Round-style announcements: readable lettering with no solid message box. */
+#survivalEventBanner{top:40%;padding:0;border:0;border-radius:0;background:none;box-shadow:none;color:#fff3d6;font-size:clamp(24px,6vw,68px);line-height:1.05;font-weight:950;letter-spacing:.07em;text-shadow:0 3px 0 #171c17,0 6px 18px #000,0 0 30px #000}
+.survivalXpPanel .xpTrack i{transition:none}
+
+.achievementGoal { display:grid; gap:6px; padding:15px 0; border-bottom:1px solid #52645066; }
+.achievementGoal span { font-size:13px; opacity:.8; }
+.achievementGoal b { color:#efc366; font-size:12px; }
+.achievementGoal progress { width:100%; height:6px; accent-color:#efc366; }
+#achievementReveal { color:#f5f1df; background:#101c18; border:1px solid #b79249; border-radius:16px; padding:22px; width:min(340px,90vw); max-height:94dvh; text-align:center; overflow:auto; }
+#achievementReveal::backdrop { background:#020905d9; }
+#achievementReveal h2 { font-size:18px; letter-spacing:2px; }
+#achievementReveal button { color:inherit; cursor:pointer; }
+.rewardFlip { display:block; position:relative; width:100%; height:240px; margin:16px 0; border:0; background:transparent; perspective:800px; }
+.rewardFront,.rewardBack { position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:20px; padding:20px; background:linear-gradient(145deg,#344e34,#14271c); border:2px solid #d3aa59; border-radius:12px; backface-visibility:hidden; transition:transform .5s; }
+.rewardFront { font-size:54px; font-weight:900; transform:rotateY(0); }
+.rewardFront small { font-size:12px; letter-spacing:2px; }
+.rewardBack { transform:rotateY(180deg); }
+.flipped .rewardFront { transform:rotateY(-180deg); }
+.flipped .rewardBack { transform:rotateY(0); }
+.rewardDescription { line-height:1.5; font-size:14px; }
+.rewardCollect,.rewardLater,#reviewRewards { padding:12px 18px; background:#304c35; border:1px solid #b79249; border-radius:6px; }
+.rewardLater { margin-left:8px; background:transparent; }
+.rewardCollect:disabled { opacity:.4; }
+@media (max-height:450px) { #achievementReveal { width:580px; } .rewardFlip { width:260px; height:190px; margin:8px auto; } #achievementReveal h2 { margin:0; } }
+@media (prefers-reduced-motion:reduce) { .rewardFront,.rewardBack { transition:none; } }
+@keyframes rewardArrive { from { opacity:0; transform:translateY(22px) rotateY(70deg) scale(.8); } to { opacity:1; transform:translateY(0) rotateY(0) scale(1); } }
+#achievementReveal[open] .rewardFlip { animation:rewardArrive .55s ease-out both; }
+@media (prefers-reduced-motion:reduce) { #achievementReveal[open] .rewardFlip { animation:none; } }
+.survivalHealthBlock { position:relative; }
+.medicHealTick { position:absolute; right:0; top:-16px; color:#6bef9b; font-size:16px; font-weight:800; pointer-events:none; text-shadow:0 2px 3px #07180c; }
