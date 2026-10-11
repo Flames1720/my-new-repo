@@ -55,11 +55,23 @@
 - [x] Retain progress storage keys, weapon-selection handler and Wildcard/upgrade handlers in code.
 - [ ] Confirm saved progress and loadout flow in browser regression test.
 
+## 4.1 Compact landscape layout, based on screenshot review (2026-10-11)
+- [x] Reclaim height from oversized lobby navigation, header, and Deploy footer (committed, preview build READY).
+- [x] Move currency/level beside signal in compact header; prevent navigation overlap (committed, preview build READY).
+- [x] Use two-column Mission layout so map and statistics are visible together (committed, preview build READY).
+- [x] Remove legacy 9:16 aspect ratio in lobby Wildcards; render six compact cards across and two rows for ten cards (committed, preview build READY).
+- [x] Display Records operator slots and stats in side-by-side groups; compact Challenges and other wrappers (committed, preview build READY).
+- [x] Replace runtime settings control tagging with four real mutually exclusive page containers; place old background diagnostics under Diagnostics (committed, preview build READY).
+- [x] Raise Settings layer above lobby and keep inactive categories hidden/inert (committed, preview build READY).
+- [ ] Verify no clipped Mission content or obstructed Wildcard buttons at user's landscape viewport.
+- [ ] Verify all Settings categories, master/SFX sliders, log export/clear, and HUD editor on device.
+- [ ] Verify small-screen fallbacks and record any layout feedback before finalizing.
+
 ## 5. Settings
 - [x] Make settings navigation actually switch sections. (code/source verified; mobile checks pending where relevant)
 - [x] Keep camera/aiming controls and HUD editor. (code/source verified; mobile checks pending where relevant)
 - [x] Combine Graphics / Audio navigation; retain quality, terrain LOD, weather controls. (code/source verified; mobile checks pending where relevant)
-- [x] Add saved master-volume and sound-effects sliders, linked to the existing Web Audio engine (build verification pending on latest commit).
+- [x] Add saved master-volume and sound-effects sliders, linked to the existing Web Audio engine (Vercel build READY; mobile audio test pending).
 - [ ] Add separate lobby/gameplay music tracks and controls when the user supplies files.
 - [x] Keep identity and diagnostics. (code/source verified; mobile checks pending where relevant)
 - [x] Hide character model picker and profession from planned UI after dependency audit. (code/source verified; mobile checks pending where relevant)
@@ -90,3 +102,4 @@
 - 2026-10-10: Replaced lobby scrolling with six distinct panels; added weapon illustrations and progress summary. Grouped settings, enabled diagnostics capture, safely hid approved exploration controls, and hardened Android display-mode rechecks.
 - 2026-10-10: Latest gameplay-code preview at commit `fa031e5` reported Vercel READY. TypeScript+Vite build passed; **on-device accuracy/input/UI/performance validation still pending**. Work remains NOT FINALIZED.
 - 2026-10-10: Added saved master and SFX volume sliders; replaced fixed per-shot volume override with preferences. Awaiting final combined preview build and Android sound check.
+- 2026-10-11: User screenshot review identified oversized navigation/footer, clipped Mission, 9:16 Wildcards, and settings all together. Applied 2-column Mission, compact shell, 6-across Wildcards, side-by-side records, and real settings pages. Inline local background diagnostics now injects only into Diagnostics. Vercel preview for `bc2eae87d8` reported READY. Android visual/touch regression check pending; project remains NOT FINALIZED.
