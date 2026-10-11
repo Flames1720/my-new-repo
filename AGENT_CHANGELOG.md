@@ -1101,3 +1101,8 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 
 ### October 11 release verification update
 Owner confirmed Resend SMTP saved in Supabase. Email/password confirmation and the original 20 admitted-player cap remain; no guest migration was applied remotely. Recovery form now removes the irrelevant required email field. Production build/type checks, 24 mocked mobile auth/consent checks, 27 performance checks, 313 combat checks and disposable PostgreSQL admission/privacy/analytics audit passed. Hosted security advisor has only expected private-table deny-all informational notices. Live inbox delivery, final Auth redirect configuration and exact deployed verification remain pending; production is not yet promoted.
+
+### October 11 V2 production release
+Owner verified receiving the real confirmation email and returning to https://island-outbreak.vercel.app, then explicitly authorized merging V2 into main. Merge 488787e had no conflicts and its tree matched feature commit 1ee0dc9. Vercel production deployment dpl_DYpayfPSjvMdutNgkAKwLZ7KNrwp reached READY and attached the verified game domain. Confirmed owner account received private analytics access. Recovery email request returned HTTP 200; owner password creation/admission remains user-assisted verification. The original 20 admitted-player cap remains.
+
+Production domain mobile verification passed all 24 signup/recovery/consent/reporting checks in landscape and portrait with explicitly mocked Auth/RPC transport. Real confirmation email delivery/redirect were separately verified by the owner; recovery email request succeeded, with owner end-to-end reset confirmation pending.

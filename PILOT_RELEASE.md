@@ -30,12 +30,14 @@ Before inviting 20 people:
 2. Set Supabase Auth Site URL and redirect allowlist to the final HTTPS pilot URL, including recovery/confirmation destinations. Configure signup abuse protection/rate limits appropriate for a small pilot. Test real confirmation and recovery emails end to end.
 3. Assign the owner’s confirmed account to `island_private.admins` through trusted SQL after they register. Do not make the first registrant an admin automatically.
 4. Verify the exact feature preview on mobile, real Auth/RPC traffic, consent revoke/delete, and email recovery. Auth transport fixtures are not evidence that live email delivery works.
-5. Publish/promote only the verified deployment. The existing production/main is not changed by these feature commits. Existing previews remain unchanged.
+5. Production merge was authorized after live confirmation delivery and redirect were verified. Main merge commit 488787e deployed READY as dpl_DYpayfPSjvMdutNgkAKwLZ7KNrwp. Its JavaScript asset matches the verified feature build. Live password-reset delivery and owner admission are the final user-assisted checks.
 
-Vercel environment mutation returned `429 github_response_error`; public production build configuration is included in the branch so missing remote variables cannot silently disable admission. No production deployment has been promoted.
+Vercel environment mutation returned `429 github_response_error`; public production build configuration is included in the branch so missing remote variables cannot silently disable admission. V2 was merged into main and deployed to production after the owner explicitly authorized the merge. The production address is https://island-outbreak.vercel.app.
 
 ## Local checks
 
 `tools/pilot_database_audit.py` uses a disposable PostgreSQL 17 database and auth stubs. It tests 21 concurrent admissions, full-cap return login, confirmed-email requirement, direct-table isolation, admin access, consent/deletion, stale-epoch rejection, idempotency and weighted analytics. Do not point it at a real project: it truncates its test tables.
 
 `tools/mobile_pilot_audit.py` explicitly mocks Auth/RPC transport and checks mobile signup/admission/consent UI, no WebGL world before admission, removed copy controls and report batching/withdrawal. This is separate from the database verification.
+
+Production domain mobile verification passed all 24 signup/recovery/consent/reporting checks in landscape and portrait with explicitly mocked Auth/RPC transport. Real confirmation email delivery/redirect were separately verified by the owner; recovery email request succeeded, with owner end-to-end reset confirmation pending.
