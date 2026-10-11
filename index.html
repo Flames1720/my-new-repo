@@ -8,12 +8,23 @@
     <title>Island Outbreak · Zombie Survival</title>
     <meta name="description" content="Survive 100 waves on a ruined island. Fight evolving infected, hold safe zones, and build your loadout." />
     <meta property="og:title" content="Island Outbreak · Zombie Survival" />
-    <meta property="og:description" content="First-person open-world zombie survival prototype with procedural terrain, weapons, loot, and safe zones." />
+    <meta property="og:description" content="Explore a low-poly island. Face the infected. Survive 100 waves." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://island-outbreak.vercel.app/" />
+    <meta property="og:image" content="https://island-outbreak.vercel.app/branding/island-outbreak-share.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Island Outbreak: low-poly island survival gameplay" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Island Outbreak · Zombie Survival" />
+    <meta name="twitter:description" content="Explore a low-poly island. Face the infected. Survive 100 waves." />
+    <meta name="twitter:image" content="https://island-outbreak.vercel.app/branding/island-outbreak-share.jpg" />
+    <link rel="preload" as="image" href="/branding/island-outbreak-logo.webp" />
     <style id="critical-display-gate">
       html, body { width: 100%; height: 100%; min-height: 100%; margin: 0; overflow: hidden; background: #07100f; }
       body { color: #edf3eb; font-family: system-ui, -apple-system, sans-serif; }
       #displayModeGate { position: fixed !important; inset: 0 !important; z-index: 2147483647 !important; display: flex !important; align-items: center; justify-content: center; box-sizing: border-box; overflow: auto; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: radial-gradient(ellipse at 50% 42%, #14231d, #07100f 70%); text-align: center; }
-      body:not(.display-mode-ready) > :not(#displayModeGate):not(.pilot-overlay) { visibility: hidden !important; pointer-events: none !important; }
+      body:not(.display-mode-ready) > :not(#displayModeGate):not(.pilot-overlay):not(#launchSplash) { visibility: hidden !important; pointer-events: none !important; }
       body.display-mode-ready #displayModeGate { display: none !important; }
       #displayModeGate .displayModeCard { box-sizing: border-box; width: min(520px, 100%); max-height: 100%; overflow: auto; padding: clamp(24px, 5vw, 48px); border: 1px solid #456351; border-radius: 4px 20px; background: linear-gradient(145deg, #111d1b, #080e0f); box-shadow: 0 30px 90px #000a; }
       #displayModeGate .displayModeEyebrow { color: #83bd95; font-size: 9px; font-weight: 900; letter-spacing: .22em; }
@@ -36,8 +47,31 @@
         #displayModeGate .displayModeFullscreenHint, #displayModeGate #enterGameDisplayMode, #displayModeGate .displayModeFootnote { display: none !important; }
       }
     </style>
+  <style>
+      body.launch-active > :not(#launchSplash):not(script) { visibility: hidden !important; pointer-events: none !important; }
+      #launchSplash { position: fixed; inset: 0; z-index: 2147483647; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 16px; background: #07100f; color: #e8eee3; text-align: center; transition: opacity .35s; }
+      #launchSplash img { width: min(650px, 85vw); max-height: 70dvh; object-fit: contain; }
+      #launchSplash p { margin: 0; font: 800 10px system-ui,sans-serif; letter-spacing: .24em; color: #acbcab; }
+      .launchTrack { width: min(280px,60vw); height: 3px; background: #29362c; overflow: hidden; }
+      .launchTrack span { display: block; height: 100%; background: #df9a40; transform-origin: left; animation: launchProgress 8s linear both; }
+      @keyframes launchProgress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+      @media(prefers-reduced-motion:reduce) { #launchSplash { transition:none; } .launchTrack span { animation:none; } }
+    </style>
   </head>
-  <body>
+  <body class="launch-active">
+    <div id="launchSplash" role="status" aria-label="Opening Island Outbreak">
+      <img src="/branding/island-outbreak-logo.webp" width="1536" height="1024" alt="Island Outbreak" fetchpriority="high" />
+      <p>YOUR ISLAND. THEIR OUTBREAK.</p>
+      <div class="launchTrack" aria-hidden="true"><span></span></div>
+    </div>
+    <script>
+      // Branding is a timed introduction, not a fabricated asset-loading percentage.
+      setTimeout(() => {
+        const splash = document.getElementById('launchSplash');
+        if (splash) splash.style.opacity = '0';
+        setTimeout(() => { splash?.remove(); document.body.classList.remove('launch-active'); }, 350);
+      }, 8000);
+    </script>
     <div id="displayModeGate" role="dialog" aria-modal="true" aria-labelledby="displayModeTitle">
       <div class="displayModeCard">
         <div class="displayModeEyebrow">ISLAND OUTBREAK · FIELD DEPLOYMENT</div>
