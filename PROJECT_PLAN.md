@@ -242,3 +242,13 @@ Read ARCHITECTURE.md for protected decisions and AGENT_CHANGELOG.md for the chro
 
 ## 2026-10-11 mobile performance checkpoint
 User Android logs show sustained ~20–23 FPS in low-power FPP mode, including windows with no chunk work or living enemies. Implemented cooperative chunk slices and queued late asset refresh, shared scenery instancing with preserved resource interactions, map caching/HUD mutation reduction, persistent graphics quality and cheaper drawing-buffer handling. Added complete core timings and draw-call window summaries (`mobile-perf-2`). Deterministic regressions: 27 passed. Additional production browser at 800×360/DPR2/touch: 17 passed, including ~120m streaming and PNG export. Full two-size browser repeat passed 180 checks / 42 screenshots with zero failures/page errors. Real Android FPS improvement and final user review remain pending; project NOT FINALIZED.
+
+## Looping soundtrack integration — 2026-10-11
+- User-supplied `Chaos.mp3` streams and loops in lobby and its Settings; `Island Outbreak.mp3` streams and loops during deployed runs, including pause, in-run Settings and results until quitting to the lobby. Switching pauses the other track and preserves playback position. Hidden tabs immediately suspend both tracks; backgrounding keeps the existing gameplay pause behavior.
+- Trusted pointer/keyboard interaction unlocks mobile Web Audio. Media elements stream through a dedicated music gain and existing master gain without whole-track AudioBuffer decoding. Procedural combat cues remain on their separate SFX gain.
+- Replaced the music placeholder with a saved Music on/off switch stopping either track and Music volume slider (default 45%); migrated older settings safely. Added `tools/mobile_music_audit.py` for real decoding/playback, loop wrap, exclusive switching, pause/resume/quit, master mute, gain independence, saved volume and synthetic visibility-event coverage at 854×393 and 915×412 mobile/touch.
+- Build/lint and 27 performance regression checks passed. Physical phone sound balance/autoplay review and final user approval remain pending. NOT FINALIZED.
+
+- User clarified: pausing and in-run Settings keep gameplay music; only returning to the lobby selects Chaos. Music on/off affects both tracks independently of SFX. Browser harness now waits for Web Audio parameter application before reading gain values; screenshot capture gets a separate 30s timeout after a software-renderer capture timeout.
+
+- Final corrected production browser pass: 181 UI checks, 43 screenshots at 854×393 and 915×412, zero failures/page errors. Real music playback/loop/switch/pause/mute/background checks passed at both sizes. Artifacts: `/workspace/scratch/island-music-ui-final` and `/workspace/scratch/island-music`.

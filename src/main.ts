@@ -2725,6 +2725,9 @@ const adsSensVal = document.querySelector('#adsSensVal') as HTMLSpanElement;
 const invertYCheck = document.querySelector('#invertYCheck') as HTMLInputElement;
 const lookWhileAimingCheck = document.querySelector('#lookWhileAimingCheck') as HTMLInputElement;
 const lookWhileFiringCheck = document.querySelector('#lookWhileFiringCheck') as HTMLInputElement;
+const musicEnabledCheck = document.querySelector('#musicEnabledCheck') as HTMLInputElement;
+const musicVolumeSlider = document.querySelector('#musicVolumeSlider') as HTMLInputElement;
+const musicVolumeValue = document.querySelector('#musicVolumeValue') as HTMLElement;
 const masterVolumeSlider = document.querySelector('#masterVolumeSlider') as HTMLInputElement;
 const masterVolumeValue = document.querySelector('#masterVolumeValue') as HTMLElement;
 const sfxVolumeSlider = document.querySelector('#sfxVolumeSlider') as HTMLInputElement;
@@ -2786,6 +2789,9 @@ function openSettings(open: boolean) {
     invertYCheck.checked = settings.current.invertY;
     lookWhileAimingCheck.checked = settings.current.lookWhileAiming;
     lookWhileFiringCheck.checked = settings.current.lookWhileFiring;
+    musicEnabledCheck.checked = settings.current.audioMusicEnabled;
+    musicVolumeSlider.value = String(Math.round(settings.current.audioMusic * 100));
+    musicVolumeValue.textContent = `${musicVolumeSlider.value}%`;
     masterVolumeSlider.value = String(Math.round(settings.current.audioMaster * 100));
     sfxVolumeSlider.value = String(Math.round(settings.current.audioSfx * 100));
     masterVolumeValue.textContent = `${masterVolumeSlider.value}%`;
@@ -2849,6 +2855,16 @@ showLobbyPage('mission');
 bindAction(settingsClose, () => openSettings(false));
 lookWhileAimingCheck.addEventListener('change', () => settings.update({ lookWhileAiming: lookWhileAimingCheck.checked }));
 lookWhileFiringCheck.addEventListener('change', () => settings.update({ lookWhileFiring: lookWhileFiringCheck.checked }));
+musicEnabledCheck.addEventListener('change', () => {
+  settings.update({ audioMusicEnabled: musicEnabledCheck.checked });
+  if (!musicEnabledCheck.checked) survivalSound.setMusicMode('silent');
+});
+musicVolumeSlider.addEventListener('input', () => {
+  const volume = Number(musicVolumeSlider.value) / 100;
+  settings.update({ audioMusic: volume });
+  musicVolumeValue.textContent = `${Math.round(volume * 100)}%`;
+  survivalSound.setMusicVolume(volume);
+});
 masterVolumeSlider.addEventListener('input', () => {
   const volume = Number(masterVolumeSlider.value) / 100;
   settings.update({ audioMaster: volume });
@@ -4067,9 +4083,14 @@ survivalLobby?.classList.add('show');
 
 // Pointer/touch interaction is the browser-safe point to unlock procedural Web Audio.
 // Capture phase makes this work for the joystick and HUD buttons as well as the canvas.
-window.addEventListener('pointerdown', () => {
+function unlockGameAudio(): void {
+  survivalSound.setMusicVolume(settings.current.audioMusic);
+  survivalSound.unlockMusic();
+  survivalSound.setVolumes(settings.current.audioMaster, settings.current.audioSfx);
   if (survival?.enabled) survival.activateAudio();
-}, { capture: true, passive: true });
+}
+window.addEventListener('pointerdown', unlockGameAudio, { capture: true, passive: true });
+window.addEventListener('keydown', unlockGameAudio, { capture: true });
 
 function moveWithCollisions(dx: number, dz: number) {
   const p = player.root.position;
@@ -4657,6 +4678,9 @@ let lobbyRenderAccumulator = 0;
 let lobbyHasRendered = false;
 function loop() {
   requestAnimationFrame(loop);
+  // A deployed run keeps its soundtrack through pause, Settings and results.
+  const musicMode = survivalLobby?.classList.contains('show') ? 'lobby' : 'gameplay';
+  survivalSound.setMusicMode(document.hidden || !settings.current.audioMusicEnabled ? 'silent' : musicMode);
   const rawDeltaSeconds = clock.getDelta();
   const rawFrameMs = rawDeltaSeconds * 1000;
   const dt = Math.min(rawDeltaSeconds, 0.05);
@@ -4824,6 +4848,7 @@ function loop() {
   diagnosticMeasureFrame = false;
 }
 document.addEventListener('visibilitychange', () => {
+  if (document.hidden) survivalSound.setMusicMode('silent');
   // Reset the clock baseline when returning from the background to avoid a
   // large simulation step or a jump in physics on mobile browsers.
   clock.getDelta();

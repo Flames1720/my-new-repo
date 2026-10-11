@@ -2315,3 +2315,7 @@ body.survival-mode #surveyBtn{display:none!important}
   #settingsOverlay .settingsHeader{grid-template-columns:minmax(90px,140px) minmax(0,1fr) 28px;gap:5px}
   #settingsOverlay .settingsTabs button{padding:7px;font-size:8px}
 }
+
+/* The entire music label is a comfortable touch target. */
+label[for="musicEnabledCheck"] { min-height: 44px; align-items: center; cursor: pointer; }
+#musicEnabledCheck { width: 22px; height: 22px; }

@@ -373,8 +373,9 @@
             <input id="sfxVolumeSlider" type="range" min="0" max="100" step="5" value="82" aria-label="Sound effects volume"/>
           </div>
           <div class="settingGroup" data-settings-section="graphics">
-            <div class="settingLabel"><span>Game music</span></div>
-            <p class="settingNote">Lobby and gameplay music controls will be added after audio tracks are supplied. Existing game sounds remain available.</p>
+            <label class="settingLabel" for="musicEnabledCheck"><span>Music</span><input id="musicEnabledCheck" type="checkbox" checked aria-label="Music on or off"/></label>
+            <div class="settingLabel"><span>Music volume</span><span id="musicVolumeValue">45%</span></div>
+            <input id="musicVolumeSlider" type="range" min="0" max="100" step="5" value="45" aria-label="Music volume"/>
           </div>
           </section>
           <section class="settingsPage" data-settings-page="player" aria-label="Player settings" hidden>

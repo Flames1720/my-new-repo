@@ -35,7 +35,7 @@ def run(url, out):
                     report['errors'].append(f'{name}: {label}: {details}')
             def screenshot(label):
                 path = out / f'{name}-{label}.png'
-                page.screenshot(path=str(path), animations='disabled')
+                page.screenshot(path=str(path), animations='disabled', timeout=30000)
                 report['screens'].append({'viewport': name, 'page': label, 'image': str(path)})
             def box(selector):
                 return page.locator(selector).evaluate(BOUNDS)

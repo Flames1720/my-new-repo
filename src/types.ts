@@ -55,6 +55,8 @@ export interface SettingsState {
   invertY: boolean;
   lookWhileAiming: boolean; // Allow dragging ADS button to turn, off by default
   lookWhileFiring: boolean;
+  audioMusicEnabled: boolean;
+  audioMusic: number; // Music volume 0-1
   audioMaster: number; // Master volume 0-1
   audioSfx: number; // Sound effects volume 0-1 // Allow dragging Shoot button to turn, off by default
   cameraAcceleration: 'fixed' | 'distance' | 'speed';
