@@ -53,6 +53,12 @@ export interface SettingsState {
   sensitivityY: number; // Degrees looked across a full look-zone-height swipe; default 100
   adsSensitivity: number; // Multiplier applied only while holding aim; 0.25 to 1
   invertY: boolean;
+  lookWhileAiming: boolean; // Allow dragging ADS button to turn, off by default
+  lookWhileFiring: boolean;
+  audioMusicEnabled: boolean;
+  audioMusic: number; // Music volume 0-1
+  audioMaster: number; // Master volume 0-1
+  audioSfx: number; // Sound effects volume 0-1 // Allow dragging Shoot button to turn, off by default
   cameraAcceleration: 'fixed' | 'distance' | 'speed';
   cameraAccelerationStrength: number; // 0 to 2.0
   cameraAccelerationThreshold: number; // 0.5 to 2.0; higher requires a stronger/faster swipe

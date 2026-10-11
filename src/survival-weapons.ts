@@ -101,12 +101,16 @@ export function createWeaponRig(type: SurvivalWeaponId): WeaponRig {
   const metalMat = new THREE.MeshStandardMaterial({
     color: 0x1f242d,
     roughness: 0.35,
-    metalness: 0.85,
+    metalness: 0.65,
+    emissive: 0x19232c,
+    emissiveIntensity: 0.45,
   });
   const darkPolymerMat = new THREE.MeshStandardMaterial({
     color: 0x111317,
     roughness: 0.75,
     metalness: 0.2,
+    emissive: 0x0b1118,
+    emissiveIntensity: 0.35,
   });
   const sightGlowMat = new THREE.MeshBasicMaterial({
     color: 0x22ff55,

@@ -1,3 +1,29 @@
+## 2026-10-10 20:12 +01:00 — UI regression recovery on the active world-v2 branch
+
+**Scope:** Restore previously implemented HUD, result-screen overflow, safe-zone arrow, and wildcard-card safeguards without merging other branch history.
+
+**Starting point:** `feature/zombie-survival-world-v2`; inspected the matching UI fix block on `feature/island-outbreak-diagnostics-ui-fixes`.
+
+**Changed:**
+- `src/style.css`: selectively restored the safe-zone arrow glyph, landscape death/result-card fit and scroll behavior, wildcard-card sizing/text clamping, and survival inventory visibility rule.
+- `src/style.css`: disabled the full-screen backdrop-filter in HUD-edit mode and placed the decorative backdrop below the touch controls, so it cannot blur/cover movable buttons.
+- `src/main.ts`: offset the right-pointing arrow glyph by -90° so a 0° relative bearing points ahead/up.
+- No branch merge; no new branch; chunk-streaming performance work left untouched.
+
+**Verification:**
+- Source changes written to the active branch; build and device verification still pending.
+- Do not claim the visible HUD/death-screen/cards are fixed until tested in-browser/on Android.
+
+**Next agent:** Run lint/build, inspect the resulting diff and confirm these changes coexist with the incremental chunk queue and recent diagnostics controls.
+
+## 2026-10-10 — Restore in-game Copy Logs controls on the active working branch
+
+- Restored the Background Diagnostics panel inside Settings on `feature/zombie-survival-world-v2`, alongside the current HUD editor work.
+- Added Copy Logs and Clear Logs actions, with a clipboard fallback that exposes the selected JSON report if Android/browser clipboard access is blocked.
+- Captures a bounded local report with device context, performance samples, runtime errors/rejections, visibility changes, and relevant UI actions. No backend transmission is performed.
+- This consolidates the missing diagnostics UI into the same working branch as the HUD fixes; do not create another issue branch.
+- Validation: source-level insertion checked against the existing diagnostics script. A build and actual phone interaction still need verification.
+
 # AGENT_CHANGELOG.md — Multi-Agent Handoff Log
 
 This is the chronological handoff record for meaningful AI-agent work. It complements git history by recording reasoning, verification, discoveries, unresolved issues and what the next agent needs to know.
@@ -838,3 +864,240 @@ These remain the next coherent migration steps; the existing smooth terrain and 
 **Changed:** Lowered the deliberate-movement threshold to 3.2 velocity or 0.55 joystick magnitude while retaining grounded, non-swimming and cooldown guards. Added explicit `z-index`, `pointer-events` and `touch-action` rules for the Slide button so tapping it while another pointer controls movement is supported.
 
 **Verification:** `npm run lint`, `npm run build` and `git diff --check` all passed. Physical-device multitouch verification remains pending.
+
+
+## 2026-10-10 — GPT-6 — mobile performance optimization and bounded diagnostics
+
+**Branch:** `feature/zombie-survival-world-v2` (no merge to `main`).
+
+**Optimizations:**
+- On coarse-pointer/low-power devices, cap active world streaming at chunk radius 5 instead of the configured 6. The nearby 5×5 area retains its existing LOD rules; this removes only the outermost LOD2 ring while chunks continue to stream normally as the player moves.
+- Zombie line-of-sight checks now reuse scratch vectors and an intersections buffer, and lazily obtain the filtered sight-blocker list once per simulation tick instead of once per zombie check.
+- Reuse the weapon-position scratch vector and skip traversing muzzle-flash meshes when the requested opacity is unchanged. The rendered result for the same opacity remains unchanged.
+
+**Next-test instrumentation:**
+- Captures raw frame intervals, simulation and render wall time, survival-update and aim-query timings, chunk-stream cost, draw calls, triangles, geometry/texture counts, loaded chunks, aim targets, camera blockers, and survival actor/effect counts.
+- Raw frame intervals are tracked each frame; simulation, render, and detailed subphase durations are timed only every fourth frame. No second animation loop was introduced, keeping probe overhead low.
+- Capture ends after 120 seconds of active gameplay. Logs are kept to 32 records and written to local storage every third 5-second sample, plus on errors/visibility changes.
+
+**Verification status:** Changes committed to the feature branch; CI and Vercel preview results to be checked after the push. Physical-device performance comparison is pending.
+
+
+## 2026-10-10 — GPT-6 — isolate HUD customization from gameplay and pause UI
+
+**Branch:** `feature/zombie-survival-world-v2`; `main` unchanged.
+
+**Fix:**
+- HUD Customization now uses a static dark gradient with a soft blur instead of exposing the gameplay render or a screenshot of the paused screen.
+- During editing, the gameplay canvas and all other top-level game/settings/pause overlays are hidden. Only the real movable HUD controls and the HUD editor remain visible.
+- Hidden the movement/look zones and non-customizable touch actions in edit mode, so the editor presents only the controls that can actually be arranged.
+- Kept the selected control's existing cyan highlight/outline, drag behavior, size/opacity sliders, presets and local save behavior.
+
+**Verification:** Source reviewed and patch applied to the feature branch. Build/CI and real-device interaction checks are pending; do not treat this as phone-tested until the user confirms.
+
+
+## 2026-10-10 — GPT-6 — restore HUD editor floating panel interactions
+
+**Branch:** `feature/zombie-survival-world-v2`; `main` unchanged.
+
+**Fix:** Explicitly restore pointer-event handling, visibility, touch behavior, and a high stacking order for the HUD editor overlay, panel, and its buttons/selects/sliders while HUD edit mode is active. This prevents the isolated editor backdrop/layering from intercepting Save & close, Reset, Collapse/Expand, and Close controls.
+
+**Verification:** Source patch committed and preview deployment requested. Physical-device tap test is still required.
+
+## 2026-10-10 17:54 +01:00 — Claude / Claude Sonnet 5.5 — mobile perf: incremental chunk streaming (`chunk-queue-1`)
+
+**Scope:** Mobile frame-time spikes and duplicated world resources, driven by the Android capture in `livelogs.md`.
+
+**Starting point:** `feature/zombie-survival-world-v2` at `64664e2` ("Replace mobile performance live logs"). `src/main.ts` base blob `1163ec83`. `main` untouched. NOT committed or pushed by this agent: the GitHub connector in the session can only write whole files, and no local checkout or network was available. Delivered as a patch/zip instead.
+
+**Inspected:** `livelogs.md` (24 five-second windows, exported 16:41Z); `src/main.ts` (`Chunks.build/stream`, `disposeWorldObjects`, `update()`, `loop()`, diagnostics sampling, `buildTree/buildRock`); `src/zombie-survival.ts` (spawn, LOS, fire, dispose). NOT inspected: `index.html`, `src/style.css`, `src/environment-assets.ts`, `src/weather.ts`, `src/settlement.ts`.
+
+**Evidence from the capture (the 24 windows reproduce the reported 14.8 FPS / 329.9 ms worst / ~28 ms render / ~13 ms sim / ~1,390 geometries):**
+- 10 of 10 windows with `simulationMaxMs` > 100 also had a chunk stream. Median `simulationMaxMs`: 125.3 with a stream vs 21.4 without. Mean worst frame: 241 ms vs 142 ms. Each boundary crossing cost 89-240 ms (`chunkStreamMaxMs`).
+- Cause in code: `Chunks.stream()` built every missing chunk and every LOD1->LOD0 upgrade synchronously inside one `update()` call (~16 builds per straight crossing).
+- Streaming does NOT explain the steady-state problem. Windows with no stream still averaged 15.6 FPS, p95 ~104 ms, ~49 of ~78 frames over 50 ms. Mean frame 69.3 ms vs `simulationAvg` 12.8 + `renderAvg` 28.3 leaves ~28 ms/frame not covered by JS timers (GPU/compositor/long tasks; 453 long tasks in 120 s).
+- `renderAvgMs` correlates with triangles (r=0.60) more than draw calls (r=0.46), n=24. Weak evidence; not a root cause.
+
+**Changed (`src/main.ts` only):**
+1. `Chunks.streamQueued()` + `Chunks.pumpBuilds(budgetMs)`: unloading stays immediate; missing/upgraded chunks are queued nearest-first and built under a per-frame budget (5 ms low-power, 8 ms otherwise, always >=1 chunk so the queue drains). Entries are re-validated against the latest player chunk when processed; an LOD upgrade replaces the old chunk atomically so there are no holes. The synchronous `stream()` is unchanged and still used for initial load, respawn, `rebuildAll()` and survey exit (it also clears the queue). Chunk build internals (terrain, water, roads, collision, hydrology) were NOT touched.
+2. One shared road material (previously one per chunk) and shared stump/rubble geometry+material (previously new per stump/rubble, also in `hitResource`), excluded from `disposeWorldObjects`.
+3. Fruit on asset trees: one shared sphere geometry and one material per colour (previously 5 new geometries + 1 material per fruit tree), and fruit are no longer added on LOD1+ chunks (0.18 m spheres, sub-pixel at that distance). This one is a visible LOD change. The figures behind it are a code-derived estimate (~45 fruit trees, ~225 meshes); the log has no per-kind breakdown.
+4. Instrumentation (NEW, absent from the 16:33Z session): `chunkPumpAvgMs/MaxMs/Count`, `chunkQueueDepth`, `perfBuildTag: 'chunk-queue-1'`. NOTE: `chunkStream*` now times only unload + queue; chunk building is in `chunkPump*`. Do not compare `chunkStream*` across the old and new sessions directly.
+
+**Verification:**
+- Build: NOT RUN (no network/dependencies in the session)
+- Typecheck: NOT RUN. Only syntax-level (`ts.transpileModule`: 0 diagnostics) and an identifier-level `tsc` comparison (same 23 missing-typings errors before and after, none on new identifiers). This is not a real typecheck.
+- Runtime/browser: NOT VERIFIED
+- Device: NOT VERIFIED
+- Patch applies cleanly to the exact base blob `1163ec83` and reproduces the edited file byte-for-byte.
+
+**Important findings:**
+- No performance improvement is claimed. Expected: far fewer >100 ms frames; modest average-FPS change (streaming windows were ~1 FPS slower than non-streaming ones). The ~15 FPS steady state is untouched.
+- With radius 5 on low-power, LOD2 is never used (`dist <= 5` is LOD1).
+- `preserveDrawingBuffer: true` on the renderer is a plausible contributor to the unaccounted ~28 ms but is unproven; it is only needed if something reads the canvas after the frame.
+
+**Remaining work:**
+- Build + typecheck, then a 120 s Android capture with the same route. Compare `worstFrameMs`, `p95FrameMs`, `slowFramesOver50ms`, and `simulationMaxMs` in windows where `chunkPumpCount` > 0. Watch for visible pop-in at the ring edge and for tree/rock/aim-target delay after a crossing.
+- A/B candidates (one change per capture): `chunkRadius` 4 in Settings (121 -> 81 chunks, no code change); `preserveDrawingBuffer: false`; pixel ratio 1.0.
+- `src/zombie-survival.ts` (not changed): per-zombie geometry/material creation, and `hasLineOfSight` running every frame inside attack range before the cooldown check (reordering the checks is behaviour-preserving).
+
+**Next agent:** Apply the patch on `feature/zombie-survival-world-v2`, run `npm run lint && npm run build`, and fix any type errors before testing on device. Do not merge to `main`.
+
+
+## 2026-10-10 — GPT-6 — Island Outbreak aiming, mobile controls, lobby and settings sprint
+
+**Branch:** `feature/zombie-survival-world-v2`; `main` unchanged. **Status:** in progress, NOT user-finalized.
+
+**Confirmed baseline from source:** first-person reticle uses 50%/50% screen coordinates. Hit detection starts from the camera ray; visible tracers previously started from the weapon muzzle. Single-bullet pistol/rifle inherited nonzero random NDC spread even while aiming. Player reported consistent roughly 40px leftward missed impacts on his Android screen, but a precise on-device calibration has NOT yet been verified.
+
+**Applied:**
+- `src/zombie-survival.ts`: aimed single-projectile weapons now use zero random spread; centered shotgun spread stays intact, hip-fire spread preserved. ADS tracers originate from the same camera ray used for ray-hit detection to avoid misleading muzzle parallax. ADS FOV interpolation uses frame-independent faster exponential blending.
+- `src/main.ts`, `src/settings.ts`, `src/types.ts`, `index.html`: survival first-person camera orientation and eye position no longer trail touch input through an extra angle/position lerp. Separate opt-in button drag-look toggles (Look while aiming / Look while firing), both default OFF, with pointer IDs so Shoot/ADS drags do not rotate view without permission. ADS set on pointer down.
+- `index.html`, `src/style.css`, `src/main.ts`: Mission, Field Kit, Wildcards, Records, Challenges and Upgrades now switch as distinct lobby panels, not scroll targets. Existing selection, Wildcard and upgrade IDs/handlers preserved. Mission wording simplified, current level/XP/best-wave summaries added. Three lightweight inline SVG weapon illustrations added, without downloading new textures or creating a WebGL preview scene.
+- Settings controls grouped in functional CONTROLS / GRAPHICS-AUDIO / PLAYER / DIAGNOSTICS navigation. Model picker and profession hidden in UI, outfit deferred and hidden, backing code retained. Opt-in diagnostics capture/copy/clear wired to the preexisting bounded 120s performance event stream; music controls await the user's audio files.
+- Added a lightweight procedural slide sound on successful slide start.
+- Display gate now checks actual landscape viewport dimensions and listens for Android/WebKit fullscreen, rotation, page/show/focus and orientation updates; existing no-auto-resume pause behavior retained.
+- Hid old exploration HUD (inventory, playerCard, carpenter overlay, survey button) in survival view, without deleting their source. Undecided legacy actions and photo-mode code remain untouched.
+
+**Verification:** Vercel preview auto-build for commit `fa031e5` reached `READY`, which includes TypeScript+Vite build as configured in `package.json`. This is **build verification only**, not a mobile-browser interaction, accuracy, performance, screenshot, or save-data regression test. Previous optimization `chunk-queue-1` was not modified.
+
+**Next tests:** Reproduce 40px-left symptom with stationary target at multiple ranges and ADS/hip modes; Android claw multi-touch; fullscreen exit/return and portrait rotation; inspect lobby card layout and all page actions; confirm save data, memory and frame time. Collect user audio files before implementing music.
+
+**Follow-up audio settings (same sprint):** Added persisted master-volume and sound-effects sliders (0–100%) to Graphics / Audio. `ZombieSurvivalSystem.activateAudio()` now reapplies saved values instead of overwriting preferences with hardcoded levels whenever firing/reloading. Browser audio and cross-session persistence still require device validation. Lobby/gameplay music files have not yet been provided.
+
+
+## 2026-10-11 — GPT-6 — landscape lobby density and settings page isolation
+
+**Branch:** `feature/zombie-survival-world-v2` only. **User confirmation:** screenshots of Mission, Wildcards, Challenges and Records at approximately 1536×691 reveal oversized vertical navigation/footer, clipped Mission text, overly tall portrait cards, and padded information panels. User reports settings still lining up together while scrolling.
+
+**Root causes from source:**
+- Lobby previously used 64px navigation + 54px branding + a bottom footer with large fixed spacing and 100px extra stage padding, despite landscape-height limitations.
+- Mission contents were a single vertical stack instead of taking advantage of landscape width.
+- `src/style.css` still declared `.wildcardCard {aspect-ratio: 9/16; height:auto}`, producing enormous portrait cards in the lobby.
+- Settings controls were all siblings, categorized by runtime `data-settings-section` tagging, and an inline log script also appended `#diagnosticsPanel` directly to `.settingsBody` without any category.
+- The settings overlay z-index (1000) was below the survival lobby (1200), making lobby settings layering unreliable.
+
+**Changes:**
+1. `index.html`: reorganized Mission as `.missionVisual` + `.missionDetails` columns; grouped Record operators and metrics into rows; moved currency/level from navigation to header; wrapped the existing controls into four explicit `.settingsPage` sections (Controls, Graphics / Audio, Player, Diagnostics) without changing input IDs or event hookups. Legacy character picker, profession and outfit controls remain present but hidden. Redirected inline background log injection into the Diagnostics section, preserving copy/clear behavior.
+2. `src/main.ts`: replaced dynamic `data-settings-section` group hiding with explicit panel switching, `hidden`, `inert`, aria-hidden and updated category titles, while retaining all settings bindings.
+3. `src/style.css`: gave the lobby a viewport-height grid shell with smaller nav/header/footer and a 40–46px Deploy touch target; Mission uses a real two-column layout. Wildcards are 6 per row, at fixed compact height with the old portrait aspect ratio canceled; Records use two operator columns and three parallel stats; Challenges use two parallel sections; large wrappers have lighter styling. Settings overlay now sits above lobby and uses separate compact grid pages. Responsive short-landscape and portrait fallbacks included.
+
+**Verification:** Vercel preview build for `bc2eae87d8` reported READY (TypeScript+Vite). This establishes build success, **not** screenshot/phone-layout or real-touch verification. The next Android review should check small landscape screenshots (especially 1536×691 or ~800×360 CSS pixels), Wildcards card flip/taps, secondary-page Deploy, Settings selection and diagnostics copy/clear, save data and landscape/fullscreen gate. No backend, game logic or previously undecided features deleted.
+
+**Status:** CHECKPOINT IMPLEMENTED; **NOT FINALIZED**. User visual feedback still required.
+
+**Short-landscape follow-up:** The screenshots are high-resolution phone captures, so their effective CSS viewport may be much smaller than their pixel dimensions. Added a max-height:540px responsive budget: two rows of compact 78–104px Wildcards, 40px navigation and Deploy touch height, condensed Records metrics and operators. At e.g. 800×360 CSS px this is intended to fit both rows while preserving touch targets. This is source/design reasoning; a screenshot/device test is still required.
+
+
+## 2026-10-11 — Codex — verified small-landscape lobby, settings and combat UI
+
+**Branch:** `feature/zombie-survival-world-v2` only. **Status:** browser verified; physical-phone review and final user approval pending.
+
+**Inspected before edits:** actual branch/worktree and recent commits; `PROJECT_PLAN.md`, `ARCHITECTURE.md`, `UI_INPUT_DECISIONS.md`, `ISLAND_OUTBREAK_PROGRESS.md`, latest changelog, `index.html`, both UI stylesheets, settings/input/HUD/pause handlers, existing visual audit and CI. Public repository cloned into the cloud workspace after write access became available.
+
+**Baseline:** Built/served production assets on port 4173. Captured 20 lobby/settings screenshots with mobile + touch at 854×393 and 915×412; separately entered real native Chromium fullscreen and deployed. Screenshot review found half-screen lobby width, clipped Mission progress, tiny wrapped Wildcard names, Settings squeezed into one-third width with overlapping labels/collapsed name input, ADS/minimap and weapon/status overlaps, and an unstyled 28px pause Settings button. Causes: inherited legacy lobby `grid-template-columns`/areas, and later-loaded `.settingsBody {display:grid!important}` in `ui-modern.css`.
+
+**Changes:**
+- Added `src/mobile-ui.css`, imported last by `src/main.ts`, as a scoped final survival UI layer. Reset inherited lobby grid tracks/areas/spacing, reclaim full width, improve copy contrast/size and retain navigation/Deploy. Auto-fit Wildcard columns and two 92px rows fit both tested screens; starter backs show description and equip/remove actions.
+- Fix Settings body/page layout, label wrapping, identity field grid and 44px selects/buttons; enlarge slider touch area and keep header/tabs/Close visible while scrolling. Label identity inputs and Close for accessibility.
+- Move new/default four-finger ADS clear of minimap and default/preset weapon swap clear of status. Saved custom layouts still load through the existing key. Wildcard HUD controls now respect existing position/size/opacity variables instead of ignoring them in a fixed flex row. HP/ammo occupy lower left; temporary prompts sit above action controls.
+- Standardize all four pause actions as two-column 44px targets. Put HUD editor content in a scrolling body with accessible header and Save/Reset footer on short landscape screens.
+- Center the reticle exactly on viewport/camera projection (baseline relative positioning was 1px high). No shot-ray compensation or weapon/hit-math change.
+- Match initial Diagnostics action/readout to the already-active inline background capture.
+- Add `tools/mobile_landscape_audit.py`: native fullscreen, mobile/touch, real taps/CDP swipes/multi-touch, screenshots, layout/state checks. Update existing `tools/visual_audit.py` to use native fullscreen/touch entry; remove ineffective fullscreen mock and unnecessary security bypass.
+- Update progress checklist, project plan and changelog.
+
+**Verification:**
+- `npm ci`, `npm run build`, `npm run lint`, Python audit syntax, `git diff --check`.
+- Final comprehensive production-browser repeat: **180 checks passed, 42 screenshots, zero browser page errors** at **854×393 and 915×412**, DPR 1, mobile/touch emulation. All six lobby pages/four Settings pages captured and visually inspected at both sizes.
+- Panels fit stage without horizontal overflow; ten Wildcards form two rows; Deploy stays visible. Starter-card flip/equip/remove, selected-weapon deployment, saved Wildcard/audio preferences across reload.
+- Settings isolation, touch scrolling, checkbox/volume-track taps, usable name input, diagnostics capture state/copy/clear, HUD editor collapse/expand/save.
+- Native fullscreen entry; shotgun deployment; visible combat controls reachable at centers; ADS clear of minimap; exact reticle center; ADS/fire drags do not rotate camera; fire consumes ammo; reload restores magazine; swap/look-zone respond; separate simultaneous movement/look/ADS pointers and movement release.
+- Pause freezes preparation/wave, action targets fit screen, Settings returns to pause, restart/quit work, portrait/fullscreen loss restores gate and recovery stays paused until explicit Resume.
+- Failed intermediate checks corrected and rerun. Reload audit waits for actual shotgun 2.2s game timer rather than assuming 1.6s. Orientation uses CDP device metrics because Chromium rejects normal native window resizing while fullscreen.
+
+**Artifacts (local workspace):** `/workspace/scratch/island-baseline/`; `/workspace/scratch/island-interactions-1/` (failed intermediate report); `/workspace/scratch/island-interactions-2/` (final comprehensive report/screenshots/contact sheets); `/workspace/scratch/island-final-visual-audit/` (repeat existing auditor). Screenshots remain outside source control; checked-in tools reproduce them.
+
+**Limits / next review:** Software-rendered cloud Chromium is not a physical phone or mobile-GPU benchmark. Android/iOS support, browser chrome/notches/keyboard, audio perception, long combat runs and exact impact alignment still require device review. Jump/Slide taps were exercised; detailed motion/timing outcomes were not asserted. Existing currency/signal/challenge counters remain placeholder/pending gameplay-state integration; no economy/challenge mechanics invented in this layout pass. World/streaming/weapon hit logic preserved. Project NOT FINALIZED.
+
+
+## 2026-10-11 — Codex — mobile performance pass (`mobile-perf-2`)
+
+**Branch:** `feature/zombie-survival-world-v2` only. **Status:** implementation and local regression verification; physical Android performance comparison pending. NOT FINALIZED.
+
+**Evidence / inspection:** Reviewed actual branch, source, architecture/input decisions, plan/progress/changelog and user Android capture. Sustained ~20–23 FPS, typically hundreds of draws and 110–121 chunks, including slow windows without enemies or chunk work. Existing 5ms chunk budget checked only after complete chunk construction. Graphics selection could enable mobile shadows, while startup/resize ignored the saved quality and restored DPR 1.25. Core diagnostic timings were sampled every fourth frame despite a label claiming every frame. Renderer retained its drawing buffer continuously although photo capture already renders immediately before PNG readback. Wildcard labels and other HUD text rewrote unchanged text; a second background targeting query had no consumer.
+
+**Changes:**
+- `src/main.ts`: cooperative generator for terrain vertex blocks, water rows and prop work, with a 3ms mobile target. Initial load/survey can drain the same builder synchronously. Keep old upgraded chunks until replacement publication; cancel partial work on requeue/restart/survey and dispose owned geometry. Snapshot chunk changes and retry stale work so concurrent harvest/door edits cannot resurrect removed resources. Apply expiry cleanup only at successful publication. Queue late CDN asset refresh instead of synchronous world rebuild, and advance queued refresh in the paused lobby.
+- `src/resource-instances.ts`: instance repeated opaque shared resource mesh parts within each chunk. Preserve original resource roots/meshes as exact raycast geometry and existing collider/save identity; source meshes are hidden only from rendering. Three.js raycasting ignores Mesh.visible (verified with production version); resource roots remain visible. Sync instance transforms after harvest shrinking and remove only that resource's slots on harvest. Dispose per-chunk instance buffers on unload, retaining shared template geometry/materials.
+- `src/static-meshes.ts`, `src/environment-assets.ts`: combine compatible opaque static resource parts by material/layout/shadow flags, keep resource parent transforms/identity, retire only owned geometry and retain transparent/skinned/morph geometry. Compact templates once at load, plus procedural fallback and fruit groups; avoid recalculating unchanged local part transforms.
+- `src/minimap.ts`: cache fixed chunk-center geography colors; dynamic markers/trails remain live.
+- Graphics quality now applies consistently on selection/startup/resize. Mobile shadows stay off. Mobile Low/Medium/High render scales are 0.85/1.0/1.25 (capped by device DPR); desktop 1.0/1.3/1.6. High retains the previous mobile resolution, while Low deliberately trades sharpness for fewer pixels. Disable preserveDrawingBuffer; keep immediate photo render/readback.
+- Avoid unchanged HUD text/interaction prompt reconstruction; remove unused recurring combat-target query while retaining forced action targeting and weapon hitscan.
+- Diagnostic tag `mobile-perf-2`: measure core simulation/render every frame, report their sample counts, sample map paint costs, and report draw-call average/min/max alongside the final-frame snapshot. Chunk work remains measured every call; timing label now says so.
+- `tools/performance_regression.mjs`: test real batching helpers and the actual production Chunks class against controlled dry terrain (no duplicate builder implementation). `tools/mobile_performance_audit.py`: production mobile/touch graphics/reload/orientation/photo/streaming checks. Harden existing landscape audit to wait for application initialization and actual fullscreen/gate state rather than fixed short sleeps.
+- `index.html`: graphics labels say High clarity / Balanced / Performance; remove misleading promises of full shadows on mobile or guaranteed battery savings.
+- Maintain progress checklist and project plan.
+
+**Verification so far:**
+- TypeScript/Vite production build, lint, whitespace check; **27 deterministic regression checks passed**. Tests cover resource ray distance/identity, harvest shrink and individual removal, shared-geometry retention, opaque merge transforms, transparent exclusions, cooperative yielding/atomic publication, edits during construction, cancellation, asset refresh, range filtering and restart drainage.
+- **17 production browser checks passed at 800×360, DPR 2, mobile/touch**. Low/Medium/High dimensions match, Low survives reload/orientation, drawing-buffer retention is off, exported PNG is nonblank at expected dimensions, unchanged ready Wildcards generate zero text mutations, held touchscreen joystick moves ~120m across chunks and queue drains after release, core timing counts equal frame counts and draw-call summaries are consistent. Portrait recovery stays paused.
+- First comprehensive two-size run passed 180 checks / 42 screenshots. A later repeat exposed fragile fixed 200ms fullscreen assertions and a fixed 600ms reload initialization delay; audit now waits for actual state/application readiness. Final repeat passed **180 checks / 42 screenshots, zero failures/page errors** at both requested landscape sizes; page/settings/combat screenshots inspected. No product fullscreen logic was changed in this performance pass.
+- Representative fixed-spawn settled-scene cloud probes showed ~361 draws before vs ~305 after instancing, with the same 121 loaded chunks and 257 interaction targets (about 16% fewer submissions). Batching can include offscreen instances and modestly increase submitted triangles. This is workload evidence, **not a phone FPS improvement claim**.
+- Touch streaming cloud samples typically pumped around 3ms, but occasional 36–42ms calls remain (allocation/GC or unsliced work can overrun). Cooperative budget is not a hard deadline. Software GPU FPS varied and is unsuitable for Android speed claims.
+
+**Artifacts:** `/workspace/scratch/perf-before.json`, `perf-instanced.json`; `/workspace/scratch/island-perf-device/` (17-check report, real exported PNG and streaming screenshot); `/workspace/scratch/island-perf-mobile/` (first pass); `/workspace/scratch/island-perf-final-mobile/` (intermediate failed repeat); final repeat output `/workspace/scratch/island-perf-final-repeat/`.
+
+**User ideas retained for follow-up:** Field Medic was likely unequipped while inspecting cards, not missing. Make every HUD item movable, including minimap and Wildcard buttons (Wildcard saved placement already exists; minimap is not currently in the editor). Add automatic reload when the magazine empties and reserve ammunition exists (current code dry-fires and asks for manual reload). Later: safe zones relocate to more positions with greater travel distance as difficulty increases. Keep the performance task first; these are recorded requirements/plans, not implemented here.
+
+**Next evidence:** Same-quality Android capture from the new preview, then separate Low/Medium trials. Compare frame consistency, steady/streaming periods and input feel. Physical phone hit accuracy, sustained thermals/GPU scheduling and final user approval remain open.
+
+**Late user screenshot correction:** Records operator subtitle was literal `LEVEL 1 · ACTIVE` while the header already read saved XP level (user screenshot showed LV 3). Added `#lobbyOperatorLevel` and update it from the same existing level computation in `updateLobbyProgressionUi`. No XP economy or wave/level semantics changed. Focused 800×360/DPR2/touch browser checks passed for XP 0/150/300 (levels 1/2/3): header/operator labels agree on first load and after reload (12 assertions), screenshots captured and level-3 screenshot inspected. Final graphics labels rendered and screenshot inspected at the same viewport. Artifacts: `/workspace/scratch/island-perf-device/progression-report.json` and `records-level-*.png`.
+
+## Looping soundtrack integration — 2026-10-11
+- User-supplied `Chaos.mp3` streams and loops in lobby and its Settings; `Island Outbreak.mp3` streams and loops during deployed runs, including pause, in-run Settings and results until quitting to the lobby. Switching pauses the other track and preserves playback position. Hidden tabs immediately suspend both tracks; backgrounding keeps the existing gameplay pause behavior.
+- Trusted pointer/keyboard interaction unlocks mobile Web Audio. Media elements stream through a dedicated music gain and existing master gain without whole-track AudioBuffer decoding. Procedural combat cues remain on their separate SFX gain.
+- Replaced the music placeholder with a saved Music on/off switch stopping either track and Music volume slider (default 45%); migrated older settings safely. Added `tools/mobile_music_audit.py` for real decoding/playback, loop wrap, exclusive switching, pause/resume/quit, master mute, gain independence, saved volume and synthetic visibility-event coverage at 854×393 and 915×412 mobile/touch.
+- Build/lint and 27 performance regression checks passed. Physical phone sound balance/autoplay review and final user approval remain pending. NOT FINALIZED.
+
+- User clarified: pausing and in-run Settings keep gameplay music; only returning to the lobby selects Chaos. Music on/off affects both tracks independently of SFX. Browser harness now waits for Web Audio parameter application before reading gain values; screenshot capture gets a separate 30s timeout after a software-renderer capture timeout.
+
+- Final corrected production browser pass: 181 UI checks, 43 screenshots at 854×393 and 915×412, zero failures/page errors. Real music playback/loop/switch/pause/mute/background checks passed at both sizes. Artifacts: `/workspace/scratch/island-music-ui-final` and `/workspace/scratch/island-music`.
+
+## Mobile compositor/radar performance pass — 2026-10-11
+- User Android Balanced capture confirmed 800×360/DPR1 rendering but sustained roughly 20–26 FPS with an 18 FPS dip despite zero chunk work and one living enemy. Fewer pixels alone did not establish improvement; device throttling remains unproven.
+- Inspected live 800×360/DPR2 touch gameplay: Settings, prompt, joystick, shoot/ADS/reload/swap/jump/slide and hidden decorative surfaces retained backdrop blur over the moving canvas. Disabled blur for mobile survival HUD controls while preserving backgrounds, borders, targeting and modal styles.
+- Radar and full map now resize backing stores only when CSS size or DPR changes; previously both width/height were reassigned on every redraw, resetting/reallocating canvases. Radar/trails/waypoints/range and redraw frequency unchanged. Full-map drawing baseline explicitly preserved.
+- Diagnostics `mobile-perf-3` adds complete frame-callback cost and gap from previous callback end to next start. Gap includes scheduling, other tasks and browser/GPU/compositor waits; it is explicitly NOT a GPU measurement. Existing simulation/render probes retained.
+- Initial mobile performance browser: 20 checks passed including zero unchanged radar reallocations, no filtered live HUD controls, queued streaming, PNG export, complete timings and orientation recovery. Build/lint and 27 deterministic performance regressions passed. Final full-map/mobile UI repeat pending; physical Android FPS and user final approval remain pending. NOT FINALIZED.
+
+- Final verification: 181 UI checks / 43 screenshots at 854×393 and 915×412 with mobile/touch fullscreen; 23 focused performance/map checks at 800×360/DPR2; zero failures/page errors. Screenshots inspected. Radar observer waits for its required initial sizing before testing steady-state redraws. Artifacts: `/workspace/scratch/island-perf3-ui`, `/workspace/scratch/island-perf3-verified`. Phone FPS remains unverified.
+
+## Combat effect resource reuse — 2026-10-11
+- Continued the existing feature branch from c8a917a. User phone `mobile-perf-3` capture shows improved 30–45 FPS windows and one 57 FPS window, but 14–19 FPS combat stalls with no chunk work. Neither thermal throttling nor a specific GPU cause is established.
+- Added `src/combat-effects.ts`: preallocated eight tracer/impact slots, shared tracer material and impact geometry, independent impact fades, dynamic endpoint buffers, bounded growth to 32 simultaneous effects per kind. Expired effects detach without disposing GPU resources; quit/restart clear active effects; final disposal releases owned resources once. Hit detection, damage, weapon tuning, ammunition and reload logic unchanged.
+- Diagnostics build tag is `mobile-perf-4`; updated performance audit expectation. Added `tools/combat_effects_regression.mjs` and `tools/mobile_combat_audit.py`.
+- Correction to initial hypothesis: camera weapon rigs are not attached to the rendered scene, so the muzzle-light hierarchy is not evidence of the current stalls. Reverted tentative light changes. Missing FPP weapon rendering is a separate follow-up; no camera attachment change in this pass. Initial whole-context GPU counters included world streaming; corrected browser probe identifies tracer shader and six-float endpoint buffers specifically and asserts instrumentation actually sees firing.
+- Build/type-check passed; 313 deterministic effect assertions (including 300 repeated eight-pellet bursts), and 27 existing performance regressions passed. Production mobile combat and full landscape UI verification in progress. Physical Android frame-time improvement remains unverified; NOT FINALIZED.
+
+- Final local verification: production mobile/touch/native-fullscreen Chromium at 854×393 and 915×412 passed 181 landscape UI checks with 43 screenshots, plus 20 focused combat checks; zero failures/page errors. Screenshots of all six lobby panels, four Settings pages, gameplay and pause inspected at both sizes. Warm tracers generated no additional tracer shader links or endpoint buffers, and expiry did not delete those buffers. Touch firing, reload, weapon switching, restart and quit passed. Artifacts: `/workspace/scratch/island-perf4-ui`, `/workspace/scratch/island-combat`. Phone FPS and remaining combat stalls are still open; this addresses resource churn, not a proven complete stall fix.
+
+## Soundtrack transition clarification — 2026-10-11
+- User clarified that lobby/gameplay state switches must restart the selected song from the beginning. This supersedes the earlier playback-position preservation between those two states.
+- `src/survival-audio.ts` now tracks the last non-silent soundtrack state and resets the incoming track only when switching lobby ↔ gameplay. Pause, in-run Settings, music mute/unmute and same-state background recovery continue the current track. Looping, exclusive playback, streaming, SFX and saved music preferences remain intact.
+- Expanded `tools/mobile_music_audit.py`: seek both tracks to 35 seconds, verify pause/background keep gameplay position, verify quit resets Chaos and redeploy resets Island Outbreak; retain real decoding/loop/mute/gain/persistence checks at both mobile landscape sizes. Build/type-check passed; browser repeat in progress.
+- Combat commit 85183ec Vercel preview READY and 20 remote mobile combat checks passed at both sizes, zero page errors. Tracer shader links/endpoint buffers remained 1/1 after warm-up and repeated firing, with zero buffer deletions. Phone FPS improvement remains unverified. NOT FINALIZED.
+
+- Final local music repeat passed at 854×393 and 915×412 with mobile/touch Chromium: real decoding and loops, restart on lobby/gameplay transitions, uninterrupted pause/Settings, mute/master gain, background recovery and preference persistence; no page errors. Artifact: `/workspace/scratch/music-reset-local.log`.
+
+## 20-player pilot foundation — 2026-10-11 — IN PROGRESS
+- Read architecture/plan and Supabase skill. User chose a dedicated project in Flames1720’s Org, later clarified project name `my-new-repo`; found empty project `gqbndnaoteilxsmkkads` and applied scoped private-schema migrations.
+- Added pinned Supabase JS 2.117.3, ignored local configs, public-only production Vite configuration, signup/signin/recovery gate, optional consent, account-scoped/cloud progress, Game Data controls and bounded normalized report batches. No copy-log UI for pilot players; offline developer diagnostics preserved. No passwords/typed content/full UA/raw exception text in reports.
+- Private tables deny direct access; invoker public RPC wrappers call narrowly scoped private definer functions. Admission row lock enforces 20 accounts. Consent lock/epoch blocks stale uploads and withdrawal deletes reports. Daily 90-day cleanup cron applied. Analytics provides weighted FPS/slow frame rate, timing aggregates, action associations and histogram p95 bounds.
+- Disposable PostgreSQL 17 audit passed concurrent 21->20 admission, confirmed email, table/admin isolation, consent deletion/stale epoch, deduplication, device whitelist and weighted metrics. Supabase advisors returned only informational intentional deny-all RLS/no-policy and new unused indexes, no warnings/errors.
+- Initial mobile audit exposed auth overlay hidden by the fullscreen gate; fixed the gate exception and postponed world initialization until admission. Audit scripts distinguish fixture Auth transport from actual DB verification. Further mobile verification underway.
+- Animation work: lightweight reduced-motion-aware auth transition, connected the otherwise unrendered camera weapon rigs to the scene, gated rigs to FPP, removed their dynamic muzzle light, added smooth movement/reload transforms and speed-sensitive third-person gait cadence. Added measured firing/AI/effect costs. Build/typecheck and existing 27 performance/313 combat-effect assertions passed before final iteration; runtime animation checks pending.
+- Vercel env write failed twice with 429 github_response_error. User email provider/domain question pending. No production promotion, no main merge, no live email/signup-delivery claim. NOT FINALIZED.
+
+### October 11 release verification update
+Owner confirmed Resend SMTP saved in Supabase. Email/password confirmation and the original 20 admitted-player cap remain; no guest migration was applied remotely. Recovery form now removes the irrelevant required email field. Production build/type checks, 24 mocked mobile auth/consent checks, 27 performance checks, 313 combat checks and disposable PostgreSQL admission/privacy/analytics audit passed. Hosted security advisor has only expected private-table deny-all informational notices. Live inbox delivery, final Auth redirect configuration and exact deployed verification remain pending; production is not yet promoted.

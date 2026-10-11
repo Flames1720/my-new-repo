@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { clamp } from './terrain';
 import { createWeaponRig, type SurvivalWeaponId, type WeaponRig, SURVIVAL_WEAPON_REGISTRY } from './survival-weapons';
 import { survivalSound } from './survival-audio';
+import { settings } from './settings';
+import { CombatEffects } from './combat-effects';
 export type { SurvivalWeaponId } from './survival-weapons';
 export type SurvivalPickupKind = 'ammo' | 'medkit';
 
@@ -53,6 +55,10 @@ export interface ZombieSurvivalOptions {
   getPlayerPosition: () => THREE.Vector3;
   getTerrainHeight: (x: number, z: number) => number;
   getNightFactor?: () => number;
+  isFirstPerson?: () => boolean;
+  getMovementSpeed?: () => number;
+  performanceActive?: () => boolean;
+  onPerformanceCost?: (phase: 'fire' | 'enemyAI' | 'combatEffects', ms: number) => void;
   isWater: (x: number, z: number) => boolean;
   getWaterDepth: (x: number, z: number) => number;
   canOccupy: (x: number, z: number) => boolean;
@@ -177,6 +183,11 @@ function makeMesh(geometry: THREE.BufferGeometry, material: THREE.Material, name
 }
 
 function setRigFlashOpacity(rig: WeaponRig, opacity: number): void {
+  // Weapon update runs every active frame. Avoid walking every muzzle-flash mesh
+  // when its opacity already has the requested value (especially while idle).
+  const previousOpacity = rig.root.userData.appliedMuzzleFlashOpacity as number | undefined;
+  if (previousOpacity === opacity) return;
+  rig.root.userData.appliedMuzzleFlashOpacity = opacity;
   rig.muzzleFlash.traverse(object => {
     if (!(object instanceof THREE.Mesh)) return;
     const materials = Array.isArray(object.material) ? object.material : [object.material];
@@ -220,8 +231,13 @@ export class ZombieSurvivalSystem {
   private readonly raycaster = new THREE.Raycaster();
   private readonly centerNdc = new THREE.Vector2(0, 0);
   private readonly intersections: THREE.Intersection[] = [];
-  private readonly tracerLines: Array<{ line: THREE.Line; age: number }> = [];
-  private readonly hitSparks: Array<{ mesh: THREE.Mesh; age: number }> = [];
+  // Reuse line-of-sight scratch state. AI checks run repeatedly as infected close in.
+  private readonly sightOrigin = new THREE.Vector3();
+  private readonly sightDirection = new THREE.Vector3();
+  private readonly sightIntersections: THREE.Intersection[] = [];
+  private readonly weaponBaseScratch = new THREE.Vector3();
+  private currentSightBlockers: THREE.Object3D[] | null = null;
+  private readonly combatEffects: CombatEffects;
   private readonly weaponRigs = new Map<SurvivalWeaponId, WeaponRig>();
   private readonly slideBaseZ = new Map<SurvivalWeaponId, number>();
   private ammo: Record<SurvivalWeaponId, { mag: number; reserve: number }> = {
@@ -256,6 +272,7 @@ export class ZombieSurvivalSystem {
     this.options = options;
     this.scene = options.scene;
     this.camera = options.camera;
+    this.combatEffects = new CombatEffects(this.scene);
     this.maxZombies = options.lowPowerMode ? 5 : 9;
 
     for (const def of options.safeZones) {
@@ -268,6 +285,8 @@ export class ZombieSurvivalSystem {
 
     this.createWeaponRigs();
     for (const [id, rig] of this.weaponRigs) {
+      // Emissive flash meshes avoid a changing point-light shader variant on mobile.
+      rig.muzzleLight.removeFromParent();
       this.camera.add(rig.root);
       rig.root.visible = this.enabled && id === this.weapon;
       rig.muzzleFlash.visible = false;
@@ -368,7 +387,7 @@ export class ZombieSurvivalSystem {
     this.loot.forEach(drop => (drop.root.visible = enabled));
     if (!enabled) this.muzzleTimer = 0;
     for (const [id, rig] of this.weaponRigs) {
-      rig.root.visible = enabled && id === this.weapon;
+      rig.root.visible = enabled && id === this.weapon && (this.options.isFirstPerson?.() ?? true);
       rig.muzzleFlash.visible = false;
       setRigFlashOpacity(rig, 0);
       rig.muzzleLight.intensity = 0;
@@ -379,17 +398,7 @@ export class ZombieSurvivalSystem {
       this.setAim(false);
       survivalSound.updateHeartbeat(1);
       survivalSound.setAmbientEnabled(false);
-      for (const trace of this.tracerLines) {
-        this.scene.remove(trace.line);
-        trace.line.geometry.dispose();
-        (trace.line.material as THREE.Material).dispose();
-      }
-      this.tracerLines.length = 0;
-      for (const spark of this.hitSparks) {
-        this.scene.remove(spark.mesh);
-        disposeGroup(spark.mesh);
-      }
-      this.hitSparks.length = 0;
+      this.combatEffects.clear();
     }
     this.emitStatus();
   }
@@ -397,7 +406,7 @@ export class ZombieSurvivalSystem {
   activateAudio(): void {
     // Call only from a real key/pointer interaction so mobile browsers can unlock Web Audio.
     survivalSound.init();
-    survivalSound.setVolumes(0.72, 0.82);
+    survivalSound.setVolumes(settings.current.audioMaster, settings.current.audioSfx);
   }
 
   setAmbientEnabled(enabled: boolean): void {
@@ -438,15 +447,14 @@ export class ZombieSurvivalSystem {
     this.fireHeld = held;
   }
 
-  setAim(aiming: boolean): void {
+  setAim(aiming: boolean, dt = 1 / 60): void {
     this.aimActive = aiming && this.enabled && !this.isDead;
     const wantedFov = this.aimActive ? 47 : this.lastFov;
-    if (Math.abs(this.camera.fov - wantedFov) > 0.15) {
-      this.camera.fov += (wantedFov - this.camera.fov) * 0.24;
-      this.camera.updateProjectionMatrix();
-    }
-    if (!this.aimActive && this.camera.fov !== this.lastFov && !this.enabled) {
-      this.camera.fov = this.lastFov;
+    // Frame-rate-independent, rapid ADS response; no long exponential tail.
+    const blend = Math.min(1, 1 - Math.exp(-Math.max(0, dt) * 38));
+    const nextFov = this.camera.fov + (wantedFov - this.camera.fov) * blend;
+    if (Math.abs(nextFov - this.camera.fov) > 0.005 || Math.abs(wantedFov - this.camera.fov) > 0.005) {
+      this.camera.fov = Math.abs(wantedFov - nextFov) < 0.05 ? wantedFov : nextFov;
       this.camera.updateProjectionMatrix();
     }
   }
@@ -496,6 +504,11 @@ export class ZombieSurvivalSystem {
   }
 
   fire(): void {
+    const started = this.options.performanceActive?.() ? performance.now() : null;
+    try { this.fireShot(); } finally { if (started !== null) this.options.onPerformanceCost?.('fire', performance.now() - started); }
+  }
+
+  private fireShot(): void {
     if (!this.enabled || this.isDead || this.reloadTimer > 0 || this.fireCooldown > 0) return;
     this.activateAudio();
     const definition = WEAPONS[this.weapon];
@@ -526,7 +539,11 @@ export class ZombieSurvivalSystem {
     const blockers = this.options.getSightBlockers();
     const targets = this.zombies.filter(z => !z.dead).map(z => z.root);
     const rayObjects = [...blockers, ...targets];
-    const totalSpread = definition.spread * (this.aimActive ? 0.42 : 1);
+    // Aimed single-projectile weapons fire through the crosshair. Keep hip-fire
+    // inaccuracy and centred shotgun pellet spread as intentional weapon behavior.
+    const totalSpread = this.aimActive && definition.pellets === 1
+      ? 0
+      : definition.spread * (this.aimActive ? 0.42 : 1);
     const muzzle = new THREE.Vector3();
     activeRig?.muzzleFlash.getWorldPosition(muzzle);
     if (!activeRig) this.camera.getWorldPosition(muzzle);
@@ -555,7 +572,10 @@ export class ZombieSurvivalSystem {
           this.spawnImpact(hit.point, false);
         }
       }
-      this.spawnTracer(muzzle, end);
+      // When aiming, the camera ray is authoritative. A muzzle-origin line
+      // produces false sideways motion near the reticle (parallax).
+      // Hip-fire retains the visible muzzle trail as an effect.
+      this.spawnTracer(this.aimActive ? this.raycaster.ray.origin : muzzle, end);
     }
     this.options.onShot?.(registeredHit);
     if (!registeredHit) this.options.notify(currentAmmo.mag === 0 ? 'Magazine empty · reload' : '');
@@ -796,17 +816,20 @@ export class ZombieSurvivalSystem {
   }
 
   private hasLineOfSight(from: THREE.Vector3, to: THREE.Vector3): boolean {
-    const origin = from.clone();
+    const origin = this.sightOrigin.copy(from);
     origin.y += 1.05;
-    const target = to.clone();
-    target.y += 1.05;
-    const direction = target.sub(origin);
+    const direction = this.sightDirection.copy(to);
+    direction.y += 1.05;
+    direction.sub(origin);
     const distance = direction.length();
     if (distance < 0.1) return true;
-    this.raycaster.set(origin, direction.normalize());
+    direction.multiplyScalar(1 / distance);
+    this.raycaster.set(origin, direction);
     this.raycaster.far = Math.max(0, distance - 0.3);
-    const hits = this.raycaster.intersectObjects(this.options.getSightBlockers(), true);
-    return hits.length === 0;
+    this.sightIntersections.length = 0;
+    const blockers = this.currentSightBlockers ?? (this.currentSightBlockers = this.options.getSightBlockers());
+    this.raycaster.intersectObjects(blockers, true, this.sightIntersections);
+    return this.sightIntersections.length === 0;
   }
 
   private damagePlayer(amount: number): void {
@@ -879,22 +902,11 @@ export class ZombieSurvivalSystem {
   }
 
   private spawnImpact(position: THREE.Vector3, blood: boolean): void {
-    const mesh = makeMesh(
-      new THREE.SphereGeometry(blood ? 0.075 : 0.045, 5, 4),
-      new THREE.MeshBasicMaterial({ color: blood ? 0x9e302d : 0xffc66d, transparent: true, opacity: 0.9 }),
-      'survival-impact'
-    );
-    mesh.position.copy(position);
-    this.scene.add(mesh);
-    this.hitSparks.push({ mesh, age: 0 });
+    this.combatEffects.impact(position, blood);
   }
 
   private spawnTracer(from: THREE.Vector3, to: THREE.Vector3): void {
-    const geometry = new THREE.BufferGeometry().setFromPoints([from, to]);
-    const material = new THREE.LineBasicMaterial({ color: 0xffd49a, transparent: true, opacity: 0.7 });
-    const line = new THREE.Line(geometry, material);
-    this.scene.add(line);
-    this.tracerLines.push({ line, age: 0 });
+    this.combatEffects.tracer(from, to);
   }
 
   private removeZombie(actor: ZombieActor): void {
@@ -1028,6 +1040,9 @@ export class ZombieSurvivalSystem {
 
   update(dt: number, firing = false, aiming = false): void {
     if (!this.enabled || this.runComplete) return;
+    // The player position/blocker set is stable during this update, so all infected
+    // can share the same filtered sight-blocker array until the next simulation tick.
+    this.currentSightBlockers = null;
     this.elapsed += dt;
     if (this.preparationTimer > 0) {
       this.preparationTimer = Math.max(0, this.preparationTimer - dt);
@@ -1042,7 +1057,7 @@ export class ZombieSurvivalSystem {
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     this.skillCooldown = Math.max(0, this.skillCooldown - dt);
     this.statusTimer += dt;
-    this.setAim(aiming);
+    this.setAim(aiming, dt);
 
     if (this.reloadTimer > 0) {
       this.reloadTimer = Math.max(0, this.reloadTimer - dt);
@@ -1053,7 +1068,7 @@ export class ZombieSurvivalSystem {
 
     this.muzzleTimer = Math.max(0, this.muzzleTimer - dt);
     for (const [id, rig] of this.weaponRigs) {
-      const active = this.enabled && id === this.weapon;
+      const active = this.enabled && id === this.weapon && (this.options.isFirstPerson?.() ?? true);
       rig.root.visible = active;
       rig.muzzleFlash.visible = active && this.muzzleTimer > 0;
       setRigFlashOpacity(rig, active ? Math.min(0.95, 0.95 * (this.muzzleTimer / 0.065)) : 0);
@@ -1064,12 +1079,20 @@ export class ZombieSurvivalSystem {
     const activeRig = this.weaponRigs.get(this.weapon);
     if (activeRig) {
       const base = this.aimActive ? activeRig.adsPos : activeRig.basePos;
-      const weaponBase = base.clone();
-      weaponBase.y += Math.sin(this.elapsed * 7) * (this.aimActive ? 0.001 : 0.003);
+      const weaponBase = this.weaponBaseScratch.copy(base);
+      const movement = Math.min(1, (this.options.getMovementSpeed?.() ?? 0) / 5);
+      const reloadProgress = this.reloadTimer > 0 ? 1 - this.reloadTimer / WEAPONS[this.weapon].reloadTime : 0;
+      const reloadDip = this.reloadTimer > 0 ? Math.sin(reloadProgress * Math.PI) : 0;
+      weaponBase.x += Math.sin(this.elapsed * 7) * movement * (this.aimActive ? 0.001 : 0.005);
+      weaponBase.y += Math.sin(this.elapsed * 14) * movement * (this.aimActive ? 0.001 : 0.006) - reloadDip * 0.08;
       weaponBase.z += Math.cos(this.elapsed * 8) * (this.aimActive ? 0.002 : 0.005);
       weaponBase.z += Math.max(0, activeRig.root.position.z - base.z) * Math.exp(-dt * WEAPONS[this.weapon].recoilRecovery);
-      activeRig.root.position.lerp(weaponBase, Math.min(1, dt * 12));
-      activeRig.root.rotation.x += ((this.aimActive ? activeRig.adsRot.x : activeRig.baseRot.x) - activeRig.root.rotation.x) * Math.min(1, dt * 8);
+      activeRig.root.position.lerp(weaponBase, 1 - Math.exp(-dt * 12));
+      const targetRotation = this.aimActive ? activeRig.adsRot : activeRig.baseRot;
+      const blend = 1 - Math.exp(-dt * 10);
+      activeRig.root.rotation.x += (targetRotation.x - reloadDip * 0.3 - activeRig.root.rotation.x) * blend;
+      activeRig.root.rotation.y += (targetRotation.y - activeRig.root.rotation.y) * blend;
+      activeRig.root.rotation.z += (targetRotation.z + reloadDip * 0.16 - activeRig.root.rotation.z) * blend;
       if (activeRig.slideOrPump) {
         const baseZ = this.slideBaseZ.get(this.weapon) ?? activeRig.slideOrPump.position.z;
         const reloadDuration = WEAPONS[this.weapon].reloadTime;
@@ -1119,13 +1142,17 @@ export class ZombieSurvivalSystem {
       this.spawnTimer = Math.max(0, this.spawnTimer - dt * 0.5);
     }
 
+    const aiStarted = this.options.performanceActive?.() ? performance.now() : null;
     for (let i = this.zombies.length - 1; i >= 0; i--) {
       const actor = this.zombies[i];
       this.updateZombie(actor, dt, playerPos, nearSafe);
       if (actor.dead && actor.deathAge > 6) this.removeZombie(actor);
     }
+    if (aiStarted !== null) this.options.onPerformanceCost?.('enemyAI', performance.now() - aiStarted);
     this.updateLoot(dt, playerPos);
-    this.updateTraces(dt);
+    const effectsStarted = this.options.performanceActive?.() ? performance.now() : null;
+    this.combatEffects.update(dt);
+    if (effectsStarted !== null) this.options.onPerformanceCost?.('combatEffects', performance.now() - effectsStarted);
     if (this.flashDamageTimer > 0) this.flashDamageTimer = Math.max(0, this.flashDamageTimer - dt);
 
     if (this.statusTimer >= 0.12) {
@@ -1134,28 +1161,8 @@ export class ZombieSurvivalSystem {
     }
   }
 
-  private updateTraces(dt: number): void {
-    for (let i = this.tracerLines.length - 1; i >= 0; i--) {
-      const trace = this.tracerLines[i];
-      trace.age += dt;
-      if (trace.age < 0.055) continue;
-      this.scene.remove(trace.line);
-      trace.line.geometry.dispose();
-      (trace.line.material as THREE.Material).dispose();
-      this.tracerLines.splice(i, 1);
-    }
-    for (let i = this.hitSparks.length - 1; i >= 0; i--) {
-      const spark = this.hitSparks[i];
-      spark.age += dt;
-      (spark.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - spark.age / 0.13);
-      if (spark.age < 0.13) continue;
-      this.scene.remove(spark.mesh);
-      disposeGroup(spark.mesh);
-      this.hitSparks.splice(i, 1);
-    }
-  }
-
   restart(): void {
+    this.combatEffects.clear();
     for (const actor of [...this.zombies]) this.removeZombie(actor);
     for (const drop of this.loot) {
       this.scene.remove(drop.root);
@@ -1188,6 +1195,28 @@ export class ZombieSurvivalSystem {
     this.options.respawnPlayer();
     this.options.notify('You are back at the safe zone');
     this.emitStatus();
+  }
+
+  getPerformanceDiagnostics(): {
+    zombieCount: number;
+    livingZombies: number;
+    lootDrops: number;
+    tracerLines: number;
+    hitSparks: number;
+    activeSafeZones: number;
+  } {
+    let livingZombies = 0;
+    for (const actor of this.zombies) if (!actor.dead) livingZombies++;
+    let activeSafeZones = 0;
+    for (const zone of this.zones) if (zone.active && zone.phase !== 'collapsed') activeSafeZones++;
+    return {
+      zombieCount: this.zombies.length,
+      livingZombies,
+      lootDrops: this.loot.length,
+      tracerLines: this.combatEffects.tracerCount,
+      hitSparks: this.combatEffects.impactCount,
+      activeSafeZones,
+    };
   }
 
   getRadarState(): SurvivalRadarState {
@@ -1237,15 +1266,7 @@ export class ZombieSurvivalSystem {
       this.scene.remove(drop.root);
       disposeGroup(drop.root);
     }
-    for (const trace of this.tracerLines) {
-      this.scene.remove(trace.line);
-      trace.line.geometry.dispose();
-      (trace.line.material as THREE.Material).dispose();
-    }
-    for (const spark of this.hitSparks) {
-      this.scene.remove(spark.mesh);
-      disposeGroup(spark.mesh);
-    }
+    this.combatEffects.dispose();
     for (const zone of this.zones) {
       this.scene.remove(zone.root);
       disposeGroup(zone.root);

@@ -13,7 +13,7 @@
       html, body { width: 100%; height: 100%; min-height: 100%; margin: 0; overflow: hidden; background: #07100f; }
       body { color: #edf3eb; font-family: system-ui, -apple-system, sans-serif; }
       #displayModeGate { position: fixed !important; inset: 0 !important; z-index: 2147483647 !important; display: flex !important; align-items: center; justify-content: center; box-sizing: border-box; overflow: auto; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: radial-gradient(ellipse at 50% 42%, #14231d, #07100f 70%); text-align: center; }
-      body:not(.display-mode-ready) > :not(#displayModeGate) { visibility: hidden !important; pointer-events: none !important; }
+      body:not(.display-mode-ready) > :not(#displayModeGate):not(.pilot-overlay) { visibility: hidden !important; pointer-events: none !important; }
       body.display-mode-ready #displayModeGate { display: none !important; }
       #displayModeGate .displayModeCard { box-sizing: border-box; width: min(520px, 100%); max-height: 100%; overflow: auto; padding: clamp(24px, 5vw, 48px); border: 1px solid #456351; border-radius: 4px 20px; background: linear-gradient(145deg, #111d1b, #080e0f); box-shadow: 0 30px 90px #000a; }
       #displayModeGate .displayModeEyebrow { color: #83bd95; font-size: 9px; font-weight: 900; letter-spacing: .22em; }
@@ -125,53 +125,67 @@
           </svg>
       </div>
         <nav class="lobbyNav" aria-label="Lobby navigation">
-          <button class="active" type="button" data-lobby-focus="lobbyMissionBoard">MISSION</button>
-          <button type="button" data-lobby-focus="lobbyFieldKit">FIELD KIT</button>
-          <button type="button" data-lobby-focus="lobbyWildcardsPanel">WILDCARDS</button>
-          <button type="button" data-lobby-focus="lobbyRecords">RECORDS</button>
+          <button class="active" type="button" data-lobby-page="mission" aria-current="page">MISSION</button>
+          <button type="button" data-lobby-page="kit">FIELD KIT</button>
+          <button type="button" data-lobby-page="wildcards">WILDCARDS</button>
+          <button type="button" data-lobby-page="records">RECORDS</button>
+          <button type="button" data-lobby-page="challenges">CHALLENGES</button>
+          <button type="button" data-lobby-page="upgrades">UPGRADES</button>
           <button id="lobbyOptionsBtn" type="button">SETTINGS</button>
-          <span class="lobbyNavSpacer"></span><span class="lobbyCurrency">◉ 2,900</span><span class="lobbyLevel">LV 1</span>
+
         </nav>
         <header class="lobbyTopline">
           <div class="lobbyMark"><span class="lobbyMarkGlyph">IO</span><span>ISLAND OUTBREAK<small>FIELD OPERATIONS</small></span></div>
-          <div class="lobbySignal"><i></i> ISLAND SIGNAL <strong>LIVE</strong></div>
+          <div class="lobbyHeaderRight"><span class="lobbyCurrency" title="Currency display · economy pending">◉ 2,900</span><span class="lobbyLevel" id="lobbyNavLevel">LV 1</span><div class="lobbySignal"><i></i> ISLAND SIGNAL <strong>LIVE</strong></div></div>
         </header>
         <main class="lobbyStage">
-          <aside class="lobbyPartyPanel" aria-label="Field operations" id="lobbyRecords">
+          <aside class="lobbyPartyPanel lobbyPage" data-lobby-panel="records" aria-label="Your records" id="lobbyRecords">
             <div class="lobbyPanelTitle"><span>FIELD OPERATIONS</span><small>SOLO DEPLOYMENT</small></div>
-            <div class="lobbyOperator active"><span class="operatorAvatar">IO</span><span><strong id="lobbyOperatorName">EXPLORER</strong><small>LEVEL 1 · ACTIVE</small></span><b>●</b></div>
-            <div class="lobbyOperator"><span class="operatorAvatar operatorGhost">+</span><span><strong>OPEN SLOT</strong><small>SOLO RUN</small></span><b>—</b></div>
-            <div class="lobbyPartyDivider"></div>
-            <div class="lobbyPanelMetric"><span>BEST WAVE</span><strong id="lobbyBestWaveMetric">0 / 100</strong></div>
-            <div class="lobbyPanelMetric"><span>BEST TIME</span><strong id="lobbyBestTimeMetric">—</strong></div>
-            <div class="lobbyPanelMetric"><span>TOTAL KILLS</span><strong id="lobbyTotalKillsMetric">0</strong></div>
+            <div class="lobbyOperatorRow">
+              <div class="lobbyOperator active"><span class="operatorAvatar">IO</span><span><strong id="lobbyOperatorName">EXPLORER</strong><small id="lobbyOperatorLevel">LEVEL 1 · ACTIVE</small></span><b>●</b></div>
+              <div class="lobbyOperator"><span class="operatorAvatar operatorGhost">+</span><span><strong>OPEN SLOT</strong><small>SOLO RUN</small></span><b>—</b></div>
+            </div>
+            <div class="lobbyRecordsMetrics">
+              <div class="lobbyPanelMetric"><span>BEST WAVE</span><strong id="lobbyBestWaveMetric">0 / 100</strong></div>
+              <div class="lobbyPanelMetric"><span>BEST TIME</span><strong id="lobbyBestTimeMetric">—</strong></div>
+              <div class="lobbyPanelMetric"><span>TOTAL KILLS</span><strong id="lobbyTotalKillsMetric">0</strong></div>
+            </div>
             <div class="lobbyOpsNote"><i></i><span>ISLAND SIGNAL<br><strong>CONNECTED</strong></span></div>
           </aside>
-          <section class="lobbyHero">
-            <p class="lobbyEyebrow"><span>01</span> · LAST KNOWN SAFE REGION</p>
+          <section class="lobbyHero lobbyPage active" data-lobby-panel="mission">
+            <div class="missionVisual">
+              <p class="lobbyEyebrow"><span>01</span> · SAFE STARTING AREA</p>
             <div class="lobbyMissionBoard" id="lobbyMissionBoard" aria-label="Current island mission">
               <div class="missionBoardGrid"></div><div class="missionPulse"></div><span class="missionPin pinHome">⌂</span><span class="missionPin pinThreat">!</span><span class="missionRoute"></span>
-              <div class="missionBoardLabels"><span>HOMESTEAD</span><span>INFECTED ACTIVITY</span><span>RIVERWOOD SECTOR</span></div>
+              <div class="missionBoardLabels"><span>HOME BASE</span><span>ZOMBIES NEARBY</span><span>RIVERWOOD</span></div>
             </div>
+            </div>
+            <div class="missionDetails">
             <h1 id="lobbyTitle">ISLAND<br><em>OUTBREAK</em></h1>
-            <p class="lobbyTagline">HOLD THE SANCTUARY<br><strong>Survive the next 100 waves.</strong></p>
+            <p class="lobbyTagline">PROTECT YOUR BASE<br><strong>Survive 100 zombie waves.</strong></p>
             <div class="lobbyQuickStats" aria-label="Mission parameters">
               <div><strong>100</strong><span>WAVES</span></div>
-              <div><strong>04</strong><span>STARTING HOSTILES</span></div>
-              <div><strong>01</strong><span>ACTIVE ZONE</span></div>
+              <div><strong>04</strong><span>ZOMBIES AT START</span></div>
+              <div><strong>01</strong><span>SAFE AREA</span></div>
             </div>
-            <p id="lobbyLastRun" class="lobbyLastRun">NO RUN RECORDED</p>
+            <div class="lobbyHomeSummary" aria-label="Your progress">
+                <span id="lobbyHomeLevel">LEVEL 1</span><span id="lobbyHomeXp">0 XP</span><span id="lobbyHomeWave">BEST WAVE 0</span>
+              </div>
+              <p id="lobbyLastRun" class="lobbyLastRun">NO RUN RECORDED</p>
+            </div>
           </section>
           <aside class="lobbyDeploy" id="lobbyFieldKit">
-            <section class="lobbyChallenges" aria-label="Challenges"><div class="challengeTabs"><strong>CHALLENGES</strong><span>EVENT</span></div><div class="challengeRow"><span>FIRST CONTACT</span><b>0 / 5</b><i><em></em></i></div><div class="challengeRow"><span>HOLD THE LINE</span><b>0 / 2</b><i><em></em></i></div><small>Complete a run objective to earn XP and unlock field cards.</small></section>
-            <div class="lobbySectionHead"><span>FIELD KIT</span><small>SELECT LOADOUT</small></div>
+            <section class="lobbyChallenges lobbyPage" data-lobby-panel="challenges" aria-label="Challenges"><div class="challengeTabs"><strong>CHALLENGES</strong><span>EVENT</span></div><div class="challengeRow"><span>FIRST CONTACT</span><b>0 / 5</b><i><em></em></i></div><div class="challengeRow"><span>HOLD THE LINE</span><b>0 / 2</b><i><em></em></i></div><small>Complete a run objective to earn XP and unlock field cards.</small></section>
+            <section class="lobbyPage lobbyKitPage" data-lobby-panel="kit" aria-label="Choose a starting weapon">
+            <div class="lobbySectionHead"><span>YOUR WEAPONS</span><small>CHOOSE ONE BEFORE DEPLOYING</small></div>
             <div id="lobbyWeaponCards" class="lobbyWeaponCards" role="radiogroup" aria-label="Starting weapon">
-              <button class="lobbyWeaponPick active" type="button" role="radio" aria-checked="true" data-lobby-weapon="pistol"><span class="weaponCardIcon pistolIcon">P</span><span class="weaponCardCopy"><strong>P9 TACTICAL</strong><small>SIDEARM · STEADY</small></span><span class="weaponCardSelect">●</span></button>
-              <button class="lobbyWeaponPick" type="button" role="radio" aria-checked="false" data-lobby-weapon="shotgun"><span class="weaponCardIcon shotgunIcon">12</span><span class="weaponCardCopy"><strong>W-870 BREACHER</strong><small>SHOTGUN · CLOSE</small></span><span class="weaponCardSelect">○</span></button>
-              <button class="lobbyWeaponPick" type="button" role="radio" aria-checked="false" data-lobby-weapon="rifle"><span class="weaponCardIcon rifleIcon">AR</span><span class="weaponCardCopy"><strong>AR-15 SPECOPS</strong><small>RIFLE · AUTOMATIC</small></span><span class="weaponCardSelect">○</span></button>
+              <button class="lobbyWeaponPick active" type="button" role="radio" aria-checked="true" data-lobby-weapon="pistol"><span class="weaponCardIcon pistolIcon" aria-hidden="true"><svg viewBox="0 0 128 65"><path d="M9 18h76l12 9v11H73l-8 18H47l-6-28H9z" fill="#7a94a8"/><path d="M43 28l5 26 13-1 8-25M22 15h63v6H22z" fill="#273a49"/><path d="M12 25h86v4H12z" fill="#c2d4de"/></svg></span><span class="weaponCardCopy"><strong>P9 TACTICAL</strong><small>SIDEARM · STEADY</small></span><span class="weaponCardSelect">●</span></button>
+              <button class="lobbyWeaponPick" type="button" role="radio" aria-checked="false" data-lobby-weapon="shotgun"><span class="weaponCardIcon shotgunIcon" aria-hidden="true"><svg viewBox="0 0 128 65"><path d="M7 32h114v7H7z" fill="#c6b79f"/><path d="M13 39l-8 12 10-1 15-12z" fill="#775d48"/><path d="M30 28h63v5H30z" fill="#647887"/><path d="M46 40l11 12h11l-7-14z" fill="#8a6a4a"/><path d="M70 27h19v13H70z" fill="#7d9aa9"/></svg></span><span class="weaponCardCopy"><strong>W-870 BREACHER</strong><small>SHOTGUN · CLOSE</small></span><span class="weaponCardSelect">○</span></button>
+              <button class="lobbyWeaponPick" type="button" role="radio" aria-checked="false" data-lobby-weapon="rifle"><span class="weaponCardIcon rifleIcon" aria-hidden="true"><svg viewBox="0 0 128 65"><path d="M4 27h119v7H4z" fill="#a2acb0"/><path d="M16 23h35v4H16zM59 20h34v7H59z" fill="#4a636d"/><path d="M70 35l7 23h14l-8-23z" fill="#4a636d"/><path d="M38 35l-14 17H9l9-19z" fill="#536a6e"/><path d="M48 34l4 14h10l5-14z" fill="#788d92"/><path d="M111 24h5v14h-5z" fill="#cad8d9"/></svg></span><span class="weaponCardCopy"><strong>AR-15 SPECOPS</strong><small>RIFLE · AUTOMATIC</small></span><span class="weaponCardSelect">○</span></button>
             </div>
             <select id="lobbyWeaponSelect" aria-label="Starting weapon"><option value="pistol">P9 Tactical</option><option value="shotgun">W-870 Breacher</option><option value="rifle">AR-15 SpecOps</option></select>
-            <section class="lobbyProgression" aria-label="Persistent upgrades">
+            </section>
+            <section class="lobbyProgression lobbyPage" data-lobby-panel="upgrades" aria-label="Permanent upgrades">
               <div class="lobbySectionHead"><span id="lobbyProgressionSummary">LEVEL 1 · 0 XP · BEST WAVE 0/100</span><small>PERMANENT UPGRADES</small></div>
               <div class="lobbyUpgradeGrid">
                 <button id="upgradeHealthBtn" type="button">+10 HP <small>120 XP</small></button>
@@ -179,7 +193,7 @@
                 <button id="upgradeDamageBtn" type="button">+5% DAMAGE <small>180 XP</small></button>
               </div>
             </section>
-            <section class="lobbyWildcards" id="lobbyWildcardsPanel" aria-label="Wildcards">
+            <section class="lobbyWildcards lobbyPage" data-lobby-panel="wildcards" id="lobbyWildcardsPanel" aria-label="Wildcards">
               <div class="lobbySectionHead"><span>WILDCARDS</span><small id="wildcardSlotSummary">2 ACTIVE SLOTS</small></div>
               <p class="wildcardIntro">Equip active field cards before deployment. Each equipped card adds one ready button in the run.</p>
               <div id="wildcardCollection" class="wildcardCollection"></div>
@@ -187,7 +201,7 @@
           </aside>
         </main>
         <footer class="lobbyFooter">
-          <div class="lobbyObjective"><span class="lobbyObjectiveDot"></span><span>OBJECTIVE <strong>HOLD THE SANCTUARY</strong></span></div>
+          <div class="lobbyObjective"><span class="lobbyObjectiveDot"></span><span>GOAL <strong>SURVIVE 100 WAVES</strong></span></div>
           <button id="startRunBtn" type="button"><span>DEPLOY</span><b>→</b></button>
         </footer>
       </div>
@@ -247,10 +261,11 @@
 	      <div class="settingsCard">
 	        <div class="settingsHeader">
 	          <div class="settingsTitleBlock"><span class="settingsEyebrow">FIELD CONTROL / CONFIGURATION</span><h3>GAMEPLAY & CONTROLS</h3></div>
-	          <nav class="settingsTabs" aria-label="Settings categories"><button class="active" type="button">GENERAL</button><button type="button">GRAPHICS</button><button type="button">AUDIO</button><button type="button">CONTROLS</button><button type="button">GAMEPLAY</button></nav>
-	          <button id="settingsClose">✕</button>
+	          <nav class="settingsTabs" aria-label="Settings categories"><button class="active" type="button" data-settings-tab="controls">CONTROLS</button><button type="button" data-settings-tab="graphics">GRAPHICS / AUDIO</button><button type="button" data-settings-tab="player">PLAYER</button><button type="button" data-settings-tab="diagnostics">DIAGNOSTICS</button></nav>
+	          <button id="settingsClose" type="button" aria-label="Close settings">✕</button>
 	        </div>
         <div class="settingsBody">
+          <section class="settingsPage active" data-settings-page="controls" aria-label="Control settings" >
           <div class="settingGroup">
             <div class="settingLabel">
               <span>Horizontal turn (° per full right-side swipe)</span>
@@ -279,6 +294,14 @@
             <span>Invert Vertical (Y-Axis)</span>
             <input type="checkbox" id="invertYCheck" />
           </div>
+          <div class="settingRow">
+            <span>Look while aiming <small>(drag on ADS button)</small></span>
+            <input type="checkbox" id="lookWhileAimingCheck" />
+          </div>
+          <div class="settingRow">
+            <span>Look while firing <small>(drag on Shoot button)</small></span>
+            <input type="checkbox" id="lookWhileFiringCheck" />
+          </div>
 
           <div class="settingGroup">
             <div class="settingLabel">
@@ -306,6 +329,8 @@
           </div>
           <button id="hudCustomizeBtn" class="settingsActionBtn" type="button">🎮 Customize combat HUD</button>
 
+          </section>
+          <section class="settingsPage" data-settings-page="graphics" aria-label="Graphics and audio settings" hidden>
           <div class="settingGroup">
             <div class="settingLabel">
               <span>Dynamic Weather</span>
@@ -320,22 +345,47 @@
 
           <div class="settingGroup">
             <div class="settingLabel">
-              <span>Graphics & Shadows</span>
+              <span>Graphics quality</span>
             </div>
             <select id="graphicsSelect">
-              <option value="high">High Quality (Full Shadows)</option>
-              <option value="med">Balanced (Optimized)</option>
-              <option value="low">Performance (Battery Saver)</option>
+              <option value="high">High clarity</option>
+              <option value="med">Balanced</option>
+              <option value="low">Performance</option>
             </select>
           </div>
 
           <div class="settingGroup">
             <div class="settingLabel">
+              <span>Terrain LOD & GPU Displacement</span>
+            </div>
+            <select id="lodSelect">
+              <option value="ultra">Ultra (High Mountains & GPU Displacement)</option>
+              <option value="balanced">Balanced LOD (Optimized Hills)</option>
+              <option value="fast">Fast LOD (Battery Saver)</option>
+            </select>
+          </div>
+          <div class="settingGroup" data-settings-section="graphics">
+            <div class="settingLabel"><span>Master volume</span><span id="masterVolumeValue">72%</span></div>
+            <input id="masterVolumeSlider" type="range" min="0" max="100" step="5" value="72" aria-label="Master volume"/>
+          </div>
+          <div class="settingGroup" data-settings-section="graphics">
+            <div class="settingLabel"><span>Sound effects volume</span><span id="sfxVolumeValue">82%</span></div>
+            <input id="sfxVolumeSlider" type="range" min="0" max="100" step="5" value="82" aria-label="Sound effects volume"/>
+          </div>
+          <div class="settingGroup" data-settings-section="graphics">
+            <label class="settingLabel" for="musicEnabledCheck"><span>Music</span><input id="musicEnabledCheck" type="checkbox" checked aria-label="Music on or off"/></label>
+            <div class="settingLabel"><span>Music volume</span><span id="musicVolumeValue">45%</span></div>
+            <input id="musicVolumeSlider" type="range" min="0" max="100" step="5" value="45" aria-label="Music volume"/>
+          </div>
+          </section>
+          <section class="settingsPage" data-settings-page="player" aria-label="Player settings" hidden>
+          <div class="settingGroup">
+            <div class="settingLabel">
               <span>Player Identity & Gender</span>
             </div>
-            <div style="display: flex; gap: 8px;">
-              <input type="text" id="playerNameInput" placeholder="Adventurer Name" value="Explorer" style="flex: 1; padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;" />
-              <select id="playerGenderSelect" style="padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;">
+            <div class="playerIdentityFields">
+              <input type="text" id="playerNameInput" aria-label="Player name" placeholder="Adventurer Name" value="Explorer" style="flex: 1; padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;" />
+              <select id="playerGenderSelect" aria-label="Player gender" style="padding: 6px 10px; background: #0c141d; border: 1px solid #ffffff30; border-radius: 8px; color: #fff; font-size: 11px;">
                 <option value="male">♂ Male</option>
                 <option value="female">♀ Female</option>
                 <option value="adventurer">⚧ Adventurer</option>
@@ -343,7 +393,7 @@
             </div>
           </div>
 
-          <div class="settingGroup">
+          <div class="settingGroup" hidden>
             <div class="settingLabel">
               <span>Character Model</span>
               <span>Choose a rigged model</span>
@@ -358,7 +408,7 @@
             </select>
           </div>
 
-          <div class="settingGroup">
+          <div class="settingGroup" hidden>
             <div class="settingLabel">
               <span>Life Class / Profession</span>
             </div>
@@ -370,7 +420,7 @@
             </select>
           </div>
 
-          <div class="settingGroup">
+          <div class="settingGroup" hidden>
             <div class="settingLabel">
               <span>Character Outfit & Style</span>
             </div>
@@ -383,21 +433,24 @@
             </select>
           </div>
 
-          <div class="settingGroup">
-            <div class="settingLabel">
-              <span>Terrain LOD & GPU Displacement</span>
+          </section>
+          <section class="settingsPage" data-settings-page="diagnostics" aria-label="Diagnostics" hidden>
+          <div class="settingGroup" data-settings-section="diagnostics">
+            <div class="settingLabel"><span>Performance diagnostics</span></div>
+            <p class="settingNote">Start a capture, return to your run, then check or copy the readings here. Samples update every 5 seconds; capture stops automatically after 2 minutes.</p>
+            <div class="settingsDiagnosticActions">
+              <button id="diagnosticCaptureBtn" type="button">START CAPTURE</button>
+              <button id="diagnosticCopyBtn" type="button">COPY RESULTS</button>
+              <button id="diagnosticClearBtn" type="button">CLEAR</button>
             </div>
-            <select id="lodSelect">
-              <option value="ultra">Ultra (High Mountains & GPU Displacement)</option>
-              <option value="balanced">Balanced LOD (Optimized Hills)</option>
-              <option value="fast">Fast LOD (Battery Saver)</option>
-            </select>
+            <pre id="diagnosticReadout" aria-live="polite">Capture not started.</pre>
           </div>
+          </section>
         </div>
       </div>
     </div>
 
-    <!-- HUD editor: the game remains visible and controls can be dragged behind this compact panel. -->
+    <!-- HUD editor: isolated static layout canvas; gameplay and pause/settings layers are hidden while editing. -->
     <div id="hudEditorOverlay" aria-label="Customize combat HUD">
       <section id="hudEditorPanel">
         <div class="hudEditorHeader">
@@ -407,6 +460,7 @@
             <button id="hudEditorClose" type="button" aria-label="Close HUD editor">✕</button>
           </div>
         </div>
+        <div class="hudEditorBody">
         <p>Drag a control to place it. Tap it to select, then adjust size and transparency. Saved on this device.</p>
         <label class="hudEditorLabel">Finger layout
           <select id="hudPresetSelect">
@@ -423,6 +477,7 @@
         <label class="hudEditorLabel">Opacity <span id="hudOpacityVal">65%</span>
           <input id="hudOpacitySlider" type="range" min="15" max="100" step="5" value="65" />
         </label>
+        </div>
         <div class="hudEditorFooter">
           <button id="hudResetBtn" type="button">Reset layout</button>
           <button id="hudSaveBtn" type="button">Save & close</button>
@@ -551,6 +606,128 @@
 
     <!-- Photo Mode Toast Notification -->
     <div id="photoToast"></div>
+
+<script type="module">
+(() => {
+  if (import.meta.env.VITE_PILOT_ENABLED === 'true') return;
+  const KEY = 'island-outbreak-diagnostics-v2';
+  const MAX_ROWS = 32;
+  const rows = [];
+  let performanceSamples = 0;
+  let longTasksSinceStart = 0;
+  let statusNode = null;
+  const round = value => Math.round(value * 10) / 10;
+  const deviceInfo = () => ({
+    userAgent: navigator.userAgent,
+    cores: navigator.hardwareConcurrency || null,
+    deviceMemoryGB: navigator.deviceMemory || null,
+    screen: screen.width + 'x' + screen.height,
+    viewport: innerWidth + 'x' + innerHeight,
+    dpr: devicePixelRatio || 1,
+    visibility: document.visibilityState
+  });
+  const persist = () => {
+    try { localStorage.setItem(KEY, JSON.stringify(rows)); } catch {}
+  };
+  const push = (type, data = {}) => {
+    rows.push({ t: new Date().toISOString(), ms: Math.round(performance.now()), type, ...data });
+    if (rows.length > MAX_ROWS) rows.splice(0, rows.length - MAX_ROWS);
+  };
+  window.__islandOutbreakPerfEnabled = true;
+  push('session-start', deviceInfo());
+  if ('PerformanceObserver' in window) {
+    try {
+      new PerformanceObserver(list => { longTasksSinceStart += list.getEntries().length; })
+        .observe({ type: 'longtask', buffered: true });
+    } catch {}
+  }
+  addEventListener('island-outbreak-performance', event => {
+    const detail = event.detail || {};
+    performanceSamples++;
+    push('performance-sample', {
+      ...detail,
+      longTasksSinceStart,
+      bodyStates: ['survival-mode', 'survival-paused', 'aim-active', 'native-fullscreen', 'display-mode-ready']
+        .filter(name => document.body.classList.contains(name)),
+      device: performanceSamples === 1 ? deviceInfo() : undefined
+    });
+    // Persist every 15 seconds (every third 5-second sample), never per frame.
+    if (performanceSamples % 3 === 0 || detail.captureComplete) persist();
+    if (statusNode) {
+      statusNode.textContent = detail.captureComplete
+        ? 'Capture finished automatically. Copy the logs below.'
+        : 'Capturing automatically during active gameplay · ' + performanceSamples + ' samples · stops after 120 seconds.';
+    }
+  });
+  addEventListener('error', event => {
+    push('error', {
+      message: String(event.message || 'unknown error').slice(0, 240),
+      source: String(event.filename || '').split('/').pop(),
+      line: event.lineno || null
+    });
+    persist();
+  });
+  addEventListener('unhandledrejection', event => {
+    push('unhandled-rejection', { message: String(event.reason?.message || event.reason || 'unknown rejection').slice(0, 240) });
+    persist();
+  });
+  addEventListener('visibilitychange', () => {
+    push('visibility', { state: document.visibilityState });
+    persist();
+  });
+
+  // Keep the log controls inside Settings, where the player expects to find them.
+  const addSettingsPanel = () => {
+    const body = document.querySelector('#settingsOverlay .settingsPage[data-settings-page="diagnostics"]');
+    if (!body || document.getElementById('diagnosticsPanel')) return;
+    const panel = document.createElement('section');
+    panel.id = 'diagnosticsPanel';
+    panel.style.cssText = 'margin:18px 0 8px;padding:14px;border:1px solid #40544a;border-radius:10px;background:#0b1412;color:#e8f0e9';
+    panel.innerHTML = '<h4 style="margin:0 0 6px;font-size:13px">BACKGROUND DIAGNOSTICS</h4><p style="margin:0 0 10px;font-size:12px;opacity:.8">Recent gameplay performance and error logs are stored locally on this device. Copy them after reproducing a bug.</p><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><button id="diagnosticsCopy" type="button">COPY LOGS</button><button id="diagnosticsClear" type="button">CLEAR LOGS</button></div><p id="diagnosticsStatus" aria-live="polite" style="font-size:11px;margin:8px 0 0;opacity:.8">Logs are being recorded locally.</p>';
+    body.appendChild(panel);
+    const status = panel.querySelector('#diagnosticsStatus');
+    statusNode = status;
+    panel.querySelector('#diagnosticsCopy').addEventListener('click', async () => {
+      persist();
+      const report = JSON.stringify({ exportedAt: new Date().toISOString(), device: deviceInfo(), logs: rows.slice() }, null, 2);
+      try {
+        await navigator.clipboard.writeText(report);
+        status.textContent = 'Copied. Paste the report into ChatGPT.';
+      } catch {
+        const area = document.createElement('textarea');
+        area.value = report;
+        area.setAttribute('aria-label', 'Diagnostic report to copy');
+        area.style.cssText = 'position:fixed;inset:10% 5%;width:90%;height:75%;z-index:2147483647;background:#fff;color:#111;font-size:11px';
+        document.body.appendChild(area);
+        area.focus(); area.select();
+        let copied = false;
+        try { copied = document.execCommand('copy'); } catch {}
+        status.textContent = copied ? 'Copied. Paste the report into ChatGPT.' : 'Copy was blocked. The report is selected; use Copy from your device menu.';
+        if (copied) area.remove();
+      }
+    });
+    panel.querySelector('#diagnosticsClear').addEventListener('click', () => {
+      rows.length = 0;
+      push('logs-cleared');
+      persist();
+      status.textContent = 'Logs cleared; recording continues.';
+    });
+  };
+  const logUiAction = event => {
+    const target = event.target instanceof Element ? event.target.closest('button') : null;
+    if (target && /settings|hud|resume|pause|restart|leave|save|cancel|close|diagnostic/i.test((target.id || '') + ' ' + (target.textContent || ''))) {
+      push('ui-action', { id: target.id || null, label: (target.textContent || '').trim().slice(0, 60), bodyStates: ['survival-mode', 'survival-paused', 'hud-edit-mode'].filter(name => document.body.classList.contains(name)) });
+      persist();
+    }
+  };
+  document.addEventListener('click', logUiAction, true);
+  const settingsObserver = new MutationObserver(addSettingsPanel);
+  settingsObserver.observe(document.documentElement, { childList: true, subtree: true });
+  addEventListener('DOMContentLoaded', addSettingsPanel);
+  addSettingsPanel();
+
+})();
+</script>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -7,6 +7,12 @@ export const defaultSettings: SettingsState = {
   sensitivityY: 100,
   adsSensitivity: 0.5,
   invertY: false,
+  lookWhileAiming: false,
+  lookWhileFiring: false,
+  audioMusicEnabled: true,
+  audioMusic: 0.45,
+  audioMaster: 0.72,
+  audioSfx: 0.82,
   cameraAcceleration: 'fixed',
   cameraAccelerationStrength: 0.65,
   cameraAccelerationThreshold: 1.0,
@@ -42,6 +48,12 @@ class SettingsManager {
         }
         if (!Number.isFinite(this.current.adsSensitivity)) this.current.adsSensitivity = defaultSettings.adsSensitivity;
         this.current.adsSensitivity = Math.max(0.25, Math.min(1, this.current.adsSensitivity));
+        this.current.lookWhileAiming = parsed.lookWhileAiming === true;
+        this.current.lookWhileFiring = parsed.lookWhileFiring === true;
+        this.current.audioMusicEnabled = parsed.audioMusicEnabled !== false;
+        this.current.audioMusic = Number.isFinite(parsed.audioMusic) ? Math.max(0, Math.min(1, parsed.audioMusic)) : defaultSettings.audioMusic;
+        this.current.audioMaster = Number.isFinite(parsed.audioMaster) ? Math.max(0, Math.min(1, parsed.audioMaster)) : defaultSettings.audioMaster;
+        this.current.audioSfx = Number.isFinite(parsed.audioSfx) ? Math.max(0, Math.min(1, parsed.audioSfx)) : defaultSettings.audioSfx;
         if (!['fixed', 'distance', 'speed'].includes(this.current.cameraAcceleration)) {
           this.current.cameraAcceleration = defaultSettings.cameraAcceleration;
         }

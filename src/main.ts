@@ -1,6 +1,9 @@
+import { initializePilot, pilot, savePilotProgress } from './pilot';
+await initializePilot();
 import * as THREE from 'three';
 import './style.css';
 import './ui-modern.css';
+import './mobile-ui.css';
 import type { Mode, EmoteKind, HomeLevel, ResourceKind, ResourceDef, PlayerProfile, CharacterModelId } from './types';
 import {
   SEED,
@@ -45,6 +48,8 @@ import { voxelWorld, buildVoxelWorldVolumeMesh, buildVoxelWorldWaterVolumeMesh, 
 import { environmentAssets } from './environment-assets';
 import { ZombieSurvivalSystem, type SurvivalStatus, type SurvivalWeaponId } from './zombie-survival';
 import { survivalSound } from './survival-audio';
+import { compactStaticResource } from './static-meshes';
+import { instanceChunkResources } from './resource-instances';
 
 type Save = {
   version: 2;
@@ -60,6 +65,10 @@ type Save = {
 const IS_TOUCH_DEVICE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 const LOW_POWER_MODE = IS_TOUCH_DEVICE || (navigator.hardwareConcurrency || 4) <= 4;
 const SAVE_KEY = 'virtual-family-core-v2';
+// Cooperative terrain/water/resource work slices. The budget is checked between
+// slices, rather than after constructing a whole chunk (mobile-perf-2).
+const CHUNK_BUILD_BUDGET_LOW_MS = 3;
+const CHUNK_BUILD_BUDGET_MS = 8;
 
 const angleLerp = (a: number, b: number, t: number) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * Math.min(1, t);
 
@@ -122,14 +131,20 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
   if (assetTree) {
     tintTreeForOutbreak(assetTree);
     const def = RESOURCE_DEFS[kind];
-    if (kind === 'fruit') {
-      const fruitMat = new THREE.MeshStandardMaterial({ color: def.fruitColor ?? 0xcc4433, roughness: 0.6 });
+    // Fruit were 5 meshes with a fresh geometry each plus a fresh material per tree.
+    // Share one geometry/material, and skip them on LOD1+ chunks where a 0.18 m
+    // sphere is under one pixel at that distance. (chunk-queue-1)
+    if (kind === 'fruit' && lod === 0) {
+      const fruitGroup = new THREE.Group();
+      const fruitMat = getSharedFruitMaterial(def.fruitColor ?? 0xcc4433);
       for (let f = 0; f < 5; f++) {
-        const fruit = new THREE.Mesh(new THREE.SphereGeometry(0.09, 5, 4), fruitMat);
+        const fruit = new THREE.Mesh(sharedFruitGeometry, fruitMat);
         const a = f * ((Math.PI * 2) / 5);
         fruit.position.set(Math.cos(a) * 1.05, 2.2 + Math.sin(f * 1.7) * 0.28, Math.sin(a) * 1.05);
-        assetTree.add(fruit);
+        fruitGroup.add(fruit);
       }
+      compactStaticResource(fruitGroup, geometry => sharedWorldGeometries.has(geometry));
+      assetTree.add(fruitGroup);
     }
     if (lod === 0) {
       assetTree.traverse(o => {
@@ -215,6 +230,7 @@ function buildTree(kind: ResourceKind, lod: number): THREE.Group {
       }
     });
   }
+  compactStaticResource(g);
   return g;
 }
 function buildRock(kind: ResourceKind, lod: number): THREE.Group {
@@ -452,10 +468,19 @@ scene.fog = new THREE.Fog(0x82877f, 105, 700);
 const gameplayFog = scene.fog;
 
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.05, 1200);
-const renderer = new THREE.WebGLRenderer({ antialias: !LOW_POWER_MODE, powerPreference: 'high-performance', preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, LOW_POWER_MODE ? 1.25 : 1.65));
+scene.add(camera);
+const renderer = new THREE.WebGLRenderer({ antialias: !LOW_POWER_MODE, powerPreference: 'high-performance' });
+function applyGraphicsSettings() {
+  const quality = settings.current.graphics;
+  const ratio = LOW_POWER_MODE
+    ? (quality === 'low' ? 0.85 : quality === 'med' ? 1 : 1.25)
+    : (quality === 'low' ? 1 : quality === 'med' ? 1.3 : 1.6);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, ratio));
+  renderer.shadowMap.enabled = !LOW_POWER_MODE && quality !== 'low';
+}
+applyGraphicsSettings();
 renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = !LOW_POWER_MODE;
+renderer.shadowMap.enabled = !LOW_POWER_MODE && settings.current.graphics !== 'low';
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.querySelector('#game')!.appendChild(renderer.domElement);
 
@@ -463,7 +488,7 @@ const hemisphere = new THREE.HemisphereLight(0xb6b8a9, 0x302f2b, 1.65);
 scene.add(hemisphere);
 const sun = new THREE.DirectionalLight(0xcac2a4, 2.4);
 sun.position.set(35, 70, 25);
-sun.castShadow = !LOW_POWER_MODE;
+sun.castShadow = renderer.shadowMap.enabled;
 sun.shadow.mapSize.set(LOW_POWER_MODE ? 512 : 1024, LOW_POWER_MODE ? 512 : 1024);
 sun.shadow.camera.left = -90;
 sun.shadow.camera.right = 90;
@@ -841,11 +866,34 @@ function triggerFireCast() {
   say('Fire bolt');
 }
 
+// Resources every chunk used to re-create (one road material per chunk, one
+// geometry + material per stump/rubble). They are identical, so build them once
+// and exclude them from chunk disposal. Perf change: chunk-queue-1.
+const sharedRoadMaterial = new THREE.MeshStandardMaterial({ color: 0x3d4348, roughness: 1 });
+const sharedStumpGeometry = new THREE.CylinderGeometry(0.2, 0.26, 0.3, 6);
+const sharedStumpMaterial = new THREE.MeshStandardMaterial({ color: 0x5c4028 });
+const sharedRubbleGeometry = new THREE.CylinderGeometry(0.28, 0.36, 0.14, 6);
+const sharedRubbleMaterial = new THREE.MeshStandardMaterial({ color: 0x5a5d60 });
+const sharedFruitGeometry = new THREE.SphereGeometry(0.09, 5, 4);
+const sharedFruitMaterials = new Map<number, THREE.MeshStandardMaterial>();
+const sharedWorldGeometries = new Set<THREE.BufferGeometry>([sharedStumpGeometry, sharedRubbleGeometry, sharedFruitGeometry]);
+const sharedWorldMaterials = new Set<THREE.Material>([sharedRoadMaterial, sharedStumpMaterial, sharedRubbleMaterial]);
+function getSharedFruitMaterial(color: number): THREE.MeshStandardMaterial {
+  let material = sharedFruitMaterials.get(color);
+  if (!material) {
+    material = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
+    sharedFruitMaterials.set(color, material);
+    sharedWorldMaterials.add(material);
+  }
+  return material;
+}
+
 function disposeWorldObjects(root: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
   root.traverse(o => {
     if (!(o instanceof THREE.Mesh)) return;
-    if (!environmentAssets.isSharedGeometry(o.geometry) && !geometries.has(o.geometry)) {
+    if (o instanceof THREE.InstancedMesh) o.dispose();
+    if (!sharedWorldGeometries.has(o.geometry) && !environmentAssets.isSharedGeometry(o.geometry) && !geometries.has(o.geometry)) {
       geometries.add(o.geometry);
       o.geometry.dispose();
     }
@@ -856,6 +904,7 @@ function disposeWorldObjects(root: THREE.Object3D) {
         material !== terrainMaterial &&
         material !== waterfallMaterial &&
         material !== springMaterial &&
+        !sharedWorldMaterials.has(material) &&
         !environmentAssets.isSharedMaterial(material) &&
         !materials.has(material)
       ) {
@@ -873,6 +922,28 @@ class Chunks {
   aimTargets = new Set<THREE.Object3D>();
   cameraBlockers = new Set<THREE.Object3D>();
   homeLevel: HomeLevel = 1;
+  // Incremental streaming (perf: chunk-queue-1). Boundary crossings used to build
+  // every missing/upgraded chunk inside one frame (measured 90-240 ms per crossing).
+  // They are now queued nearest-first and built under a small per-frame time budget.
+  private streamQueue: { x: number; z: number }[] = [];
+  private streamCx = 0;
+  private streamCz = 0;
+  private streamRadius = 0;
+  private activeBuild: Generator<void, void, unknown> | null = null;
+  private assetRevision = 0;
+  get pendingBuilds() {
+    return this.streamQueue.length + (this.activeBuild ? 1 : 0);
+  }
+
+  private cancelBuild() {
+    this.activeBuild?.return();
+    this.activeBuild = null;
+  }
+
+  refreshAssets() {
+    this.assetRevision++;
+    this.streamQueued(player.root.position.x, player.root.position.z);
+  }
 
   private indexChunk(g: THREE.Group) {
     const targets: THREE.Object3D[] = [], blockers: THREE.Object3D[] = [];
@@ -897,6 +968,7 @@ class Chunks {
   }
 
   unregisterObject(o: THREE.Object3D) {
+    o.userData.removeInstances?.();
     this.aimTargets.delete(o);
     this.cameraBlockers.delete(o);
     if (aimCache === o) {
@@ -928,363 +1000,410 @@ class Chunks {
   }
 
   build(cx: number, cz: number, lod = 0) {
+    // Initial loading/survey can exhaust the same builder synchronously.
+    for (const _step of this.buildSteps(cx, cz, lod)) { /* drain */ }
+  }
+
+  private *buildSteps(cx: number, cz: number, lod = 0): Generator<void, void, unknown> {
     const key = this.key(cx, cz), g = new THREE.Group();
-    g.name = `chunk:${key}`;
-    g.userData.lod = lod;
-    // Chunks partition the physical voxel volume too. The actual base material
-    // is deterministic, while edits remain sparse inside VoxelChunk.
-    g.userData.voxelChunk = voxelWorld.chunk(cx, cz);
+    const changesSnapshot = JSON.stringify(this.changes[key] || []);
+    const expiredEntries: string[] = [];
+    let committed = false;
+    try {
+      g.name = `chunk:${key}`;
+      g.userData.lod = lod;
+      g.userData.assetRevision = this.assetRevision;
+      // Chunks partition the physical voxel volume too. The actual base material
+      // is deterministic, while edits remain sparse inside VoxelChunk.
+      g.userData.voxelChunk = voxelWorld.chunk(cx, cz);
 
-    const lodSetting = settings.current.lodDetail || 'ultra';
-    // Match the visible terrain tessellation to the water mesh at every LOD.
-    // Misaligned grids let the water sample finer terrain cuts than the ground
-    // mesh can display, creating apparent raised riverbank ledges.
-    const segs =
-      lod === 0
-        ? (LOW_POWER_MODE ? 24 : lodSetting === 'ultra' ? 64 : lodSetting === 'balanced' ? 40 : 24)
-        : lod === 1
-        ? 20
-        : 8;
-    const terrain = new THREE.PlaneGeometry(SIZE, SIZE, segs, segs);
-    terrain.rotateX(-Math.PI / 2);
-    const pos = terrain.getAttribute('position');
-    const colors = new Float32Array(pos.count * 3);
-    const waterMasks = new Float32Array(pos.count);
-    const terrainWaterDepths = new Float32Array(pos.count);
-    const chunkBiome = biomeAt(cx * SIZE + SIZE / 2, cz * SIZE + SIZE / 2);
+      const lodSetting = settings.current.lodDetail || 'ultra';
+      // Match the visible terrain tessellation to the water mesh at every LOD.
+      // Misaligned grids let the water sample finer terrain cuts than the ground
+      // mesh can display, creating apparent raised riverbank ledges.
+      const segs =
+        lod === 0
+          ? (LOW_POWER_MODE ? 24 : lodSetting === 'ultra' ? 64 : lodSetting === 'balanced' ? 40 : 24)
+          : lod === 1
+          ? 20
+          : 8;
+      const terrain = new THREE.PlaneGeometry(SIZE, SIZE, segs, segs);
+      // Attach owned geometry before yielding, so cancellation can release it.
+      const ground = new THREE.Mesh(terrain, terrainMaterial);
+      g.add(ground);
+      terrain.rotateX(-Math.PI / 2);
+      const pos = terrain.getAttribute('position');
+      const colors = new Float32Array(pos.count * 3);
+      const waterMasks = new Float32Array(pos.count);
+      const terrainWaterDepths = new Float32Array(pos.count);
+      const chunkBiome = biomeAt(cx * SIZE + SIZE / 2, cz * SIZE + SIZE / 2);
 
-    for (let i = 0; i < pos.count; i++) {
-      const lx = pos.getX(i) + cx * SIZE + SIZE / 2;
-      const lz = pos.getZ(i) + cz * SIZE + SIZE / 2;
-      const h = terrainHeightAt(lx, lz);
-      pos.setY(i, h);
-      const wetDepth = waterDepthAt(lx, lz);
-      waterMasks[i] = clamp(wetDepth / 0.42, 0, 1);
-      terrainWaterDepths[i] = wetDepth;
-      const c = terrainColorAt(h, lx, lz, chunkBiome);
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
-    }
-    terrain.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    terrain.setAttribute('aWaterMask', new THREE.BufferAttribute(waterMasks, 1));
-    terrain.setAttribute('aWaterDepth', new THREE.BufferAttribute(terrainWaterDepths, 1));
-    terrain.computeVertexNormals();
-
-    const ground = new THREE.Mesh(terrain, terrainMaterial);
-    ground.position.set(cx * SIZE + SIZE / 2, 0, cz * SIZE + SIZE / 2);
-    ground.receiveShadow = lod === 0;
-    ground.name = 'terrain';
-    g.add(ground);
-
-    const roadMat = new THREE.MeshStandardMaterial({ color: 0x3d4348, roughness: 1 });
-
-    // Roads
-    for (let k = -WORLD_RADIUS; k <= WORLD_RADIUS; k++) {
-      const center = k * ROAD_SPACING;
-      if (center >= cz * SIZE - ROAD_WIDTH / 2 && center <= (cz + 1) * SIZE + ROAD_WIDTH / 2) {
-        const rx = new THREE.Mesh(new THREE.PlaneGeometry(SIZE, ROAD_WIDTH, 16, 2), roadMat);
-        rx.rotation.x = -Math.PI / 2;
-        const xp = rx.geometry.getAttribute('position');
-        for (let i = 0; i < xp.count; i++) {
-          const lx = xp.getX(i) + cx * SIZE + SIZE / 2, lz = xp.getZ(i) + center;
-          xp.setY(i, terrainHeightAt(lx, lz) + 0.055);
-        }
-        rx.geometry.computeVertexNormals();
-        rx.position.set(cx * SIZE + SIZE / 2, 0, center);
-        rx.name = 'road-x';
-        g.add(rx);
+      for (let i = 0; i < pos.count; i++) {
+        const lx = pos.getX(i) + cx * SIZE + SIZE / 2;
+        const lz = pos.getZ(i) + cz * SIZE + SIZE / 2;
+        const h = terrainHeightAt(lx, lz);
+        pos.setY(i, h);
+        const wetDepth = waterDepthAt(lx, lz);
+        waterMasks[i] = clamp(wetDepth / 0.42, 0, 1);
+        terrainWaterDepths[i] = wetDepth;
+        const c = terrainColorAt(h, lx, lz, chunkBiome);
+        colors[i * 3] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+        if (i % 32 === 31) yield;
       }
-      if (center >= cx * SIZE - ROAD_WIDTH / 2 && center <= (cx + 1) * SIZE + ROAD_WIDTH / 2) {
-        const rz = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, SIZE, 2, 16), roadMat);
-        rz.rotation.x = -Math.PI / 2;
-        const zp = rz.geometry.getAttribute('position');
-        for (let i = 0; i < zp.count; i++) {
-          const lx = zp.getX(i) + center, lz = zp.getZ(i) + cz * SIZE + SIZE / 2;
-          zp.setY(i, terrainHeightAt(lx, lz) + 0.055);
-        }
-        rz.geometry.computeVertexNormals();
-        rz.position.set(center, 0, cz * SIZE + SIZE / 2);
-        rz.name = 'road-z';
-        g.add(rz);
-      }
-    }
+      terrain.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      terrain.setAttribute('aWaterMask', new THREE.BufferAttribute(waterMasks, 1));
+      terrain.setAttribute('aWaterDepth', new THREE.BufferAttribute(terrainWaterDepths, 1));
+      terrain.computeVertexNormals();
 
-    // Bridges where road crosses river in this chunk
-    const chunkMidX = cx * SIZE + SIZE / 2, chunkMidZ = cz * SIZE + SIZE / 2;
-    if (isBridgeAt(chunkMidX, chunkMidZ)) {
-      const bridge = buildBridge(chunkMidX, chunkMidZ);
-      g.add(bridge);
-    }
+      ground.position.set(cx * SIZE + SIZE / 2, 0, cz * SIZE + SIZE / 2);
+      ground.receiveShadow = lod === 0;
+      ground.name = 'terrain';
+      yield;
 
-    // Physical Seamless Water Mesh
-    const waterGroup = new THREE.Group();
-    waterGroup.name = 'water';
-    waterGroup.position.set(cx * SIZE, 0, cz * SIZE);
+      const roadMat = sharedRoadMaterial;
 
-    // Terrain and water now share the same vertices at each LOD.
-    const waterGrid = segs;
-    const step = SIZE / waterGrid;
-    const waterPositions: number[] = [], waterColors: number[] = [], waterIndices: number[] = [];
-    // Per-vertex real water depth and surface flow (m/s), consumed by the water shader.
-    const waterDepthAttr: number[] = [], waterFlowAttr: number[] = [];
-
-    const deepNavy = new THREE.Color(0x0e2b47);
-    const emeraldMid = new THREE.Color(0x23757a);
-    const turquoiseShallow = new THREE.Color(0x56b8ad);
-    const shorelineFoam = new THREE.Color(0xf4f9fa);
-
-    // Build grid vertices for wet cells and a one-cell shoreline skirt.
-    // Triangle inclusion below still uses the authoritative wet mask, so a
-    // dry island cannot become covered by a bridge of water triangles.
-    const vertIndex = new Int32Array((waterGrid + 1) * (waterGrid + 1)).fill(-1);
-    const wetVertex = new Uint8Array((waterGrid + 1) * (waterGrid + 1));
-    let nextIdx = 0;
-
-    for (let iz = 0; iz <= waterGrid; iz++) {
-      for (let ix = 0; ix <= waterGrid; ix++) {
-        const wx = cx * SIZE + ix * step;
-        const wz = cz * SIZE + iz * step;
-        if (nearHome(wx, wz)) continue;
-
-        const depth = waterDepthAt(wx, wz);
-        // A water-surface vertex must be genuinely wet. Do not create a dry
-        // shoreline vertex and then bridge it to wet vertices: that produces a
-        // thin sheet of "water" over grass/high ground. The shoreline is now
-        // represented only by the physical water edge/side wall below.
-        if (depth > 0.005) {
-          const vertexSlot = iz * (waterGrid + 1) + ix;
-          vertIndex[vertexSlot] = nextIdx++;
-          wetVertex[vertexSlot] = 1;
-          const surfaceY = waterSurfaceAt(wx, wz);
-          waterPositions.push(ix * step, surfaceY, iz * step);
-
-          waterDepthAttr.push(depth);
-          const flow = waterFlowAt(wx, wz);
-          waterFlowAttr.push(flow.flowVector.x * flow.flowSpeed, flow.flowVector.y * flow.flowSpeed);
-
-          // Base tint by depth. White shoreline foam is added in the shader
-          // (animated, depth-driven), so shallows here stay a clear turquoise.
-          const c = new THREE.Color();
-          if (depth < 0.45) {
-            c.copy(turquoiseShallow).lerp(shorelineFoam, (1 - depth / 0.45) * 0.3);
-          } else if (depth < 1.1) {
-            c.copy(turquoiseShallow).lerp(emeraldMid, (depth - 0.45) / 0.65);
-          } else {
-            c.copy(emeraldMid).lerp(deepNavy, clamp((depth - 1.1) / 1.2, 0, 1));
+      // Roads
+      for (let k = -WORLD_RADIUS; k <= WORLD_RADIUS; k++) {
+        const center = k * ROAD_SPACING;
+        if (center >= cz * SIZE - ROAD_WIDTH / 2 && center <= (cz + 1) * SIZE + ROAD_WIDTH / 2) {
+          const rx = new THREE.Mesh(new THREE.PlaneGeometry(SIZE, ROAD_WIDTH, 16, 2), roadMat);
+          rx.rotation.x = -Math.PI / 2;
+          const xp = rx.geometry.getAttribute('position');
+          for (let i = 0; i < xp.count; i++) {
+            const lx = xp.getX(i) + cx * SIZE + SIZE / 2, lz = xp.getZ(i) + center;
+            xp.setY(i, terrainHeightAt(lx, lz) + 0.055);
           }
-          waterColors.push(c.r, c.g, c.b);
+          rx.geometry.computeVertexNormals();
+          rx.position.set(cx * SIZE + SIZE / 2, 0, center);
+          rx.name = 'road-x';
+          g.add(rx);
         }
-      }
-    }
-
-    // Connect quads
-    for (let iz = 0; iz < waterGrid; iz++) {
-      for (let ix = 0; ix < waterGrid; ix++) {
-        const i00 = vertIndex[iz * (waterGrid + 1) + ix];
-        const i10 = vertIndex[iz * (waterGrid + 1) + ix + 1];
-        const i01 = vertIndex[(iz + 1) * (waterGrid + 1) + ix];
-        const i11 = vertIndex[(iz + 1) * (waterGrid + 1) + ix + 1];
-
-        const wxMid = cx * SIZE + (ix + 0.5) * step;
-        const wzMid = cz * SIZE + (iz + 0.5) * step;
-        if (nearHome(wxMid, wzMid)) continue;
-
-        // Never span a triangle across dry land. This is the renderer-side
-        // enforcement of the hydrology rule: if a location has insufficient
-        // water to occupy the cell, it stays grass/terrain and the water ends.
-        const hasWaterInCell =
-          waterDepthAt(wxMid, wzMid) > 0.005 &&
-          i00 >= 0 && i10 >= 0 && i11 >= 0 && i01 >= 0;
-
-        if (hasWaterInCell) {
-          waterIndices.push(i00, i01, i11);
-          waterIndices.push(i00, i11, i10);
-        }
-      }
-    }
-
-    if (waterIndices.length) {
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.Float32BufferAttribute(waterPositions, 3));
-      geom.setAttribute('color', new THREE.Float32BufferAttribute(waterColors, 3));
-      geom.setAttribute('aDepth', new THREE.Float32BufferAttribute(waterDepthAttr, 1));
-      geom.setAttribute('aFlow', new THREE.Float32BufferAttribute(waterFlowAttr, 2));
-      geom.setIndex(waterIndices);
-      geom.computeVertexNormals();
-      const waterMesh = new THREE.Mesh(geom, waterMaterial);
-      waterMesh.name = 'water-surface';
-      waterGroup.add(waterMesh);
-
-      // Do not extrude a vertical wall around every wet/dry grid edge.
-      // The carved terrain forms the natural bank; the old cell-by-cell walls
-      // looked like raised platforms and could snag the player at the shore.
-
-      g.add(waterGroup);
-      g.userData.water = true;
-    }
-
-    // Natural waterfalls and alpine spring pools are driven by the same
-    // drainage field as terrain and water.
-    if (lod <= 1) {
-      const sampleStep = lod === 0 ? 4 : 8;
-      let waterfallCount = 0;
-      for (let fz = sampleStep * 0.5; fz < SIZE && waterfallCount < 2; fz += sampleStep) {
-        for (let fx = sampleStep * 0.5; fx < SIZE && waterfallCount < 2; fx += sampleStep) {
-          const wx = cx * SIZE + fx;
-          const wz = cz * SIZE + fz;
-          if (nearHome(wx, wz) || nearVillage(wx, wz) || !waterAt(wx, wz)) continue;
-
-          const flow = waterFlowAt(wx, wz);
-          if (flow.flowDrop < 1.25 || flow.flowSpeed < 1.05) continue;
-
-          const ux = flow.flowVector.x;
-          const uz = flow.flowVector.y;
-          const downX = wx + ux * SIZE * 0.35;
-          const downZ = wz + uz * SIZE * 0.35;
-          const topY = waterSurfaceAt(wx, wz);
-          const bottomY = waterSurfaceAt(downX, downZ);
-          const fallHeight = topY - bottomY;
-          if (fallHeight < 0.85) continue;
-
-          const visibleHeight = Math.min(8.0, fallHeight);
-          const width = clamp(0.8 + flow.flowSpeed * 0.62 + flow.flowAccumulation / 4200, 0.9, 4.5);
-          const waterfall = new THREE.Mesh(
-            new THREE.PlaneGeometry(width, visibleHeight, 1, 6),
-            waterfallMaterial
-          );
-          waterfall.name = 'waterfall';
-          waterfall.position.set(
-            wx + ux * 0.9,
-            bottomY + visibleHeight * 0.5,
-            wz + uz * 0.9
-          );
-          waterfall.rotation.y = Math.atan2(ux, uz);
-          g.add(waterfall);
-          waterfallCount++;
+        if (center >= cx * SIZE - ROAD_WIDTH / 2 && center <= (cx + 1) * SIZE + ROAD_WIDTH / 2) {
+          const rz = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, SIZE, 2, 16), roadMat);
+          rz.rotation.x = -Math.PI / 2;
+          const zp = rz.geometry.getAttribute('position');
+          for (let i = 0; i < zp.count; i++) {
+            const lx = zp.getX(i) + center, lz = zp.getZ(i) + cz * SIZE + SIZE / 2;
+            zp.setY(i, terrainHeightAt(lx, lz) + 0.055);
+          }
+          rz.geometry.computeVertexNormals();
+          rz.position.set(center, 0, cz * SIZE + SIZE / 2);
+          rz.name = 'road-z';
+          g.add(rz);
         }
       }
 
-      if (lod === 0) {
-        const springStep = 8;
-        let springCount = 0;
-        for (let fz = springStep * 0.5; fz < SIZE && springCount < 1; fz += springStep) {
-          for (let fx = springStep * 0.5; fx < SIZE && springCount < 1; fx += springStep) {
+      // Bridges where road crosses river in this chunk
+      const chunkMidX = cx * SIZE + SIZE / 2, chunkMidZ = cz * SIZE + SIZE / 2;
+      if (isBridgeAt(chunkMidX, chunkMidZ)) {
+        const bridge = buildBridge(chunkMidX, chunkMidZ);
+        g.add(bridge);
+      }
+
+      // Physical Seamless Water Mesh
+      const waterGroup = new THREE.Group();
+      waterGroup.name = 'water';
+      waterGroup.position.set(cx * SIZE, 0, cz * SIZE);
+
+      // Terrain and water now share the same vertices at each LOD.
+      const waterGrid = segs;
+      const step = SIZE / waterGrid;
+      const waterPositions: number[] = [], waterColors: number[] = [], waterIndices: number[] = [];
+      // Per-vertex real water depth and surface flow (m/s), consumed by the water shader.
+      const waterDepthAttr: number[] = [], waterFlowAttr: number[] = [];
+
+      const deepNavy = new THREE.Color(0x0e2b47);
+      const emeraldMid = new THREE.Color(0x23757a);
+      const turquoiseShallow = new THREE.Color(0x56b8ad);
+      const shorelineFoam = new THREE.Color(0xf4f9fa);
+
+      // Build grid vertices for wet cells and a one-cell shoreline skirt.
+      // Triangle inclusion below still uses the authoritative wet mask, so a
+      // dry island cannot become covered by a bridge of water triangles.
+      const vertIndex = new Int32Array((waterGrid + 1) * (waterGrid + 1)).fill(-1);
+      const wetVertex = new Uint8Array((waterGrid + 1) * (waterGrid + 1));
+      let nextIdx = 0;
+
+      for (let iz = 0; iz <= waterGrid; iz++) {
+        yield;
+        for (let ix = 0; ix <= waterGrid; ix++) {
+          const wx = cx * SIZE + ix * step;
+          const wz = cz * SIZE + iz * step;
+          if (nearHome(wx, wz)) continue;
+
+          const depth = waterDepthAt(wx, wz);
+          // A water-surface vertex must be genuinely wet. Do not create a dry
+          // shoreline vertex and then bridge it to wet vertices: that produces a
+          // thin sheet of "water" over grass/high ground. The shoreline is now
+          // represented only by the physical water edge/side wall below.
+          if (depth > 0.005) {
+            const vertexSlot = iz * (waterGrid + 1) + ix;
+            vertIndex[vertexSlot] = nextIdx++;
+            wetVertex[vertexSlot] = 1;
+            const surfaceY = waterSurfaceAt(wx, wz);
+            waterPositions.push(ix * step, surfaceY, iz * step);
+
+            waterDepthAttr.push(depth);
+            const flow = waterFlowAt(wx, wz);
+            waterFlowAttr.push(flow.flowVector.x * flow.flowSpeed, flow.flowVector.y * flow.flowSpeed);
+
+            // Base tint by depth. White shoreline foam is added in the shader
+            // (animated, depth-driven), so shallows here stay a clear turquoise.
+            const c = new THREE.Color();
+            if (depth < 0.45) {
+              c.copy(turquoiseShallow).lerp(shorelineFoam, (1 - depth / 0.45) * 0.3);
+            } else if (depth < 1.1) {
+              c.copy(turquoiseShallow).lerp(emeraldMid, (depth - 0.45) / 0.65);
+            } else {
+              c.copy(emeraldMid).lerp(deepNavy, clamp((depth - 1.1) / 1.2, 0, 1));
+            }
+            waterColors.push(c.r, c.g, c.b);
+          }
+        }
+      }
+
+      // Connect quads
+      for (let iz = 0; iz < waterGrid; iz++) {
+        yield;
+        for (let ix = 0; ix < waterGrid; ix++) {
+          const i00 = vertIndex[iz * (waterGrid + 1) + ix];
+          const i10 = vertIndex[iz * (waterGrid + 1) + ix + 1];
+          const i01 = vertIndex[(iz + 1) * (waterGrid + 1) + ix];
+          const i11 = vertIndex[(iz + 1) * (waterGrid + 1) + ix + 1];
+
+          const wxMid = cx * SIZE + (ix + 0.5) * step;
+          const wzMid = cz * SIZE + (iz + 0.5) * step;
+          if (nearHome(wxMid, wzMid)) continue;
+
+          // Never span a triangle across dry land. This is the renderer-side
+          // enforcement of the hydrology rule: if a location has insufficient
+          // water to occupy the cell, it stays grass/terrain and the water ends.
+          const hasWaterInCell =
+            waterDepthAt(wxMid, wzMid) > 0.005 &&
+            i00 >= 0 && i10 >= 0 && i11 >= 0 && i01 >= 0;
+
+          if (hasWaterInCell) {
+            waterIndices.push(i00, i01, i11);
+            waterIndices.push(i00, i11, i10);
+          }
+        }
+      }
+
+      if (waterIndices.length) {
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(waterPositions, 3));
+        geom.setAttribute('color', new THREE.Float32BufferAttribute(waterColors, 3));
+        geom.setAttribute('aDepth', new THREE.Float32BufferAttribute(waterDepthAttr, 1));
+        geom.setAttribute('aFlow', new THREE.Float32BufferAttribute(waterFlowAttr, 2));
+        geom.setIndex(waterIndices);
+        geom.computeVertexNormals();
+        const waterMesh = new THREE.Mesh(geom, waterMaterial);
+        waterMesh.name = 'water-surface';
+        waterGroup.add(waterMesh);
+
+        // Do not extrude a vertical wall around every wet/dry grid edge.
+        // The carved terrain forms the natural bank; the old cell-by-cell walls
+        // looked like raised platforms and could snag the player at the shore.
+
+        g.add(waterGroup);
+        g.userData.water = true;
+      }
+
+      // Natural waterfalls and alpine spring pools are driven by the same
+      // drainage field as terrain and water.
+      if (lod <= 1) {
+        const sampleStep = lod === 0 ? 4 : 8;
+        let waterfallCount = 0;
+        for (let fz = sampleStep * 0.5; fz < SIZE && waterfallCount < 2; fz += sampleStep) {
+          yield;
+          for (let fx = sampleStep * 0.5; fx < SIZE && waterfallCount < 2; fx += sampleStep) {
             const wx = cx * SIZE + fx;
             const wz = cz * SIZE + fz;
-            const flow = waterFlowAt(wx, wz);
-            if (flow.waterType !== 'spring' || !waterAt(wx, wz)) continue;
+            if (nearHome(wx, wz) || nearVillage(wx, wz) || !waterAt(wx, wz)) continue;
 
-            const pool = new THREE.Mesh(
-              new THREE.CylinderGeometry(0.34, 0.58, 0.08, 18),
-              springMaterial
+            const flow = waterFlowAt(wx, wz);
+            if (flow.flowDrop < 1.25 || flow.flowSpeed < 1.05) continue;
+
+            const ux = flow.flowVector.x;
+            const uz = flow.flowVector.y;
+            const downX = wx + ux * SIZE * 0.35;
+            const downZ = wz + uz * SIZE * 0.35;
+            const topY = waterSurfaceAt(wx, wz);
+            const bottomY = waterSurfaceAt(downX, downZ);
+            const fallHeight = topY - bottomY;
+            if (fallHeight < 0.85) continue;
+
+            const visibleHeight = Math.min(8.0, fallHeight);
+            const width = clamp(0.8 + flow.flowSpeed * 0.62 + flow.flowAccumulation / 4200, 0.9, 4.5);
+            const waterfall = new THREE.Mesh(
+              new THREE.PlaneGeometry(width, visibleHeight, 1, 6),
+              waterfallMaterial
             );
-            pool.name = 'spring-pool';
-            pool.position.set(wx, waterSurfaceAt(wx, wz) + 0.035, wz);
-            g.add(pool);
-            springCount++;
+            waterfall.name = 'waterfall';
+            waterfall.position.set(
+              wx + ux * 0.9,
+              bottomY + visibleHeight * 0.5,
+              wz + uz * 0.9
+            );
+            waterfall.rotation.y = Math.atan2(ux, uz);
+            g.add(waterfall);
+            waterfallCount++;
+          }
+        }
+
+        if (lod === 0) {
+          const springStep = 8;
+          let springCount = 0;
+          for (let fz = springStep * 0.5; fz < SIZE && springCount < 1; fz += springStep) {
+            yield;
+            for (let fx = springStep * 0.5; fx < SIZE && springCount < 1; fx += springStep) {
+              const wx = cx * SIZE + fx;
+              const wz = cz * SIZE + fz;
+              const flow = waterFlowAt(wx, wz);
+              if (flow.waterType !== 'spring' || !waterAt(wx, wz)) continue;
+
+              const pool = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.34, 0.58, 0.08, 18),
+                springMaterial
+              );
+              pool.name = 'spring-pool';
+              pool.position.set(wx, waterSurfaceAt(wx, wz) + 0.035, wz);
+              g.add(pool);
+              springCount++;
+            }
           }
         }
       }
-    }
 
-    // Trees and Rocks (Rule: Tree will never spawn into a rock)
-    const removed = this.changes[key] || [];
-    const placedProps: { x: number; z: number }[] = [];
+      // Trees and Rocks (Rule: Tree will never spawn into a rock)
+      const removed = this.changes[key] || [];
+      const placedProps: { x: number; z: number }[] = [];
 
-    if (lod < 2) {
-      const maxTrees = lod === 0 ? 10 : 5;
-      for (let i = 0; i < maxTrees; i++) {
-        if (hash(cx * 17 + i, cz * 23 - i) <= 0.52) continue;
-        const tx = cx * SIZE + 2 + hash(cx + i, cz - i) * (SIZE - 4);
-        const tz = cz * SIZE + 2 + hash(cx - i, cz + i) * (SIZE - 4);
-        if (roadAt(tx, tz) || waterAt(tx, tz) || nearHome(tx, tz) || nearVillage(tx, tz)) continue;
+      if (lod < 2) {
+        const maxTrees = lod === 0 ? 10 : 5;
+        for (let i = 0; i < maxTrees; i++) {
+          yield;
+          if (hash(cx * 17 + i, cz * 23 - i) <= 0.52) continue;
+          const tx = cx * SIZE + 2 + hash(cx + i, cz - i) * (SIZE - 4);
+          const tz = cz * SIZE + 2 + hash(cx - i, cz + i) * (SIZE - 4);
+          if (roadAt(tx, tz) || waterAt(tx, tz) || nearHome(tx, tz) || nearVillage(tx, tz)) continue;
 
-        // Collision rule: Tree will not spawn into any existing prop/rock
-        if (placedProps.some(p => Math.hypot(p.x - tx, p.z - tz) < 3.2)) continue;
-        placedProps.push({ x: tx, z: tz });
+          // Collision rule: Tree will not spawn into any existing prop/rock
+          if (placedProps.some(p => Math.hypot(p.x - tx, p.z - tz) < 3.2)) continue;
+          placedProps.push({ x: tx, z: tz });
 
-        const kind = pickTreeKind(cx, cz, i, tx, tz);
-        const def = RESOURCE_DEFS[kind];
-        const name = `tree-${i}`;
-        const entry = removed.find(e => e === name || e.startsWith(name + '@'));
-        if (entry) {
-          const at = entry.includes('@') ? Number(entry.split('@')[1]) : 0;
-          const elapsed = (Date.now() - at) / 1000;
-          if (elapsed < def.regrowSeconds) {
-            const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.3, 6), new THREE.MeshStandardMaterial({ color: 0x5c4028 }));
-            stump.name = `stump-${i}`;
-            stump.position.set(tx, terrainHeightAt(tx, tz) + 0.15, tz);
-            g.add(stump);
+          const kind = pickTreeKind(cx, cz, i, tx, tz);
+          const def = RESOURCE_DEFS[kind];
+          const name = `tree-${i}`;
+          const entry = removed.find(e => e === name || e.startsWith(name + '@'));
+          if (entry) {
+            const at = entry.includes('@') ? Number(entry.split('@')[1]) : 0;
+            const elapsed = (Date.now() - at) / 1000;
+            if (elapsed < def.regrowSeconds) {
+              const stump = new THREE.Mesh(sharedStumpGeometry, sharedStumpMaterial);
+              stump.name = `stump-${i}`;
+              stump.position.set(tx, terrainHeightAt(tx, tz) + 0.15, tz);
+              g.add(stump);
+              continue;
+            }
+            expiredEntries.push(entry);
+          }
+
+          const tree = buildTree(kind, lod);
+          tree.name = name;
+          tree.userData.resource = { kind, hits: def.hitsToFell, maxHits: def.hitsToFell };
+          tree.userData.colliderRadius = def.colliderRadius;
+          tree.position.set(tx, terrainHeightAt(tx, tz), tz);
+          g.add(tree);
+        }
+
+        const maxRocks = lod === 0 ? 5 : 2;
+        for (let i = 0; i < maxRocks; i++) {
+          yield;
+          if (hash(cx * 41 + i * 7, cz * 47 - i * 5) <= 0.6) continue;
+          const tx = cx * SIZE + 2 + hash(cx - i * 3, cz + i * 5) * (SIZE - 4);
+          const tz = cz * SIZE + 2 + hash(cx + i * 5, cz - i * 3) * (SIZE - 4);
+          if (roadAt(tx, tz) || waterAt(tx, tz) || nearHome(tx, tz) || nearVillage(tx, tz)) continue;
+
+          // Collision rule: Rock will not spawn into any tree
+          if (placedProps.some(p => Math.hypot(p.x - tx, p.z - tz) < 3.2)) continue;
+          placedProps.push({ x: tx, z: tz });
+
+          const mtn = mountainMaskAt(tx, tz);
+          if (mtn < 0.15 && hash(cx * 3 + i, cz * 5 - i) > 0.25) continue;
+
+          const kind: ResourceKind = mtn > 0.55 && hash(cx * 13 + i, cz * 17 - i) < 0.4 ? 'boulder' : 'rock';
+          const def = RESOURCE_DEFS[kind];
+          const name = `rock-${i}`;
+          const entry = removed.find(e => e === name || e.startsWith(name + '@'));
+          if (entry) {
+            const rubble = new THREE.Mesh(sharedRubbleGeometry, sharedRubbleMaterial);
+            rubble.name = `rubble-${i}`;
+            rubble.position.set(tx, terrainHeightAt(tx, tz) + 0.07, tz);
+            g.add(rubble);
             continue;
           }
-          const idx = removed.indexOf(entry);
-          if (idx >= 0) removed.splice(idx, 1);
-        }
 
-        const tree = buildTree(kind, lod);
-        tree.name = name;
-        tree.userData.resource = { kind, hits: def.hitsToFell, maxHits: def.hitsToFell };
-        tree.userData.colliderRadius = def.colliderRadius;
-        tree.position.set(tx, terrainHeightAt(tx, tz), tz);
-        g.add(tree);
+          const rock = buildRock(kind, lod);
+          rock.name = name;
+          rock.userData.resource = { kind, hits: def.hitsToFell, maxHits: def.hitsToFell };
+          rock.userData.colliderRadius = def.colliderRadius;
+          rock.position.set(tx, terrainHeightAt(tx, tz), tz);
+          g.add(rock);
+        }
       }
 
-      const maxRocks = lod === 0 ? 5 : 2;
-      for (let i = 0; i < maxRocks; i++) {
-        if (hash(cx * 41 + i * 7, cz * 47 - i * 5) <= 0.6) continue;
-        const tx = cx * SIZE + 2 + hash(cx - i * 3, cz + i * 5) * (SIZE - 4);
-        const tz = cz * SIZE + 2 + hash(cx + i * 5, cz - i * 3) * (SIZE - 4);
-        if (roadAt(tx, tz) || waterAt(tx, tz) || nearHome(tx, tz) || nearVillage(tx, tz)) continue;
-
-        // Collision rule: Rock will not spawn into any tree
-        if (placedProps.some(p => Math.hypot(p.x - tx, p.z - tz) < 3.2)) continue;
-        placedProps.push({ x: tx, z: tz });
-
-        const mtn = mountainMaskAt(tx, tz);
-        if (mtn < 0.15 && hash(cx * 3 + i, cz * 5 - i) > 0.25) continue;
-
-        const kind: ResourceKind = mtn > 0.55 && hash(cx * 13 + i, cz * 17 - i) < 0.4 ? 'boulder' : 'rock';
-        const def = RESOURCE_DEFS[kind];
-        const name = `rock-${i}`;
-        const entry = removed.find(e => e === name || e.startsWith(name + '@'));
-        if (entry) {
-          const rubble = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 0.14, 6), new THREE.MeshStandardMaterial({ color: 0x5a5d60 }));
-          rubble.name = `rubble-${i}`;
-          rubble.position.set(tx, terrainHeightAt(tx, tz) + 0.07, tz);
-          g.add(rubble);
-          continue;
-        }
-
-        const rock = buildRock(kind, lod);
-        rock.name = name;
-        rock.userData.resource = { kind, hits: def.hitsToFell, maxHits: def.hitsToFell };
-        rock.userData.colliderRadius = def.colliderRadius;
-        rock.position.set(tx, terrainHeightAt(tx, tz), tz);
-        g.add(rock);
+      // Spawn Home in (0,0) chunk
+      if (cx === 0 && cz === 0) {
+        const isDoorOpen = (this.changes['0,0'] || []).includes('door-open');
+        const home = buildHome(this.homeLevel, isDoorOpen);
+        g.add(home);
       }
-    }
 
-    // Spawn Home in (0,0) chunk
-    if (cx === 0 && cz === 0) {
-      const isDoorOpen = (this.changes['0,0'] || []).includes('door-open');
-      const home = buildHome(this.homeLevel, isDoorOpen);
-      g.add(home);
-    }
+      // Spawn Riverwood Village in (Math.floor(VILLAGE_X/SIZE), Math.floor(VILLAGE_Z/SIZE)) chunk
+      if (cx === Math.floor(VILLAGE_X / SIZE) && cz === Math.floor(VILLAGE_Z / SIZE)) {
+        buildVillage(g);
+      }
 
-    // Spawn Riverwood Village in (Math.floor(VILLAGE_X/SIZE), Math.floor(VILLAGE_Z/SIZE)) chunk
-    if (cx === Math.floor(VILLAGE_X / SIZE) && cz === Math.floor(VILLAGE_Z / SIZE)) {
-      buildVillage(g);
+      // Harvest/door edits can happen while a replacement is being constructed.
+      // Retry rather than publish a stale tree or door state over the player's edit.
+      if (JSON.stringify(this.changes[key] || []) !== changesSnapshot) {
+        this.streamQueue.push({ x: cx, z: cz });
+        return;
+      }
+      for (const entry of expiredEntries) {
+        const index = removed.indexOf(entry);
+        if (index >= 0) removed.splice(index, 1);
+      }
+      instanceChunkResources(g, geometry => environmentAssets.isSharedGeometry(geometry) || sharedWorldGeometries.has(geometry));
+      // Replace an upgraded chunk only when its complete replacement is ready.
+      // Interaction/collision remain available throughout the incremental build.
+      const existing = this.loaded.get(key);
+      if (existing) {
+        this.releaseChunk(existing);
+        world.remove(existing);
+      }
+      this.indexChunk(g);
+      world.add(g);
+      this.loaded.set(key, g);
+      committed = true;
+    } finally {
+      if (!committed) disposeWorldObjects(g);
     }
-
-    this.indexChunk(g);
-    world.add(g);
-    this.loaded.set(key, g);
   }
 
   stream(px: number, pz: number) {
+    this.cancelBuild();
+    // Synchronous path (initial load, respawn, rebuildAll, survey exit): builds
+    // everything now, so any queued work is obsolete.
+    this.streamQueue.length = 0;
     const cx = this.coord(px), cz = this.coord(pz);
-    const radius = settings.current.chunkRadius;
+    const configuredRadius = settings.current.chunkRadius;
+    // Mobile diagnostics showed rendering/submission is more expensive than simulation.
+    // Keep the nearby gameplay-quality area and drop only the farthest LOD2 ring on touch devices.
+    const radius = LOW_POWER_MODE ? Math.min(configuredRadius, 5) : configuredRadius;
 
     for (const [k, g] of this.loaded) {
       const [a, b] = k.split(',').map(Number);
@@ -1305,7 +1424,7 @@ class Chunks {
         const key = this.key(x, z), existing = this.loaded.get(key);
         if (!existing) {
           this.build(x, z, lod);
-        } else if (existing.userData.lod > lod) {
+        } else if (existing.userData.lod > lod || existing.userData.assetRevision !== this.assetRevision) {
           this.releaseChunk(existing);
           world.remove(existing);
           this.loaded.delete(key);
@@ -1315,7 +1434,76 @@ class Chunks {
     }
   }
 
+  private lodForDistance(dist: number) {
+    return dist <= 2 ? 0 : dist <= 5 ? 1 : 2;
+  }
+
+  // Steady-state streaming used while the player walks. Unloading stays immediate
+  // (cheap); building is deferred to pumpBuilds() so no single frame pays for a
+  // whole row/column of chunks. Same radius and LOD rules as stream().
+  streamQueued(px: number, pz: number) {
+    this.cancelBuild();
+    const cx = this.coord(px), cz = this.coord(pz);
+    const configuredRadius = settings.current.chunkRadius;
+    const radius = LOW_POWER_MODE ? Math.min(configuredRadius, 5) : configuredRadius;
+    this.streamCx = cx;
+    this.streamCz = cz;
+    this.streamRadius = radius;
+
+    for (const [k, g] of this.loaded) {
+      const [a, b] = k.split(',').map(Number);
+      if (Math.abs(a - cx) > radius || Math.abs(b - cz) > radius) {
+        this.releaseChunk(g);
+        world.remove(g);
+        this.loaded.delete(k);
+      }
+    }
+
+    const minX = Math.max(-WORLD_RADIUS, cx - radius), maxX = Math.min(WORLD_RADIUS, cx + radius);
+    const minZ = Math.max(-WORLD_RADIUS, cz - radius), maxZ = Math.min(WORLD_RADIUS, cz + radius);
+    const queue: { x: number; z: number; dist: number }[] = [];
+    for (let x = minX; x <= maxX; x++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        const dist = Math.max(Math.abs(x - cx), Math.abs(z - cz));
+        const existing = this.loaded.get(this.key(x, z));
+        if (!existing || existing.userData.lod > this.lodForDistance(dist) || existing.userData.assetRevision !== this.assetRevision) queue.push({ x, z, dist });
+      }
+    }
+    // Nearest first; ties broken by true distance so the chunk under/ahead of the player wins.
+    queue.sort((a, b) => a.dist - b.dist || Math.hypot(a.x - cx, a.z - cz) - Math.hypot(b.x - cx, b.z - cz));
+    this.streamQueue = queue.map(({ x, z }) => ({ x, z }));
+  }
+
+  // Advance construction slices until budgetMs is spent. A single slice can
+  // overrun, but expensive terrain/water loops no longer run as one atomic chunk.
+  pumpBuilds(budgetMs: number) {
+    if (!this.pendingBuilds) return 0;
+    const startedAt = performance.now();
+    let built = 0;
+    let head = 0;
+    while (this.activeBuild || head < this.streamQueue.length) {
+      if (this.activeBuild) {
+        if (this.activeBuild.next().done) {
+          this.activeBuild = null;
+          built++;
+        }
+        if (performance.now() - startedAt >= budgetMs) break;
+        continue;
+      }
+      const { x, z } = this.streamQueue[head++];
+      const dist = Math.max(Math.abs(x - this.streamCx), Math.abs(z - this.streamCz));
+      if (dist > this.streamRadius) continue;
+      const lod = this.lodForDistance(dist);
+      const key = this.key(x, z), existing = this.loaded.get(key);
+      if (existing && existing.userData.lod <= lod && existing.userData.assetRevision === this.assetRevision) continue;
+      this.activeBuild = this.buildSteps(x, z, lod);
+    }
+    this.streamQueue.splice(0, head);
+    return built;
+  }
+
   async surveyAll(active: boolean, onProgress?: (done: number, total: number) => void) {
+    this.cancelBuild();
     if (active) {
       // The survey is deliberately expensive: materialize the complete finite
       // world at gameplay-quality LOD0, but yield to the browser between batches
@@ -1380,6 +1568,7 @@ class Chunks {
   }
 
   rebuildAll() {
+    this.cancelBuild();
     for (const [k, g] of this.loaded) {
       this.releaseChunk(g);
       world.remove(g);
@@ -1699,6 +1888,8 @@ lookZone.addEventListener('pointerdown', e => {
   if (lookPointer !== null) return;
   e.preventDefault();
   e.stopPropagation();
+  // A dedicated look-zone finger has priority over optional button drag-look.
+  buttonLookPointer = null;
   lookPointer = e.pointerId;
   beginLookGesture(e.clientX, e.clientY);
   lookZone.setPointerCapture(e.pointerId);
@@ -1716,14 +1907,15 @@ lookZone.addEventListener('pointerup', endLook);
 lookZone.addEventListener('pointercancel', endLook);
 lookZone.addEventListener('lostpointercapture', endLook);
 
-function bindAction(el: HTMLElement, fn: () => void) {
+function bindAction(el: HTMLElement, fn: () => void, allowDuringHudEdit = false) {
   const stopPointerEvent = (e: Event) => e.stopPropagation();
+  const canActivate = () => allowDuringHudEdit || !document.body.classList.contains('hud-edit-mode');
   el.addEventListener('pointerdown', e => {
     e.preventDefault();
     e.stopPropagation();
-    // Activate on touch-down so a four-finger player can trigger reload, weapon swap
-    // or a skill while another finger keeps aiming, moving or firing.
-    if (!document.body.classList.contains('hud-edit-mode')) fn();
+    // HUD editor controls must remain operable while the gameplay controls are locked.
+    // Normal combat actions stay disabled during layout editing.
+    if (canActivate()) fn();
   });
   el.addEventListener('pointerup', stopPointerEvent);
   el.addEventListener('pointercancel', stopPointerEvent);
@@ -1731,11 +1923,12 @@ function bindAction(el: HTMLElement, fn: () => void) {
     e.preventDefault();
     e.stopPropagation();
     // Keep keyboard/switch-device activation; pointer taps already fired on pointerdown.
-    if ((e as MouseEvent).detail === 0 && !document.body.classList.contains('hud-edit-mode')) fn();
+    if ((e as MouseEvent).detail === 0 && canActivate()) fn();
   });
 }
 
-function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void, onRelease?: () => void) {
+let buttonLookPointer: number | null = null;
+function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void, onRelease?: () => void, canDragLook?: () => boolean) {
   const heldPointers = new Set<number>();
   const down = (e: PointerEvent) => {
     e.preventDefault();
@@ -1747,10 +1940,23 @@ function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void, onRe
     keyPointers.add(e.pointerId);
     syncKeyState(key);
     onPress?.();
+    if (canDragLook?.() && lookPointer === null && buttonLookPointer === null) {
+      buttonLookPointer = e.pointerId;
+      beginLookGesture(e.clientX, e.clientY);
+    }
     el.setPointerCapture(e.pointerId);
+  };
+  const move = (e: PointerEvent) => {
+    if (!heldPointers.has(e.pointerId)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (buttonLookPointer === e.pointerId && canDragLook?.() && lookPointer === null) {
+      onLookMove(e.clientX, e.clientY);
+    }
   };
   const up = (e: PointerEvent) => {
     e.stopPropagation();
+    if (buttonLookPointer === e.pointerId) buttonLookPointer = null;
     if (!heldPointers.delete(e.pointerId)) return;
     const keyPointers = pointerKeys.get(key);
     keyPointers?.delete(e.pointerId);
@@ -1759,6 +1965,7 @@ function bindHoldAction(el: HTMLElement, key: string, onPress?: () => void, onRe
     if (!keys.has(key)) onRelease?.();
   };
   el.addEventListener('pointerdown', down);
+  el.addEventListener('pointermove', move);
   el.addEventListener('pointerup', up);
   el.addEventListener('pointercancel', up);
   el.addEventListener('lostpointercapture', up);
@@ -1768,29 +1975,29 @@ type HudLayoutItem = { x: number; y: number; size: number; opacity: number };
 const HUD_LAYOUT_KEY = 'zombie-survival-hud-v1';
 const HUD_DEFAULTS: Record<string, HudLayoutItem> = {
   shoot: { x: 10, y: 23, size: 66, opacity: 0.68 },
-  ads: { x: 88, y: 24, size: 48, opacity: 0.62 },
+  ads: { x: 82, y: 24, size: 48, opacity: 0.62 },
   jump: { x: 92, y: 72, size: 46, opacity: 0.56 },
   slide: { x: 72, y: 72, size: 46, opacity: 0.58 },
   reload: { x: 80, y: 81, size: 44, opacity: 0.56 },
-  weapon: { x: 52, y: 80, size: 44, opacity: 0.68 },
+  weapon: { x: 60, y: 82, size: 44, opacity: 0.68 },
   use: { x: 69, y: 55, size: 46, opacity: 0.62 },
   skill: { x: 60, y: 58, size: 46, opacity: 0.78 },
-  'wildcard-1': { x: 36, y: 82, size: 46, opacity: 0.72 },
-  'wildcard-2': { x: 45, y: 82, size: 46, opacity: 0.72 },
-  'wildcard-3': { x: 54, y: 82, size: 46, opacity: 0.72 },
+  'wildcard-1': { x: 39, y: 82, size: 46, opacity: 0.72 },
+  'wildcard-2': { x: 46, y: 82, size: 46, opacity: 0.72 },
+  'wildcard-3': { x: 53, y: 82, size: 46, opacity: 0.72 },
 };
 const HUD_PRESETS: Record<'four' | 'three' | 'thumbs', Record<string, { x: number; y: number }>> = {
   four: {
-    shoot: { x: 10, y: 23 }, ads: { x: 88, y: 24 }, jump: { x: 92, y: 72 },
-    slide: { x: 72, y: 72 }, reload: { x: 80, y: 81 }, weapon: { x: 52, y: 80 }, use: { x: 69, y: 55 }, skill: { x: 60, y: 58 },
+    shoot: { x: 10, y: 23 }, ads: { x: 82, y: 24 }, jump: { x: 92, y: 72 },
+    slide: { x: 72, y: 72 }, reload: { x: 80, y: 81 }, weapon: { x: 60, y: 82 }, use: { x: 69, y: 55 }, skill: { x: 60, y: 58 },
   },
   three: {
     shoot: { x: 10, y: 25 }, ads: { x: 87, y: 43 }, jump: { x: 91, y: 69 },
-    slide: { x: 76, y: 70 }, reload: { x: 79, y: 82 }, weapon: { x: 52, y: 80 }, use: { x: 69, y: 56 }, skill: { x: 60, y: 58 },
+    slide: { x: 76, y: 70 }, reload: { x: 79, y: 82 }, weapon: { x: 60, y: 82 }, use: { x: 69, y: 56 }, skill: { x: 60, y: 58 },
   },
   thumbs: {
     shoot: { x: 87, y: 78 }, ads: { x: 85, y: 56 }, jump: { x: 94, y: 64 },
-    slide: { x: 76, y: 65 }, reload: { x: 75, y: 83 }, weapon: { x: 52, y: 80 }, use: { x: 67, y: 55 }, skill: { x: 60, y: 58 },
+    slide: { x: 76, y: 65 }, reload: { x: 75, y: 83 }, weapon: { x: 60, y: 82 }, use: { x: 67, y: 55 }, skill: { x: 60, y: 58 },
   },
 };
 const hudEditorOverlay = document.querySelector('#hudEditorOverlay') as HTMLDivElement;
@@ -2040,9 +2247,9 @@ bindAction(hudEditorMinimize, () => {
   const collapsed = hudEditorPanel.classList.toggle('collapsed');
   hudEditorMinimize.textContent = collapsed ? '+' : '−';
   hudEditorMinimize.setAttribute('aria-label', collapsed ? 'Expand HUD editor' : 'Collapse HUD editor');
-});
-bindAction(document.querySelector('#hudEditorClose') as HTMLButtonElement, () => setHudEditMode(false));
-bindAction(document.querySelector('#hudSaveBtn') as HTMLButtonElement, () => setHudEditMode(false));
+}, true);
+bindAction(document.querySelector('#hudEditorClose') as HTMLButtonElement, () => setHudEditMode(false), true);
+bindAction(document.querySelector('#hudSaveBtn') as HTMLButtonElement, () => setHudEditMode(false), true);
 bindAction(document.querySelector('#hudResetBtn') as HTMLButtonElement, () => {
   hudLayout = Object.fromEntries(Object.entries(HUD_DEFAULTS).map(([id, value]) => [id, { ...value }]));
   hudTouchButtons.forEach(applyHudItem);
@@ -2050,7 +2257,7 @@ bindAction(document.querySelector('#hudResetBtn') as HTMLButtonElement, () => {
   saveHudLayout();
   const first = hudTouchButtons.find(el => el.dataset.hudId === 'shoot') || hudTouchButtons[0];
   if (first) selectHudItem(first);
-});
+}, true);
 
 
 // Touch buttons. Survival mode reuses the same joystick/look zones but swaps fantasy actions for FPS actions.
@@ -2065,16 +2272,20 @@ bindAction(document.querySelector('#attackBtn') as HTMLButtonElement, triggerSwo
 bindAction(document.querySelector('#punchBtn') as HTMLButtonElement, triggerPunch);
 bindAction(document.querySelector('#kickBtn') as HTMLButtonElement, triggerKick);
 bindAction(document.querySelector('#castBtn') as HTMLButtonElement, () => survival?.enabled ? survival.fire() : triggerFireCast());
-bindHoldAction(document.querySelector('#shootBtn') as HTMLButtonElement, 'shoot', () => survival?.enabled && survival.fire());
+bindHoldAction(document.querySelector('#shootBtn') as HTMLButtonElement, 'shoot',
+  () => survival?.enabled && survival.fire(), undefined, () => settings.current.lookWhileFiring);
 bindAction(document.querySelector('#skillBtn') as HTMLButtonElement, () => survival?.enabled && survival.activateSkill());
 const adsButton = document.querySelector('#aimBtn') as HTMLButtonElement;
 bindHoldAction(adsButton, 'aim', () => {
+  // Apply aim state on pointer-down, rather than waiting for the next simulation tick.
+  survival?.setAim(true);
   document.body.classList.add('aim-active');
   adsButton.setAttribute('aria-pressed', 'true');
 }, () => {
+  survival?.setAim(false);
   document.body.classList.remove('aim-active');
   adsButton.setAttribute('aria-pressed', 'false');
-});
+}, () => settings.current.lookWhileAiming);
 bindAction(document.querySelector('#reloadBtn') as HTMLButtonElement, () => survival?.enabled && survival.reload());
 bindHoldAction(document.querySelector('#jumpBtn') as HTMLButtonElement, ' ', jump);
 bindAction(document.querySelector('#slideBtn') as HTMLButtonElement, triggerSlide);
@@ -2206,13 +2417,14 @@ const WILDCARDS: WildcardDefinition[] = [
   { id: 'endurance', label: 'ENDURANCE', short: 'ENDURE', description: 'Restore a portion of sprint stamina.', accent: '#facc15', cooldown: 20, unlocked: false },
 ];
 type SurvivalMetaState = { xp: number; bestWave: number; bestTimeSeconds: number; totalRuns: number; totalKills: number; upgrades: Record<UpgradeKey, number>; waveClearCounts: Record<string, number>; unlockedWildcards: WildcardId[]; equippedWildcards: WildcardId[] };
-const SURVIVAL_META_KEY = 'island-outbreak-meta-v1';
+const SURVIVAL_META_KEY = 'island-outbreak-meta-v1' + (pilot.enabled ? ':' + pilot.userId : '');
+if (pilot.enabled && Object.keys(pilot.progress).length) localStorage.setItem(SURVIVAL_META_KEY, JSON.stringify(pilot.progress));
 function loadSurvivalMeta(): SurvivalMetaState {
   const fallback: SurvivalMetaState = { xp: 0, bestWave: 0, bestTimeSeconds: 0, totalRuns: 0, totalKills: 0, upgrades: { health: 0, stamina: 0, damage: 0 }, waveClearCounts: {}, unlockedWildcards: ['shockwave', 'field-medic'], equippedWildcards: ['shockwave', 'field-medic'] };
   try {
     const raw = localStorage.getItem(SURVIVAL_META_KEY);
     if (!raw) {
-      fallback.bestWave = Number(localStorage.getItem('island-outbreak-best-wave') || 0);
+      fallback.bestWave = Number(localStorage.getItem('island-outbreak-best-wave' + (pilot.enabled ? ':' + pilot.userId : '')) || 0);
       return fallback;
     }
     const parsed = JSON.parse(raw) as Partial<SurvivalMetaState>;
@@ -2241,6 +2453,15 @@ function announceSurvivalEvent(label: string, cue: 'wave-start' | 'wave-clear' |
 function updateLobbyProgressionUi(): void {
   const level = 1 + Math.floor(survivalMeta.xp / 150);
   if (lobbyProgressionSummary) lobbyProgressionSummary.textContent = `LEVEL ${level} · ${survivalMeta.xp} XP · BEST WAVE ${survivalMeta.bestWave}/100`;
+  const homeLevel = document.querySelector('#lobbyHomeLevel');
+  const homeXp = document.querySelector('#lobbyHomeXp');
+  const homeWave = document.querySelector('#lobbyHomeWave');
+  const navLevel = document.querySelector('#lobbyNavLevel');
+  if (homeLevel) homeLevel.textContent = `LEVEL ${level}`;
+  if (homeXp) homeXp.textContent = `${survivalMeta.xp} XP`;
+  if (homeWave) homeWave.textContent = `BEST WAVE ${survivalMeta.bestWave}`;
+  if (navLevel) navLevel.textContent = `LV ${level}`;
+  setHudText(document.querySelector('#lobbyOperatorLevel'), `LEVEL ${level} · ACTIVE`);
   if (lobbyBestWaveMetric) lobbyBestWaveMetric.textContent = `${survivalMeta.bestWave} / 100`;
   if (lobbyBestTimeMetric) lobbyBestTimeMetric.textContent = survivalMeta.bestTimeSeconds ? formatRunTime(survivalMeta.bestTimeSeconds) : '—';
   if (lobbyTotalKillsMetric) lobbyTotalKillsMetric.textContent = String(survivalMeta.totalKills);
@@ -2257,7 +2478,7 @@ function updateLobbyProgressionUi(): void {
 }
 function saveSurvivalMeta(): void {
   try { localStorage.setItem(SURVIVAL_META_KEY, JSON.stringify(survivalMeta)); } catch {}
-  try { localStorage.setItem('island-outbreak-best-wave', String(survivalMeta.bestWave)); } catch {}
+  try { localStorage.setItem('island-outbreak-best-wave' + (pilot.enabled ? ':' + pilot.userId : ''), String(survivalMeta.bestWave)); } catch {}
   updateLobbyProgressionUi();
   if (typeof renderWildcards === 'function') renderWildcards();
 }
@@ -2332,7 +2553,7 @@ function updateWildcardHud(): void {
     const remaining = Math.ceil(wildcardCooldowns[id] || 0);
     button.classList.toggle('recharging', remaining > 0);
     const small = button.querySelector('small');
-    if (small) small.textContent = remaining > 0 ? `${remaining}s` : 'READY';
+    setHudText(small, remaining > 0 ? `${remaining}s` : 'READY');
   });
 }
 function activateWildcard(id: WildcardId): void {
@@ -2434,6 +2655,71 @@ const settingsBtn = document.querySelector('#settingsBtn') as HTMLButtonElement;
 const lobbyOptionsBtn = document.querySelector('#lobbyOptionsBtn') as HTMLButtonElement | null;
 const settingsOverlay = document.querySelector('#settingsOverlay') as HTMLDivElement;
 const settingsClose = document.querySelector('#settingsClose') as HTMLButtonElement;
+const settingsTabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-settings-tab]'));
+const settingsPages = Array.from(document.querySelectorAll<HTMLElement>('#settingsOverlay .settingsPage'));
+const settingsTitle = document.querySelector<HTMLElement>('#settingsOverlay .settingsTitleBlock h3');
+const settingsTitles: Record<string, string> = {
+  controls: 'CAMERA & CONTROLS',
+  graphics: 'GRAPHICS & AUDIO',
+  player: 'PLAYER DETAILS',
+  diagnostics: pilot.enabled ? 'GAME DATA' : 'DIAGNOSTICS',
+};
+// Real section containers keep every unrelated control out of the active tab,
+// including pre-existing inline-script diagnostics, and preserve existing listeners.
+function showSettingsTab(section: string): void {
+  const page = settingsPages.find(item => item.dataset.settingsPage === section);
+  if (!page) return;
+  for (const button of settingsTabButtons) {
+    const active = button.dataset.settingsTab === section;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  }
+  for (const item of settingsPages) {
+    const active = item === page;
+    item.classList.toggle('active', active);
+    item.hidden = !active;
+    item.inert = !active;
+    item.setAttribute('aria-hidden', String(!active));
+  }
+  if (settingsTitle) settingsTitle.textContent = settingsTitles[section] || 'SETTINGS';
+  const body = document.querySelector<HTMLElement>('#settingsOverlay .settingsBody');
+  if (body) body.scrollTop = 0;
+}
+settingsTabButtons.forEach(button => bindAction(button, () => showSettingsTab(button.dataset.settingsTab || 'controls')));
+showSettingsTab('controls');
+let lastPerformanceReadout = '';
+const diagnosticCaptureBtn = document.querySelector('#diagnosticCaptureBtn') as HTMLButtonElement | null;
+const diagnosticCopyBtn = document.querySelector('#diagnosticCopyBtn') as HTMLButtonElement | null;
+const diagnosticClearBtn = document.querySelector('#diagnosticClearBtn') as HTMLButtonElement | null;
+const diagnosticReadout = document.querySelector('#diagnosticReadout') as HTMLElement | null;
+const captureWindow = window as Window & { __islandOutbreakPerfEnabled?: boolean };
+// Background logging starts capture in the inline bootstrap before this module.
+// Reflect that state so the first tap and the displayed action agree.
+if (diagnosticCaptureBtn && captureWindow.__islandOutbreakPerfEnabled) {
+  diagnosticCaptureBtn.textContent = 'STOP CAPTURE';
+  if (diagnosticReadout) diagnosticReadout.textContent = 'Background capture active. Return to the game to collect performance data.';
+}
+if (diagnosticCaptureBtn) bindAction(diagnosticCaptureBtn, () => {
+  captureWindow.__islandOutbreakPerfEnabled = !captureWindow.__islandOutbreakPerfEnabled;
+  diagnosticCaptureBtn.textContent = captureWindow.__islandOutbreakPerfEnabled ? 'STOP CAPTURE' : 'START CAPTURE';
+  if (diagnosticReadout && captureWindow.__islandOutbreakPerfEnabled) diagnosticReadout.textContent = 'Capture active. Return to the game to collect performance data.';
+});
+if (diagnosticCopyBtn) bindAction(diagnosticCopyBtn, () => {
+  if (!lastPerformanceReadout) { if (diagnosticReadout) diagnosticReadout.textContent = 'No results yet. Start a capture during gameplay.'; return; }
+  void navigator.clipboard.writeText(lastPerformanceReadout).then(() => { if (diagnosticReadout) diagnosticReadout.textContent = 'Results copied.\n' + lastPerformanceReadout; }).catch(() => { if (diagnosticReadout) diagnosticReadout.textContent = 'Clipboard unavailable. Select results below:\n' + lastPerformanceReadout; });
+});
+if (diagnosticClearBtn) bindAction(diagnosticClearBtn, () => {
+  captureWindow.__islandOutbreakPerfEnabled = false;
+  if (diagnosticCaptureBtn) diagnosticCaptureBtn.textContent = 'START CAPTURE';
+  lastPerformanceReadout = '';
+  if (diagnosticReadout) diagnosticReadout.textContent = 'Results cleared.';
+});
+window.addEventListener('island-outbreak-performance', event => {
+  const data = (event as CustomEvent).detail as Record<string, unknown>;
+  lastPerformanceReadout = JSON.stringify(data, null, 2);
+  if (diagnosticReadout) diagnosticReadout.textContent = lastPerformanceReadout;
+  if (data.captureComplete && diagnosticCaptureBtn) diagnosticCaptureBtn.textContent = 'START CAPTURE';
+});
 const sensXSlider = document.querySelector('#sensXSlider') as HTMLInputElement;
 const sensYSlider = document.querySelector('#sensYSlider') as HTMLInputElement;
 const sensXVal = document.querySelector('#sensXVal') as HTMLSpanElement;
@@ -2441,6 +2727,15 @@ const sensYVal = document.querySelector('#sensYVal') as HTMLSpanElement;
 const adsSensSlider = document.querySelector('#adsSensSlider') as HTMLInputElement;
 const adsSensVal = document.querySelector('#adsSensVal') as HTMLSpanElement;
 const invertYCheck = document.querySelector('#invertYCheck') as HTMLInputElement;
+const lookWhileAimingCheck = document.querySelector('#lookWhileAimingCheck') as HTMLInputElement;
+const lookWhileFiringCheck = document.querySelector('#lookWhileFiringCheck') as HTMLInputElement;
+const musicEnabledCheck = document.querySelector('#musicEnabledCheck') as HTMLInputElement;
+const musicVolumeSlider = document.querySelector('#musicVolumeSlider') as HTMLInputElement;
+const musicVolumeValue = document.querySelector('#musicVolumeValue') as HTMLElement;
+const masterVolumeSlider = document.querySelector('#masterVolumeSlider') as HTMLInputElement;
+const masterVolumeValue = document.querySelector('#masterVolumeValue') as HTMLElement;
+const sfxVolumeSlider = document.querySelector('#sfxVolumeSlider') as HTMLInputElement;
+const sfxVolumeValue = document.querySelector('#sfxVolumeValue') as HTMLElement;
 const camAccelSelect = document.querySelector('#camAccelSelect') as HTMLSelectElement;
 const camAccelStrengthSlider = document.querySelector('#camAccelStrengthSlider') as HTMLInputElement;
 const camAccelStrengthVal = document.querySelector('#camAccelStrengthVal') as HTMLSpanElement;
@@ -2496,6 +2791,15 @@ function openSettings(open: boolean) {
     sensXVal.textContent = `${Math.round(settings.current.sensitivityX)}°`;
     sensYVal.textContent = `${Math.round(settings.current.sensitivityY)}°`;
     invertYCheck.checked = settings.current.invertY;
+    lookWhileAimingCheck.checked = settings.current.lookWhileAiming;
+    lookWhileFiringCheck.checked = settings.current.lookWhileFiring;
+    musicEnabledCheck.checked = settings.current.audioMusicEnabled;
+    musicVolumeSlider.value = String(Math.round(settings.current.audioMusic * 100));
+    musicVolumeValue.textContent = `${musicVolumeSlider.value}%`;
+    masterVolumeSlider.value = String(Math.round(settings.current.audioMaster * 100));
+    sfxVolumeSlider.value = String(Math.round(settings.current.audioSfx * 100));
+    masterVolumeValue.textContent = `${masterVolumeSlider.value}%`;
+    sfxVolumeValue.textContent = `${sfxVolumeSlider.value}%`;
     camAccelSelect.value = settings.current.cameraAcceleration;
     camAccelStrengthSlider.value = String(settings.current.cameraAccelerationStrength);
     camAccelStrengthVal.textContent = `${settings.current.cameraAccelerationStrength.toFixed(2).replace(/0$/, '')}×`;
@@ -2532,14 +2836,51 @@ bindAction(settingsBtn, () => {
   openSettings(true);
 });
 if (lobbyOptionsBtn) bindAction(lobbyOptionsBtn, () => openSettings(true));
-document.querySelectorAll<HTMLButtonElement>('[data-lobby-focus]').forEach(button => {
-  bindAction(button, () => {
-    document.querySelectorAll<HTMLButtonElement>('[data-lobby-focus]').forEach(item => item.classList.toggle('active', item === button));
-    const target = document.getElementById(button.dataset.lobbyFocus || '');
-    target?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
-  });
-});
+// Lobby navigation switches actual panels, preserving all existing data and handlers.
+const lobbyStage = document.querySelector('.lobbyStage') as HTMLElement | null;
+const lobbyNavButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-lobby-page]'));
+const lobbyPanels = Array.from(document.querySelectorAll<HTMLElement>('[data-lobby-panel]'));
+function showLobbyPage(page: string): void {
+  for (const button of lobbyNavButtons) {
+    const active = button.dataset.lobbyPage === page;
+    button.classList.toggle('active', active);
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  }
+  for (const panel of lobbyPanels) {
+    const active = panel.dataset.lobbyPanel === page;
+    panel.classList.toggle('active', active);
+    panel.setAttribute('aria-hidden', String(!active));
+  }
+  if (lobbyStage) lobbyStage.scrollTop = 0;
+}
+lobbyNavButtons.forEach(button => bindAction(button, () => showLobbyPage(button.dataset.lobbyPage || 'mission')));
+showLobbyPage('mission');
 bindAction(settingsClose, () => openSettings(false));
+lookWhileAimingCheck.addEventListener('change', () => settings.update({ lookWhileAiming: lookWhileAimingCheck.checked }));
+lookWhileFiringCheck.addEventListener('change', () => settings.update({ lookWhileFiring: lookWhileFiringCheck.checked }));
+musicEnabledCheck.addEventListener('change', () => {
+  settings.update({ audioMusicEnabled: musicEnabledCheck.checked });
+  if (!musicEnabledCheck.checked) survivalSound.setMusicMode('silent');
+});
+musicVolumeSlider.addEventListener('input', () => {
+  const volume = Number(musicVolumeSlider.value) / 100;
+  settings.update({ audioMusic: volume });
+  musicVolumeValue.textContent = `${Math.round(volume * 100)}%`;
+  survivalSound.setMusicVolume(volume);
+});
+masterVolumeSlider.addEventListener('input', () => {
+  const volume = Number(masterVolumeSlider.value) / 100;
+  settings.update({ audioMaster: volume });
+  masterVolumeValue.textContent = `${Math.round(volume * 100)}%`;
+  survivalSound.setVolumes(settings.current.audioMaster, settings.current.audioSfx);
+});
+sfxVolumeSlider.addEventListener('input', () => {
+  const volume = Number(sfxVolumeSlider.value) / 100;
+  settings.update({ audioSfx: volume });
+  sfxVolumeValue.textContent = `${Math.round(volume * 100)}%`;
+  survivalSound.setVolumes(settings.current.audioMaster, settings.current.audioSfx);
+});
 bindAction(hudCustomizeBtn, () => setHudEditMode(true));
 
 if (playerGenderSelect) {
@@ -2641,9 +2982,8 @@ weatherSelect.addEventListener('change', () => {
 graphicsSelect.addEventListener('change', () => {
   const g = graphicsSelect.value as 'low' | 'med' | 'high';
   settings.update({ graphics: g });
-  renderer.shadowMap.enabled = g !== 'low';
-  sun.castShadow = g !== 'low';
-  renderer.setPixelRatio(Math.min(devicePixelRatio, g === 'low' ? 1.0 : g === 'med' ? 1.3 : 1.6));
+  applyGraphicsSettings();
+  sun.castShadow = renderer.shadowMap.enabled;
   say(`Graphics preset: ${g.toUpperCase()}`);
 });
 
@@ -2731,11 +3071,13 @@ const displayModeMessage = document.querySelector('.displayModeFullscreenHint') 
 let displayGatePausedRun = false;
 
 function isLandscapeDisplay(): boolean {
-  return matchMedia('(orientation: landscape)').matches || innerWidth >= innerHeight;
+  // Require the actual viewport to be wider than tall. The orientation
+  // media query can briefly lag Android's layout during a rotation.
+  return innerWidth > innerHeight;
 }
 
 function syncDisplayMode(): void {
-  const fullscreen = !!document.fullscreenElement;
+  const fullscreen = !!(document.fullscreenElement || (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement);
   const ready = fullscreen && isLandscapeDisplay();
   document.body.classList.toggle('native-fullscreen', fullscreen);
   document.body.classList.toggle('display-mode-ready', ready);
@@ -2787,8 +3129,20 @@ async function enterRequiredDisplayMode(): Promise<void> {
 if (enterGameDisplayMode) bindAction(enterGameDisplayMode, enterRequiredDisplayMode);
 if (fullscreenBtn) bindAction(fullscreenBtn, enterRequiredDisplayMode);
 document.addEventListener('fullscreenchange', syncDisplayMode);
-addEventListener('orientationchange', syncDisplayMode);
+document.addEventListener('webkitfullscreenchange', syncDisplayMode);
+const recheckDisplayMode = () => {
+  syncDisplayMode();
+  // Re-evaluate after Android updates the viewport metrics.
+  requestAnimationFrame(syncDisplayMode);
+};
+addEventListener('orientationchange', recheckDisplayMode);
 addEventListener('resize', syncDisplayMode);
+addEventListener('pageshow', recheckDisplayMode);
+addEventListener('focus', recheckDisplayMode);
+screen.orientation?.addEventListener?.('change', recheckDisplayMode);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) recheckDisplayMode();
+});
 syncDisplayMode();
 
 // --- WORLD SURVEY: AUTHORITATIVE TOPOLOGY + HYDROLOGY DIAGNOSTICS ---
@@ -3151,6 +3505,8 @@ function triggerSlide() {
   player.velocity.z = slideDirection.z * launchSpeed;
   slideTimer = SLIDE_DURATION;
   slideCooldown = 1.12;
+  survival.activateAudio();
+  survivalSound.playSlide();
   say('SLIDE');
 }
 
@@ -3170,7 +3526,8 @@ renderInventory();
 
 chunks.stream(save.player.x, save.player.z);
 void environmentAssets.preload().then(() => {
-  chunks.rebuildAll();
+  // A late CDN response must not synchronously rebuild the whole world mid-run.
+  chunks.refreshAssets();
 });
 
 function hitResource(obj: THREE.Object3D) {
@@ -3181,6 +3538,7 @@ function hitResource(obj: THREE.Object3D) {
   if (Math.hypot(player.velocity.x, player.velocity.z) < 1.0) player.playEmote('inspect');
   res.hits--;
   obj.scale.setScalar(Math.max(0.7, 1 - 0.08 * (res.maxHits - res.hits)));
+  obj.userData.syncInstances?.();
 
   if (res.hits > 0) {
     say(`Hit ${res.kind.replace('_', ' ')} (${res.maxHits - res.hits}/${res.maxHits})`);
@@ -3209,7 +3567,7 @@ function hitResource(obj: THREE.Object3D) {
     g.remove(obj);
 
     if (def.family === 'tree') {
-      const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.3, 6), new THREE.MeshStandardMaterial({ color: 0x5c4028 }));
+      const stump = new THREE.Mesh(sharedStumpGeometry, sharedStumpMaterial);
       stump.name = obj.name.replace('tree-', 'stump-');
       stump.position.copy(obj.position);
       stump.position.y += 0.15;
@@ -3217,7 +3575,7 @@ function hitResource(obj: THREE.Object3D) {
       stump.receiveShadow = true;
       g.add(stump);
     } else {
-      const rubble = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 0.14, 6), new THREE.MeshStandardMaterial({ color: 0x5a5d60 }));
+      const rubble = new THREE.Mesh(sharedRubbleGeometry, sharedRubbleMaterial);
       rubble.name = obj.name.replace('rock-', 'rubble-');
       rubble.position.copy(obj.position);
       rubble.position.y += 0.07;
@@ -3436,6 +3794,10 @@ let sightBlockerCacheKey = '';
 let sightBlockerCache: THREE.Object3D[] = [];
 
 survival = new ZombieSurvivalSystem({
+  isFirstPerson: () => mode === 'fpp',
+  getMovementSpeed: () => Math.hypot(player.velocity.x, player.velocity.z),
+  performanceActive: () => diagnosticFrameWindow.active,
+  onPerformanceCost: (phase, ms) => recordDiagnosticCost(phase, ms),
   scene,
   camera,
   getPlayerPosition: () => player.root.position,
@@ -3559,23 +3921,23 @@ survival = new ZombieSurvivalSystem({
     lastMetaKills = state.kills;
     lastMetaWave = state.wave;
     if (metaChanged) saveSurvivalMeta();
-    if (survivalHealthText) survivalHealthText.textContent = `${state.health} / ${state.maxHealth}`;
+    setHudText(survivalHealthText, `${state.health} / ${state.maxHealth}`);
     if (survivalHealthBar) {
       survivalHealthBar.style.width = `${Math.max(0, Math.min(100, (state.health / state.maxHealth) * 100))}%`;
       survivalHealthBar.style.background = state.health <= 25 ? '#ef4444' : state.health <= 50 ? '#f59e0b' : 'linear-gradient(90deg, #e87942, #f5c26b)';
     }
-    if (survivalWeapon) survivalWeapon.textContent = state.weaponLabel;
+    setHudText(survivalWeapon, state.weaponLabel);
     if (survivalSkillButton) {
       const cooldown = state.skillCooldownSeconds ?? 0;
       survivalSkillButton.textContent = cooldown > 0 ? `${cooldown}s` : 'PULSE';
       survivalSkillButton.title = cooldown > 0 ? `Shockwave recharging · ${cooldown}s` : 'Shockwave pulse · 18s cooldown';
       survivalSkillButton.classList.toggle('recharging', cooldown > 0);
     }
-    if (survivalAmmo) survivalAmmo.textContent = String(state.ammoInMag).padStart(2, '0');
-    if (survivalReserve) survivalReserve.textContent = state.reloading ? 'RELOADING' : `/ ${state.ammoReserve}`;
-    if (survivalKills) survivalKills.textContent = `KILLS ${state.kills}`;
-    if (survivalWave) survivalWave.textContent = state.preparationSeconds ? `PREP ${state.preparationSeconds}s` : state.runComplete ? 'ISLAND SECURED' : state.wave ? `WAVE ${state.wave} / 100` : 'SAFE START';
-    if (survivalZombies) survivalZombies.textContent = state.livingZombies ? `${state.livingZombies} INFECTED` : '';
+    setHudText(survivalAmmo, String(state.ammoInMag).padStart(2, '0'));
+    setHudText(survivalReserve, state.reloading ? 'RELOADING' : `/ ${state.ammoReserve}`);
+    setHudText(survivalKills, `KILLS ${state.kills}`);
+    setHudText(survivalWave, state.preparationSeconds ? `PREP ${state.preparationSeconds}s` : state.runComplete ? 'ISLAND SECURED' : state.wave ? `WAVE ${state.wave} / 100` : 'SAFE START');
+    setHudText(survivalZombies, state.livingZombies ? `${state.livingZombies} INFECTED` : '');
     if (state.runComplete && !runResultShown) recordSurvivalRun('VICTORY', state);
     if (safeZoneDirection) {
       const hasTarget = Number.isFinite(state.safeZoneX) && Number.isFinite(state.safeZoneZ);
@@ -3585,16 +3947,16 @@ survival = new ZombieSurvivalSystem({
         const dz = (state.safeZoneZ as number) - player.root.position.z;
         const bearing = Math.atan2(dx, dz);
         const relative = Math.atan2(Math.sin(bearing - camYaw), Math.cos(bearing - camYaw));
-        safeZoneArrowIcon.style.transform = `rotate(${relative * 180 / Math.PI}deg)`;
-        if (safeZoneArrowDistance) safeZoneArrowDistance.textContent = `${Math.round(Math.hypot(dx, dz))}m`;
+        safeZoneArrowIcon.style.transform = `rotate(${relative * 180 / Math.PI - 90}deg)`;
+        setHudText(safeZoneArrowDistance, `${Math.round(Math.hypot(dx, dz))}m`);
       }
-      if (safeZoneArrowLabel) safeZoneArrowLabel.textContent = state.zonePhase === 'weakening' ? 'SANCTUARY FAILING' : state.nearestZone.startsWith('NEXT') ? 'NEXT SANCTUARY' : 'SAFE ZONE';
+      setHudText(safeZoneArrowLabel, state.zonePhase === 'weakening' ? 'SANCTUARY FAILING' : state.nearestZone.startsWith('NEXT') ? 'NEXT SANCTUARY' : 'SAFE ZONE');
     }
     if (survivalZoneStatus) {
-      survivalZoneStatus.textContent = state.zonePhase === 'weakening'
+      setHudText(survivalZoneStatus, state.zonePhase === 'weakening'
         ? `WEAKENING · ${state.nearestZone} ${Math.round(state.zoneIntegrity ?? 0)}%`
         : state.inSafeZone ? `SAFE · ${state.nearestZone}`
-          : state.nearestZone ? `DANGER · ${state.nearestZone} ${Math.round(state.zoneDistance)}m` : 'NO SAFE ZONE · RELOCATING';
+          : state.nearestZone ? `DANGER · ${state.nearestZone} ${Math.round(state.zoneDistance)}m` : 'NO SAFE ZONE · RELOCATING');
       survivalZoneStatus.classList.toggle('safe', state.inSafeZone && state.zonePhase !== 'weakening');
       survivalZoneStatus.classList.toggle('danger', !state.inSafeZone || state.zonePhase === 'weakening');
     }
@@ -3663,6 +4025,9 @@ function releaseSurvivalInputs() {
   keys.clear();
   keyboardKeys.clear();
   pointerKeys.clear();
+  buttonLookPointer = null;
+  lookPointer = null;
+  pointer = null;
   joy.x = 0;
   joy.y = 0;
   joyActive = false;
@@ -3726,9 +4091,14 @@ survivalLobby?.classList.add('show');
 
 // Pointer/touch interaction is the browser-safe point to unlock procedural Web Audio.
 // Capture phase makes this work for the joystick and HUD buttons as well as the canvas.
-window.addEventListener('pointerdown', () => {
+function unlockGameAudio(): void {
+  survivalSound.setMusicVolume(settings.current.audioMusic);
+  survivalSound.unlockMusic();
+  survivalSound.setVolumes(settings.current.audioMaster, settings.current.audioSfx);
   if (survival?.enabled) survival.activateAudio();
-}, { capture: true, passive: true });
+}
+window.addEventListener('pointerdown', unlockGameAudio, { capture: true, passive: true });
+window.addEventListener('keydown', unlockGameAudio, { capture: true });
 
 function moveWithCollisions(dx: number, dz: number) {
   const p = player.root.position;
@@ -3754,6 +4124,78 @@ const cameraBlockerObjects: THREE.Object3D[] = [];
 const cameraHits: THREE.Intersection[] = [];
 let cameraProbeTimer = 0, cameraClearance = camDistance;
 
+type DiagnosticCostKey = 'frameCallback' | 'frameGap' | 'simulation' | 'render' | 'survivalUpdate' | 'aimQuery' | 'chunkStream' | 'chunkPump' | 'mapUpdate' | 'fire' | 'enemyAI' | 'combatEffects';
+type DiagnosticCost = { totalMs: number; maxMs: number; count: number };
+type OutbreakDiagnosticsWindow = Window & { __islandOutbreakPerfEnabled?: boolean };
+const newDiagnosticCost = (): DiagnosticCost => ({ totalMs: 0, maxMs: 0, count: 0 });
+const diagnosticFrameWindow: {
+  active: boolean;
+  startedAt: number;
+  captureStartedAt: number;
+  frames: number;
+  slowFrames: number;
+  frameDurations: number[];
+  drawCallsTotal: number;
+  drawCallsMin: number;
+  drawCallsMax: number;
+  costs: Record<DiagnosticCostKey, DiagnosticCost>;
+} = {
+  active: false,
+  startedAt: 0,
+  captureStartedAt: 0,
+  frames: 0,
+  slowFrames: 0,
+  frameDurations: [],
+  drawCallsTotal: 0,
+  drawCallsMin: Infinity,
+  drawCallsMax: 0,
+  costs: {
+    frameCallback: newDiagnosticCost(),
+    frameGap: newDiagnosticCost(),
+    simulation: newDiagnosticCost(),
+    render: newDiagnosticCost(),
+    survivalUpdate: newDiagnosticCost(),
+    aimQuery: newDiagnosticCost(),
+    chunkStream: newDiagnosticCost(),
+    chunkPump: newDiagnosticCost(),
+    mapUpdate: newDiagnosticCost(),
+    fire: newDiagnosticCost(),
+    enemyAI: newDiagnosticCost(),
+    combatEffects: newDiagnosticCost(),
+  },
+};
+let diagnosticMeasureFrame = false;
+
+function recordDiagnosticCost(key: DiagnosticCostKey, ms: number): void {
+  if (!diagnosticFrameWindow.active || !Number.isFinite(ms) || ms < 0) return;
+  const cost = diagnosticFrameWindow.costs[key];
+  cost.totalMs += ms;
+  cost.count++;
+  if (ms > cost.maxMs) cost.maxMs = ms;
+}
+
+function resetDiagnosticWindow(now: number): void {
+  diagnosticFrameWindow.startedAt = now;
+  diagnosticFrameWindow.frames = 0;
+  diagnosticFrameWindow.slowFrames = 0;
+  diagnosticFrameWindow.frameDurations.length = 0;
+  diagnosticFrameWindow.drawCallsTotal = 0;
+  diagnosticFrameWindow.drawCallsMin = Infinity;
+  diagnosticFrameWindow.drawCallsMax = 0;
+  for (const key of Object.keys(diagnosticFrameWindow.costs) as DiagnosticCostKey[]) {
+    diagnosticFrameWindow.costs[key] = newDiagnosticCost();
+  }
+}
+
+function diagnosticCostSummary(key: DiagnosticCostKey): { avgMs: number | null; maxMs: number | null; samples: number } {
+  const cost = diagnosticFrameWindow.costs[key];
+  return {
+    avgMs: cost.count ? Math.round((cost.totalMs / cost.count) * 10) / 10 : null,
+    maxMs: cost.count ? Math.round(cost.maxMs * 10) / 10 : null,
+    samples: cost.count,
+  };
+}
+
 function input() {
   let x = joy.x, y = joy.y;
   if (keys.has('a') || keys.has('arrowleft')) x -= 1;
@@ -3762,6 +4204,10 @@ function input() {
   if (keys.has('s') || keys.has('arrowdown')) y += 1;
   const l = Math.hypot(x, y);
   return l > 1 ? { x: x / l, y: y / l } : { x, y };
+}
+
+function setHudText(element: Element | null | undefined, value: string) {
+  if (element && element.textContent !== value) element.textContent = value;
 }
 
 function update(dt: number) {
@@ -3995,9 +4441,16 @@ function update(dt: number) {
 
   const cx = chunks.coord(p.x), cz = chunks.coord(p.z);
   if (cx !== lastCx || cz !== lastCz) {
-    chunks.stream(p.x, p.z);
+    const streamStartedAt = diagnosticFrameWindow.active ? performance.now() : 0;
+    chunks.streamQueued(p.x, p.z);
+    if (streamStartedAt) recordDiagnosticCost('chunkStream', performance.now() - streamStartedAt);
     lastCx = cx;
     lastCz = cz;
+  }
+  if (chunks.pendingBuilds) {
+    const pumpStartedAt = diagnosticFrameWindow.active ? performance.now() : 0;
+    chunks.pumpBuilds(LOW_POWER_MODE ? CHUNK_BUILD_BUDGET_LOW_MS : CHUNK_BUILD_BUDGET_MS);
+    if (pumpStartedAt) recordDiagnosticCost('chunkPump', performance.now() - pumpStartedAt);
   }
 
   if (player.swimming !== wasSwimming) {
@@ -4007,8 +4460,15 @@ function update(dt: number) {
     say(player.swimming ? 'Swimming · hold Space / RISE to surface; Ctrl / DIVE to submerge.' : 'Back on land.');
   }
 
-  camYaw = angleLerp(camYaw, targetYaw, Math.min(1, dt * 12));
-  camPitch = lerp(camPitch, targetPitch, Math.min(1, dt * 12));
+  // In FPP survival, avoid the extra delayed aim angle introduced by camera
+  // interpolation. Smooth spectator/exploration camera behavior remains unchanged.
+  if (survival?.enabled && mode === 'fpp') {
+    camYaw = targetYaw;
+    camPitch = targetPitch;
+  } else {
+    camYaw = angleLerp(camYaw, targetYaw, Math.min(1, dt * 12));
+    camPitch = lerp(camPitch, targetPitch, Math.min(1, dt * 12));
+  }
   camDistance = lerp(camDistance, targetDistance, Math.min(1, dt * 12));
   player.root.visible = mode !== 'fpp';
 
@@ -4079,7 +4539,8 @@ function update(dt: number) {
   } else {
     const eye = cameraEye.copy(p);
     eye.y += slideTimer > 0 ? 0.93 : player.swimming ? 0.22 : 1.55;
-    camera.position.lerp(eye, Math.min(1, dt * 18));
+    if (survival?.enabled) camera.position.copy(eye);
+    else camera.position.lerp(eye, Math.min(1, dt * 18));
     const look = cameraLook.copy(eye);
     look.x += Math.sin(camYaw) * Math.cos(camPitch) * 8;
     look.y += Math.sin(camPitch) * 8;
@@ -4117,15 +4578,24 @@ function update(dt: number) {
   if (isPhotoMode) updatePhotoBadges();
 
   // Shooter simulation runs after the existing camera is positioned, so its hitscan uses the actual FPP view.
-  survival.update(dt, keys.has('shoot'), keys.has('aim'));
+  if (diagnosticMeasureFrame) {
+    const survivalStartedAt = performance.now();
+    survival.update(dt, keys.has('shoot'), keys.has('aim'));
+    recordDiagnosticCost('survivalUpdate', performance.now() - survivalStartedAt);
+  } else {
+    survival.update(dt, keys.has('shoot'), keys.has('aim'));
+  }
 
   // Record breadcrumb displacement trail
   minimap.recordPosition(p.x, p.z);
 
+  const aimStartedAt = diagnosticMeasureFrame ? performance.now() : 0;
   const aimed = getAimTarget();
+  if (aimStartedAt) recordDiagnosticCost('aimQuery', performance.now() - aimStartedAt);
   const canInteractWithAimed = !!aimed && !!(aimed.userData.resource || aimed.userData.interactable);
   document.body.classList.toggle('survival-can-interact', !!survival?.enabled && canInteractWithAimed);
-  const combatTarget = getAimTarget(false, true);
+  // Combat actions still request their own forced raycast when triggered. The
+  // old second per-frame query had no consumer (its marker is always hidden).
   combatTargetMarker.visible = false;
   if (aimed) {
     const r = aimed.userData.resource as { kind: string; hits: number; maxHits: number } | undefined;
@@ -4135,7 +4605,9 @@ function update(dt: number) {
     else if (interactable) label = interactable.label;
     else label = aimed.name.replace('front-door', 'Front Door').replace('tree-', 'Tree ');
 
-    prompt.innerHTML = `<span class="promptKey">E</span> <span class="promptAction">${label}</span>`;
+    const action = prompt.querySelector('.promptAction');
+    if (action) setHudText(action, label);
+    else prompt.innerHTML = `<span class="promptKey">E</span> <span class="promptAction">${label}</span>`;
     prompt.classList.add('show');
   } else if (promptTimer <= 0) {
     prompt.classList.remove('show');
@@ -4148,25 +4620,27 @@ function update(dt: number) {
 
   const deg = ((-camYaw * 180) / Math.PI + 360) % 360;
   const cardinal = deg >= 337.5 || deg < 22.5 ? 'N' : deg < 67.5 ? 'NE' : deg < 112.5 ? 'E' : deg < 157.5 ? 'SE' : deg < 202.5 ? 'S' : deg < 247.5 ? 'SW' : deg < 292.5 ? 'W' : 'NW';
-  compass.textContent = `${Math.round(deg)}° ${cardinal}`;
+  setHudText(compass, `${Math.round(deg)}° ${cardinal}`);
 
   // Update Mini-Map & Full Map
   mapAccumulator += dt;
   if (mapAccumulator >= 0.08) {
+    const mapStartedAt = diagnosticMeasureFrame ? performance.now() : 0;
     mapAccumulator = 0;
     const survivalRadar = survival.enabled ? survival.getRadarState() : undefined;
     minimap.renderMini(p, camYaw, [], survivalRadar);
     if (minimap.isOpen()) minimap.renderFull(p, camYaw, [], survivalRadar);
+    if (mapStartedAt) recordDiagnosticCost('mapUpdate', performance.now() - mapStartedAt);
 
     // Distance to Home & Village on HUD
     const dHome = Math.round(Math.hypot(p.x - HOME_X, p.z - HOME_Z));
-    minimapHomeDist.textContent = `⌂ ${dHome}m`;
+    setHudText(minimapHomeDist, `⌂ ${dHome}m`);
 
     const wp = minimap.getWaypoint();
     if (wp) {
       const dWp = Math.round(Math.hypot(p.x - wp.x, p.z - wp.z));
       waypointBadge.style.display = 'block';
-      waypointBadge.textContent = `★ ${wp.label} · ${dWp}m`;
+      setHudText(waypointBadge, `★ ${wp.label} · ${dWp}m`);
     } else {
       waypointBadge.style.display = 'none';
     }
@@ -4184,19 +4658,19 @@ function update(dt: number) {
     // In TPP mode, hide center reticle for cinematic BR perspective; in FPP mode, show clean dot
     target.style.display = mode === 'tpp' ? 'none' : 'grid';
     target.classList.toggle('active', !!aimed);
-    target.textContent = aimed ? '✦' : '•';
-    (document.querySelector('#modeBtn') as HTMLButtonElement).textContent = mode.toUpperCase();
-    (document.querySelector('#runBtn') as HTMLButtonElement).textContent = sprintToggle ? 'RUN' : 'WALK';
+    setHudText(target, aimed ? '✦' : '•');
+    setHudText(document.querySelector('#modeBtn'), mode.toUpperCase());
+    setHudText(document.querySelector('#runBtn'), sprintToggle ? 'RUN' : 'WALK');
     if (survivalStaminaBar) {
       survivalStaminaBar.style.width = `${Math.round(stamina / staminaCapacity * 100)}%`;
       survivalStaminaBar.style.background = stamina <= staminaCapacity * 0.2 ? '#f59e0b' : '#a3e635';
     }
-    (document.querySelector('#jumpBtn') as HTMLButtonElement).textContent = player.swimming ? 'RISE' : 'JUMP';
+    setHudText(document.querySelector('#jumpBtn'), player.swimming ? 'RISE' : 'JUMP');
 
     const hour = Math.floor(worldTime);
     const minute = Math.floor((worldTime - hour) * 60);
     const biome = biomeAt(p.x, p.z);
-    status.textContent = `${player.swimming ? 'SWIM' : mode.toUpperCase()} · ${sprinting ? 'RUN' : 'WALK'} · ${biome.toUpperCase()} · ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    setHudText(status, `${player.swimming ? 'SWIM' : mode.toUpperCase()} · ${sprinting ? 'RUN' : 'WALK'} · ${biome.toUpperCase()} · ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
   }
 }
 
@@ -4204,7 +4678,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   survey.resize(innerWidth / innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, LOW_POWER_MODE ? 1.25 : 1.65));
+  applyGraphicsSettings();
   renderer.setSize(innerWidth, innerHeight);
 });
 
@@ -4215,23 +4689,50 @@ addEventListener('beforeunload', saveNow);
 // GLB/environment loads appear without running terrain, weather, and AI every frame.
 let lobbyRenderAccumulator = 0;
 let lobbyHasRendered = false;
+let previousDiagnosticCallbackEnd = 0;
 function loop() {
   requestAnimationFrame(loop);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const callbackStartedAt = performance.now();
+  if (diagnosticFrameWindow.active && previousDiagnosticCallbackEnd) {
+    recordDiagnosticCost('frameGap', callbackStartedAt - previousDiagnosticCallbackEnd);
+  }
+  try {
+    runFrame();
+  } finally {
+    const callbackEndedAt = performance.now();
+    if (diagnosticFrameWindow.active) {
+      recordDiagnosticCost('frameCallback', callbackEndedAt - callbackStartedAt);
+      previousDiagnosticCallbackEnd = callbackEndedAt;
+    } else previousDiagnosticCallbackEnd = 0;
+  }
+}
+function runFrame(): void {
+  // A deployed run keeps its soundtrack through pause, Settings and results.
+  const musicMode = survivalLobby?.classList.contains('show') ? 'lobby' : 'gameplay';
+  survivalSound.setMusicMode(document.hidden || !settings.current.audioMusicEnabled ? 'silent' : musicMode);
+  const rawDeltaSeconds = clock.getDelta();
+  const rawFrameMs = rawDeltaSeconds * 1000;
+  const dt = Math.min(rawDeltaSeconds, 0.05);
 
   if (document.hidden) {
+    diagnosticMeasureFrame = false;
+    diagnosticFrameWindow.active = false;
     lobbyHasRendered = false;
     lobbyRenderAccumulator = 0;
     return;
   }
 
   if (!document.body.classList.contains('display-mode-ready')) {
+    diagnosticMeasureFrame = false;
+    diagnosticFrameWindow.active = false;
     lobbyHasRendered = false;
     lobbyRenderAccumulator = 0;
     return;
   }
 
   if (survey.isActive) {
+    diagnosticMeasureFrame = false;
+    diagnosticFrameWindow.active = false;
     lobbyHasRendered = false;
     lobbyRenderAccumulator = 0;
     // Only redraw the frozen survey scene when its camera actually changes.
@@ -4241,7 +4742,10 @@ function loop() {
 
   const lobbyOpen = !!survivalLobby?.classList.contains('show') || survivalPaused;
   if (lobbyOpen) {
+    diagnosticMeasureFrame = false;
+    diagnosticFrameWindow.active = false;
     lobbyRenderAccumulator += dt;
+    if (chunks.pendingBuilds) chunks.pumpBuilds(CHUNK_BUILD_BUDGET_LOW_MS);
     if (!lobbyHasRendered || lobbyRenderAccumulator >= 0.25) {
       lobbyRenderAccumulator = 0;
       renderer.render(scene, camera);
@@ -4252,10 +4756,147 @@ function loop() {
 
   lobbyHasRendered = false;
   lobbyRenderAccumulator = 0;
+
+  const diagnosticsWindow = window as OutbreakDiagnosticsWindow;
+  if (diagnosticsWindow.__islandOutbreakPerfEnabled !== true) {
+    diagnosticMeasureFrame = false;
+    diagnosticFrameWindow.active = false;
+    update(dt);
+    renderer.render(scene, camera);
+    return;
+  }
+
+  if (!diagnosticFrameWindow.active) {
+    const startedAt = performance.now();
+    diagnosticFrameWindow.active = true;
+    diagnosticFrameWindow.captureStartedAt = startedAt;
+    resetDiagnosticWindow(startedAt);
+  }
+
+  diagnosticFrameWindow.frames++;
+  diagnosticFrameWindow.frameDurations.push(rawFrameMs);
+  if (rawFrameMs > 50) diagnosticFrameWindow.slowFrames++;
+  // Only the extra subphase probes are sampled at 1/4 rate. The core update/render
+  // timings and raw frame interval are kept complete so rare stalls remain visible.
+  diagnosticMeasureFrame = diagnosticFrameWindow.frames % 4 === 0;
+
+  // Core timings cover every frame; only detailed subphases are sampled.
+  const simulationStartedAt = performance.now();
   update(dt);
+  recordDiagnosticCost('simulation', performance.now() - simulationStartedAt);
+
+  const renderStartedAt = performance.now();
   renderer.render(scene, camera);
+  recordDiagnosticCost('render', performance.now() - renderStartedAt);
+  const drawCalls = renderer.info.render.calls;
+  diagnosticFrameWindow.drawCallsTotal += drawCalls;
+  diagnosticFrameWindow.drawCallsMin = Math.min(diagnosticFrameWindow.drawCallsMin, drawCalls);
+  diagnosticFrameWindow.drawCallsMax = Math.max(diagnosticFrameWindow.drawCallsMax, drawCalls);
+
+  if (diagnosticMeasureFrame) {
+    const diagnosticsNow = performance.now();
+    const windowMs = diagnosticsNow - diagnosticFrameWindow.startedAt;
+    const captureElapsedMs = diagnosticsNow - diagnosticFrameWindow.captureStartedAt;
+    const captureComplete = captureElapsedMs >= 120000;
+    if (windowMs >= 5000 || captureComplete) {
+      const sortedFrames = diagnosticFrameWindow.frameDurations.slice().sort((a, b) => a - b);
+      const avgFrameMs = sortedFrames.length
+        ? diagnosticFrameWindow.frameDurations.reduce((sum, value) => sum + value, 0) / diagnosticFrameWindow.frameDurations.length
+        : 0;
+      const zombieDiagnostics = survival.getPerformanceDiagnostics();
+      const round1 = (value: number) => Math.round(value * 10) / 10;
+      const detail = {
+        windowMs: Math.round(windowMs),
+        frames: diagnosticFrameWindow.frames,
+        fps: Math.round(diagnosticFrameWindow.frames * 1000 / Math.max(1, windowMs)),
+        avgFrameMs: round1(avgFrameMs),
+        worstFrameMs: round1(sortedFrames[sortedFrames.length - 1] || 0),
+        p95FrameMs: round1(sortedFrames[Math.min(sortedFrames.length - 1, Math.floor((sortedFrames.length - 1) * 0.95))] || 0),
+        slowFramesOver50ms: diagnosticFrameWindow.slowFrames,
+        timingSampleRate: 'callback/gap/simulation/render every frame; chunk work every call; survival/aim/map every 4th frame',
+        frameCallbackAvgMs: diagnosticCostSummary('frameCallback').avgMs,
+        frameCallbackMaxMs: diagnosticCostSummary('frameCallback').maxMs,
+        frameGapAvgMs: diagnosticCostSummary('frameGap').avgMs,
+        frameGapMaxMs: diagnosticCostSummary('frameGap').maxMs,
+        frameGapNote: 'Time from previous callback end to next callback start; includes scheduling, other tasks and browser/GPU/compositor waits, not a GPU measurement.',
+        simulationAvgMs: diagnosticCostSummary('simulation').avgMs,
+        simulationMaxMs: diagnosticCostSummary('simulation').maxMs,
+        simulationSamples: diagnosticCostSummary('simulation').samples,
+        renderAvgMs: diagnosticCostSummary('render').avgMs,
+        renderMaxMs: diagnosticCostSummary('render').maxMs,
+        renderSamples: diagnosticCostSummary('render').samples,
+        mapUpdateAvgMs: diagnosticCostSummary('mapUpdate').avgMs,
+        mapUpdateMaxMs: diagnosticCostSummary('mapUpdate').maxMs,
+        mapUpdateSamples: diagnosticCostSummary('mapUpdate').samples,
+        survivalUpdateAvgMs: diagnosticCostSummary('survivalUpdate').avgMs,
+        survivalUpdateMaxMs: diagnosticCostSummary('survivalUpdate').maxMs,
+        survivalUpdateSamples: diagnosticCostSummary('survivalUpdate').samples,
+        aimQueryAvgMs: diagnosticCostSummary('aimQuery').avgMs,
+        aimQueryMaxMs: diagnosticCostSummary('aimQuery').maxMs,
+        aimQuerySamples: diagnosticCostSummary('aimQuery').samples,
+        chunkStreamAvgMs: diagnosticCostSummary('chunkStream').avgMs,
+        chunkStreamMaxMs: diagnosticCostSummary('chunkStream').maxMs,
+        chunkStreamCount: diagnosticCostSummary('chunkStream').samples,
+        // Added in chunk-queue-1; absent from the pre-change session in livelogs.md.
+        // chunkStream* now times only the unload + queue step. Chunk building is timed here.
+        chunkPumpAvgMs: diagnosticCostSummary('chunkPump').avgMs,
+        chunkPumpMaxMs: diagnosticCostSummary('chunkPump').maxMs,
+        chunkPumpCount: diagnosticCostSummary('chunkPump').samples,
+        chunkQueueDepth: chunks.pendingBuilds,
+        perfBuildTag: 'mobile-perf-4',
+        drawCalls: renderer.info.render.calls,
+        drawCallsAvg: round1(diagnosticFrameWindow.drawCallsTotal / diagnosticFrameWindow.frames),
+        drawCallsMin: diagnosticFrameWindow.drawCallsMin,
+        drawCallsMax: diagnosticFrameWindow.drawCallsMax,
+        triangles: renderer.info.render.triangles,
+        points: renderer.info.render.points,
+        lines: renderer.info.render.lines,
+        rendererGeometries: renderer.info.memory.geometries,
+        rendererTextures: renderer.info.memory.textures,
+        canvasWidth: renderer.domElement.width,
+        canvasHeight: renderer.domElement.height,
+        pixelRatio: renderer.getPixelRatio(),
+        chunksLoaded: chunks.loaded.size,
+        aimTargets: chunks.aimTargets.size,
+        cameraBlockers: chunks.cameraBlockers.size,
+        configuredChunkRadius: settings.current.chunkRadius,
+        effectiveChunkRadius: LOW_POWER_MODE ? Math.min(settings.current.chunkRadius, 5) : settings.current.chunkRadius,
+        lowPowerMode: LOW_POWER_MODE,
+        mode,
+        survivalEnabled: survival.enabled,
+        wave: survival.wave,
+        kills: survival.kills,
+        ...zombieDiagnostics,
+        fireAvgMs: diagnosticCostSummary('fire').avgMs,
+        fireMaxMs: diagnosticCostSummary('fire').maxMs,
+        fireSamples: diagnosticCostSummary('fire').samples,
+        enemyAIAvgMs: diagnosticCostSummary('enemyAI').avgMs,
+        enemyAIMaxMs: diagnosticCostSummary('enemyAI').maxMs,
+        enemyAISamples: diagnosticCostSummary('enemyAI').samples,
+        combatEffectsAvgMs: diagnosticCostSummary('combatEffects').avgMs,
+        combatEffectsMaxMs: diagnosticCostSummary('combatEffects').maxMs,
+        combatEffectsSamples: diagnosticCostSummary('combatEffects').samples,
+        frameHistogram: diagnosticFrameWindow.frameDurations.reduce((bins: Record<string, number>, ms: number) => {
+          const bound = [17,25,34,50,100,250,500,1000].find(value => ms <= value);
+          const key = bound ? 'le' + bound : 'over1000';
+          bins[key] = (bins[key] || 0) + 1; return bins;
+        }, {}),
+        captureElapsedMs: Math.round(captureElapsedMs),
+        captureComplete,
+      };
+      window.dispatchEvent(new CustomEvent('island-outbreak-performance', { detail }));
+      resetDiagnosticWindow(diagnosticsNow);
+      diagnosticMeasureFrame = false;
+      if (captureComplete && !(pilot.enabled && pilot.consent)) {
+        diagnosticsWindow.__islandOutbreakPerfEnabled = false;
+        diagnosticFrameWindow.active = false;
+      }
+    }
+  }
+  diagnosticMeasureFrame = false;
 }
 document.addEventListener('visibilitychange', () => {
+  if (document.hidden) survivalSound.setMusicMode('silent');
   // Reset the clock baseline when returning from the background to avoid a
   // large simulation step or a jump in physics on mobile browsers.
   clock.getDelta();

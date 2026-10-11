@@ -232,3 +232,59 @@ Read ARCHITECTURE.md for protected decisions and AGENT_CHANGELOG.md for the chro
 - Added illustrated, flip-to-inspect Wildcards with two starter cards, two active slots, data-driven definitions, local loadout persistence and one activation button per equipped active card.
 - Added unified paused Settings/Resume/Quit behavior, a detailed defeat/victory result surface, duration and best-time persistence, XP/level feedback, wave event banners and procedural event cues.
 - Remaining verification: complete a long browser run through defeat/results/redeploy/quit, and verify physical mobile safe-area/touch ergonomics.
+
+
+### Mobile landscape UI regression pass — 2026-10-11
+- Branch: `feature/zombie-survival-world-v2`; **RUNTIME VERIFIED in emulated mobile Chromium**; physical-phone validation and final user approval pending.
+- Fixed inherited lobby/Settings grids, landscape type/target size, two-row Wildcards, default HUD overlaps, pause actions and HUD editor Save/Reset access.
+- Production assets at 854×393 and 915×412 with mobile/touch and real native Chromium fullscreen: 180 checks passed, 42 screenshots captured/inspected; build and TypeScript lint passed.
+- Reproduce with `python tools/mobile_landscape_audit.py --url http://127.0.0.1:4173 --out /workspace/scratch/island-verified` after build/preview. Exact scope/remaining device work in `AGENT_CHANGELOG.md` and `ISLAND_OUTBREAK_PROGRESS.md`. NOT FINALIZED.
+
+## 2026-10-11 mobile performance checkpoint
+User Android logs show sustained ~20–23 FPS in low-power FPP mode, including windows with no chunk work or living enemies. Implemented cooperative chunk slices and queued late asset refresh, shared scenery instancing with preserved resource interactions, map caching/HUD mutation reduction, persistent graphics quality and cheaper drawing-buffer handling. Added complete core timings and draw-call window summaries (`mobile-perf-2`). Deterministic regressions: 27 passed. Additional production browser at 800×360/DPR2/touch: 17 passed, including ~120m streaming and PNG export. Full two-size browser repeat passed 180 checks / 42 screenshots with zero failures/page errors. Real Android FPS improvement and final user review remain pending; project NOT FINALIZED.
+
+## Looping soundtrack integration — 2026-10-11
+- User-supplied `Chaos.mp3` streams and loops in lobby and its Settings; `Island Outbreak.mp3` streams and loops during deployed runs, including pause, in-run Settings and results until quitting to the lobby. Switching pauses the other track and preserves playback position. Hidden tabs immediately suspend both tracks; backgrounding keeps the existing gameplay pause behavior.
+- Trusted pointer/keyboard interaction unlocks mobile Web Audio. Media elements stream through a dedicated music gain and existing master gain without whole-track AudioBuffer decoding. Procedural combat cues remain on their separate SFX gain.
+- Replaced the music placeholder with a saved Music on/off switch stopping either track and Music volume slider (default 45%); migrated older settings safely. Added `tools/mobile_music_audit.py` for real decoding/playback, loop wrap, exclusive switching, pause/resume/quit, master mute, gain independence, saved volume and synthetic visibility-event coverage at 854×393 and 915×412 mobile/touch.
+- Build/lint and 27 performance regression checks passed. Physical phone sound balance/autoplay review and final user approval remain pending. NOT FINALIZED.
+
+- User clarified: pausing and in-run Settings keep gameplay music; only returning to the lobby selects Chaos. Music on/off affects both tracks independently of SFX. Browser harness now waits for Web Audio parameter application before reading gain values; screenshot capture gets a separate 30s timeout after a software-renderer capture timeout.
+
+- Final corrected production browser pass: 181 UI checks, 43 screenshots at 854×393 and 915×412, zero failures/page errors. Real music playback/loop/switch/pause/mute/background checks passed at both sizes. Artifacts: `/workspace/scratch/island-music-ui-final` and `/workspace/scratch/island-music`.
+
+## Mobile compositor/radar performance pass — 2026-10-11
+- User Android Balanced capture confirmed 800×360/DPR1 rendering but sustained roughly 20–26 FPS with an 18 FPS dip despite zero chunk work and one living enemy. Fewer pixels alone did not establish improvement; device throttling remains unproven.
+- Inspected live 800×360/DPR2 touch gameplay: Settings, prompt, joystick, shoot/ADS/reload/swap/jump/slide and hidden decorative surfaces retained backdrop blur over the moving canvas. Disabled blur for mobile survival HUD controls while preserving backgrounds, borders, targeting and modal styles.
+- Radar and full map now resize backing stores only when CSS size or DPR changes; previously both width/height were reassigned on every redraw, resetting/reallocating canvases. Radar/trails/waypoints/range and redraw frequency unchanged. Full-map drawing baseline explicitly preserved.
+- Diagnostics `mobile-perf-3` adds complete frame-callback cost and gap from previous callback end to next start. Gap includes scheduling, other tasks and browser/GPU/compositor waits; it is explicitly NOT a GPU measurement. Existing simulation/render probes retained.
+- Initial mobile performance browser: 20 checks passed including zero unchanged radar reallocations, no filtered live HUD controls, queued streaming, PNG export, complete timings and orientation recovery. Build/lint and 27 deterministic performance regressions passed. Final full-map/mobile UI repeat pending; physical Android FPS and user final approval remain pending. NOT FINALIZED.
+
+- Final verification: 181 UI checks / 43 screenshots at 854×393 and 915×412 with mobile/touch fullscreen; 23 focused performance/map checks at 800×360/DPR2; zero failures/page errors. Screenshots inspected. Radar observer waits for its required initial sizing before testing steady-state redraws. Artifacts: `/workspace/scratch/island-perf3-ui`, `/workspace/scratch/island-perf3-verified`. Phone FPS remains unverified.
+
+## Combat effect resource reuse — 2026-10-11
+- Continued the existing feature branch from c8a917a. User phone `mobile-perf-3` capture shows improved 30–45 FPS windows and one 57 FPS window, but 14–19 FPS combat stalls with no chunk work. Neither thermal throttling nor a specific GPU cause is established.
+- Added `src/combat-effects.ts`: preallocated eight tracer/impact slots, shared tracer material and impact geometry, independent impact fades, dynamic endpoint buffers, bounded growth to 32 simultaneous effects per kind. Expired effects detach without disposing GPU resources; quit/restart clear active effects; final disposal releases owned resources once. Hit detection, damage, weapon tuning, ammunition and reload logic unchanged.
+- Diagnostics build tag is `mobile-perf-4`; updated performance audit expectation. Added `tools/combat_effects_regression.mjs` and `tools/mobile_combat_audit.py`.
+- Correction to initial hypothesis: camera weapon rigs are not attached to the rendered scene, so the muzzle-light hierarchy is not evidence of the current stalls. Reverted tentative light changes. Missing FPP weapon rendering is a separate follow-up; no camera attachment change in this pass. Initial whole-context GPU counters included world streaming; corrected browser probe identifies tracer shader and six-float endpoint buffers specifically and asserts instrumentation actually sees firing.
+- Build/type-check passed; 313 deterministic effect assertions (including 300 repeated eight-pellet bursts), and 27 existing performance regressions passed. Production mobile combat and full landscape UI verification in progress. Physical Android frame-time improvement remains unverified; NOT FINALIZED.
+
+- Final local verification: production mobile/touch/native-fullscreen Chromium at 854×393 and 915×412 passed 181 landscape UI checks with 43 screenshots, plus 20 focused combat checks; zero failures/page errors. Screenshots of all six lobby panels, four Settings pages, gameplay and pause inspected at both sizes. Warm tracers generated no additional tracer shader links or endpoint buffers, and expiry did not delete those buffers. Touch firing, reload, weapon switching, restart and quit passed. Artifacts: `/workspace/scratch/island-perf4-ui`, `/workspace/scratch/island-combat`. Phone FPS and remaining combat stalls are still open; this addresses resource churn, not a proven complete stall fix.
+
+## Soundtrack transition clarification — 2026-10-11
+- User clarified that lobby/gameplay state switches must restart the selected song from the beginning. This supersedes the earlier playback-position preservation between those two states.
+- `src/survival-audio.ts` now tracks the last non-silent soundtrack state and resets the incoming track only when switching lobby ↔ gameplay. Pause, in-run Settings, music mute/unmute and same-state background recovery continue the current track. Looping, exclusive playback, streaming, SFX and saved music preferences remain intact.
+- Expanded `tools/mobile_music_audit.py`: seek both tracks to 35 seconds, verify pause/background keep gameplay position, verify quit resets Chaos and redeploy resets Island Outbreak; retain real decoding/loop/mute/gain/persistence checks at both mobile landscape sizes. Build/type-check passed; browser repeat in progress.
+- Combat commit 85183ec Vercel preview READY and 20 remote mobile combat checks passed at both sizes, zero page errors. Tracer shader links/endpoint buffers remained 1/1 after warm-up and repeated firing, with zero buffer deletions. Phone FPS improvement remains unverified. NOT FINALIZED.
+
+- Final local music repeat passed at 854×393 and 915×412 with mobile/touch Chromium: real decoding and loops, restart on lobby/gameplay transitions, uninterrupted pause/Settings, mute/master gain, background recovery and preference persistence; no page errors. Artifact: `/workspace/scratch/music-reset-local.log`.
+
+## First 20-player pilot — 2026-10-11 — IN PROGRESS
+- User authorized accounts/database, first 20 admitted players, opt-in automatic diagnostic collection and private backend analytics; also requested signup/menu and gameplay animation polish.
+- Dedicated Supabase project discovered and confirmed by name: `my-new-repo`, Flames1720’s Org. Applied private/RLS-backed admission, consent, progress, report and analytics RPCs; daily retention cron configured.
+- Atomic cap locally tested with 21 concurrent requests yielding exactly 20 admissions. Initial permission/consent/deletion/idempotency/weighted-number checks passed against disposable PostgreSQL 17.
+- Pilot auth/consent/game-data UI and bounded reporting implemented; production build requires admission. Mobile fixture tests and animation regression verification in progress.
+- Real production signup is blocked on a verified email sender/custom SMTP and final redirect configuration. Do not claim public launch ready or promote production until live email/auth flows and the exact preview are verified. See PILOT_RELEASE.md.
+
+### October 11 release verification update
+Owner confirmed Resend SMTP saved in Supabase. Email/password confirmation and the original 20 admitted-player cap remain; no guest migration was applied remotely. Recovery form now removes the irrelevant required email field. Production build/type checks, 24 mocked mobile auth/consent checks, 27 performance checks, 313 combat checks and disposable PostgreSQL admission/privacy/analytics audit passed. Hosted security advisor has only expected private-table deny-all informational notices. Live inbox delivery, final Auth redirect configuration and exact deployed verification remain pending; production is not yet promoted.

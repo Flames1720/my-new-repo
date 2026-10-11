@@ -1,6 +1,6 @@
 /**
  * Procedural Web Audio API sound synthesizer.
- * Completely self-contained, instant loading, 0 external audio files needed.
+ * Procedural effects plus streamed, looping music routed through master gain.
  */
 
 class SoundEngine {
@@ -15,10 +15,48 @@ class SoundEngine {
   private isMuted: boolean = false;
   private initialized: boolean = false;
 
+  private musicGain: GainNode | null = null;
+  private musicTracks: HTMLAudioElement[] = [];
+  private musicMode: 'lobby' | 'gameplay' | 'silent' = 'silent';
+  private lastSoundtrackMode: 'lobby' | 'gameplay' | null = null;
+  private musicUnlocked = false;
+  private musicVolume = 0.45;
+
+  public setMusicVolume(volume: number): void {
+    this.musicVolume = volume;
+    if (this.ctx && this.musicGain) this.musicGain.gain.setValueAtTime(volume, this.ctx.currentTime);
+  }
+
+  public unlockMusic(): void {
+    this.init();
+    this.musicUnlocked = true;
+    this.playSelectedMusic();
+  }
+
+  public setMusicMode(mode: 'lobby' | 'gameplay' | 'silent'): void {
+    if (mode === this.musicMode) return;
+    this.musicMode = mode;
+    this.musicTracks.forEach(track => track.pause());
+    // A new lobby/run soundtrack begins at zero. Silence from settings or a
+    // hidden tab preserves the current track's position for the same state.
+    if (mode !== 'silent' && mode !== this.lastSoundtrackMode) {
+      const track = this.musicTracks[mode === 'lobby' ? 0 : 1];
+      if (track) track.currentTime = 0;
+      this.lastSoundtrackMode = mode;
+    }
+    this.playSelectedMusic();
+  }
+
+  private playSelectedMusic(): void {
+    if (!this.musicUnlocked || this.musicMode === 'silent') return;
+    const track = this.musicTracks[this.musicMode === 'lobby' ? 0 : 1];
+    if (track?.paused) void track.play().catch(() => { /* Retry on the next trusted gesture. */ });
+  }
+
   public init() {
     if (this.initialized && this.ctx) {
       if (this.ctx.state === 'suspended') {
-        this.ctx.resume();
+        void this.ctx.resume().catch(() => {});
       }
       return;
     }
@@ -39,6 +77,20 @@ class SoundEngine {
       this.ambientGain.gain.setValueAtTime(0.35, this.ctx.currentTime);
       this.ambientGain.connect(this.masterGain);
 
+      this.musicGain = this.ctx.createGain();
+      this.musicGain.gain.setValueAtTime(this.musicVolume, this.ctx.currentTime);
+      this.musicGain.connect(this.masterGain);
+      this.musicTracks = ['chaos', 'island-outbreak'].map(name => {
+        const track = new Audio(`/audio/${name}.mp3`);
+        track.loop = true;
+        track.preload = 'metadata';
+        track.dataset.soundtrack = name;
+        // Keep media observable for diagnostics without adding visible controls.
+        track.hidden = true;
+        document.body.appendChild(track);
+        this.ctx!.createMediaElementSource(track).connect(this.musicGain!);
+        return track;
+      });
       if (this.ambientEnabled) this.startAmbientDrone();
       this.initialized = true;
     } catch {
@@ -131,6 +183,25 @@ class SoundEngine {
 
       this.playNoise(0.09, 2400, 0.65);
     }
+  }
+
+  // Short gravel-and-cloth scrape for tactical sliding. Generated locally,
+  // avoiding an additional sound download on low-power mobile devices.
+  public playSlide(): void {
+    if (!this.ctx || !this.sfxGain) return;
+    const now = this.ctx.currentTime;
+    this.playNoise(0.28, 750, 0.24);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(130, now);
+    osc.frequency.exponentialRampToValueAtTime(55, now + 0.26);
+    gain.gain.setValueAtTime(0.13, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.27);
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.28);
   }
 
   public playDryFire() {
