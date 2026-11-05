@@ -7,14 +7,46 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <title>Island Outbreak · Zombie Survival</title>
     <meta name="description" content="Survive 100 waves on a ruined island. Fight evolving infected, hold safe zones, and build your loadout." />
+    <meta property="og:title" content="Island Outbreak · Zombie Survival" />
+    <meta property="og:description" content="How long can you survive? Face the infected on a low-poly island." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://island-outbreak.vercel.app/" />
+    <meta property="og:image" content="https://island-outbreak.vercel.app/branding/island-outbreak-share.jpg?v=2" />
     <link rel="preload" as="image" href="/branding/island-outbreak-logo.webp" />
-    <style>html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#07100f;color:#edf3eb;font-family:system-ui,sans-serif}</style>
   </head>
-  <body>
-    <div id="displayModeGate" role="dialog"><div class="displayModeCard"><h1>LANDSCAPE REQUIRED</h1><button id="enterGameDisplayMode" type="button">ENTER FULLSCREEN</button></div></div>
+  <body class="launch-active">
+    <div id="launchSplash" role="status" aria-label="Opening Island Outbreak">
+      <img src="/branding/island-outbreak-logo.webp" width="1536" height="1024" alt="Island Outbreak" fetchpriority="high" />
+      <p>HOW LONG CAN YOU SURVIVE?</p>
+    </div>
+    <div id="displayModeGate" role="dialog" aria-modal="true" aria-labelledby="displayModeTitle">
+      <div class="displayModeCard">
+        <div class="displayModeEyebrow">ISLAND OUTBREAK · FIELD DEPLOYMENT</div>
+        <h1 id="displayModeTitle">LANDSCAPE REQUIRED</h1>
+        <p class="displayModeFullscreenHint">Island Outbreak runs in landscape fullscreen. Enter fullscreen to open the game.</p>
+        <button id="enterGameDisplayMode" type="button">ENTER FULLSCREEN <span>→</span></button>
+      </div>
+    </div>
     <div id="game"></div>
-    <div id="hud"></div>
-    <div id="survivalLobby" class="show" role="dialog">
+    <div id="hud">
+      <div id="compass">360° N</div>
+      <div id="topRightBar">
+        <button id="photoBtn" aria-label="Photo Mode">📷</button>
+        <button id="surveyBtn" aria-label="Open World Survey">🗺️</button>
+        <button id="survivalBtn" aria-label="Toggle Zombie Survival Mode">🧟</button>
+        <button id="survivalPauseBtn" type="button" aria-label="Pause survival run">Ⅱ</button>
+        <button id="settingsBtn" aria-label="Open settings">⚙️</button>
+        <button id="fullscreenBtn" aria-label="Toggle fullscreen">⛶</button>
+      </div>
+      <div id="minimapContainer"><canvas id="miniCanvas"></canvas></div>
+      <div id="playerCard"><div id="profileBadge">🧑 Explorer · Lv.1</div><div id="status">EXPLORING</div></div>
+      <section id="survivalHud" aria-live="polite"></section>
+      <div id="inventory"></div>
+      <div id="target" aria-hidden="true">•</div>
+      <div id="prompt"></div>
+      <div id="controls">WASD: Move · Shift: Sprint · Z: Survival</div>
+    </div>
+    <div id="survivalLobby" class="show" role="dialog" aria-modal="true" aria-labelledby="lobbyTitle">
       <div class="survivalLobbyCard">
         <nav class="lobbyNav" aria-label="Lobby navigation">
           <button class="active" type="button" data-lobby-page="mission" aria-current="page">MISSION</button>
@@ -25,17 +57,26 @@
           <button type="button" data-lobby-page="upgrades">UPGRADES</button>
           <button id="lobbyOptionsBtn" type="button">SETTINGS</button>
         </nav>
+        <header class="lobbyTopline">
+          <div class="lobbyMark"><span class="lobbyMarkGlyph">IO</span><span>ISLAND OUTBREAK<small>FIELD OPERATIONS</small></span></div>
+        </header>
         <main class="lobbyStage">
           <section class="lobbyHero lobbyPage active" data-lobby-panel="mission">
             <div class="missionDetails">
               <h1 id="lobbyTitle">ISLAND<br><em>OUTBREAK</em></h1>
-              <p class="lobbyTagline">Survive 100 zombie waves.</p>
-              <button id="startRunBtn" type="button"><span>DEPLOY</span></button>
+              <p class="lobbyTagline">REACH THE NEXT SANCTUARY<br><strong>Survive 100 zombie waves.</strong></p>
+              <button id="startRunBtn" type="button"><span>DEPLOY</span><b>→</b></button>
             </div>
           </section>
+          <aside class="lobbyPartyPanel lobbyPage" data-lobby-panel="records" id="lobbyRecords"></aside>
+          <section class="lobbyPage" data-lobby-panel="kit"></section>
+          <section class="lobbyPage" data-lobby-panel="wildcards" id="lobbyWildcardsPanel"></section>
+          <section class="lobbyPage" data-lobby-panel="challenges"></section>
+          <section class="lobbyPage" data-lobby-panel="upgrades"></section>
         </main>
       </div>
     </div>
+    <select id="lobbyWeaponSelect" aria-label="Starting weapon" style="display:none"><option value="pistol">P9</option><option value="shotgun">Shotgun</option><option value="rifle">Rifle</option></select>
     <script type="module" src="/src/main.ts"></script>
     <script type="module" src="/src/arena/arena-entry.ts"></script>
   </body>
