@@ -1,4 +1,42 @@
 <!doctype html>
-<!-- See branch for full content - loading via script -->
-<html><body><script type="module" src="/src/main.ts"></script>
-<script type="module" src="/src/arena/arena-entry.ts"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#10151b" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Island Outbreak · Zombie Survival</title>
+    <meta name="description" content="Survive 100 waves on a ruined island. Fight evolving infected, hold safe zones, and build your loadout." />
+    <link rel="preload" as="image" href="/branding/island-outbreak-logo.webp" />
+    <style>html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#07100f;color:#edf3eb;font-family:system-ui,sans-serif}</style>
+  </head>
+  <body>
+    <div id="displayModeGate" role="dialog"><div class="displayModeCard"><h1>LANDSCAPE REQUIRED</h1><button id="enterGameDisplayMode" type="button">ENTER FULLSCREEN</button></div></div>
+    <div id="game"></div>
+    <div id="hud"></div>
+    <div id="survivalLobby" class="show" role="dialog">
+      <div class="survivalLobbyCard">
+        <nav class="lobbyNav" aria-label="Lobby navigation">
+          <button class="active" type="button" data-lobby-page="mission" aria-current="page">MISSION</button>
+          <button type="button" data-lobby-page="kit">FIELD KIT</button>
+          <button type="button" data-lobby-page="wildcards">WILDCARDS</button>
+          <button type="button" data-lobby-page="records">RECORDS</button>
+          <button type="button" data-lobby-page="challenges">CHALLENGES</button>
+          <button type="button" data-lobby-page="upgrades">UPGRADES</button>
+          <button id="lobbyOptionsBtn" type="button">SETTINGS</button>
+        </nav>
+        <main class="lobbyStage">
+          <section class="lobbyHero lobbyPage active" data-lobby-panel="mission">
+            <div class="missionDetails">
+              <h1 id="lobbyTitle">ISLAND<br><em>OUTBREAK</em></h1>
+              <p class="lobbyTagline">Survive 100 zombie waves.</p>
+              <button id="startRunBtn" type="button"><span>DEPLOY</span></button>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/arena/arena-entry.ts"></script>
+  </body>
+</html>
