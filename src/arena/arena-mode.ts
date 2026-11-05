@@ -7,16 +7,10 @@ import * as THREE from 'three';
 import { ArenaMap } from './arena-map';
 import { MultiplayerRoom } from '../multiplayer/room';
 import type { PlayerState, NetEvent } from '../multiplayer/types';
+import { ArenaTouch } from './arena-touch';
+import { ArenaBotBrain, type ArenaBot } from './arena-bots';
 
-type Bot = {
-  id: string;
-  mesh: THREE.Group;
-  health: number;
-  yaw: number;
-  speed: number;
-  nextShot: number;
-  alive: boolean;
-};
+type Bot = ArenaBot;
 
 export class ArenaMode {
   private root: HTMLDivElement;
@@ -44,6 +38,13 @@ export class ArenaMode {
   private reloadTimer = 0;
 
   private bots: Bot[] = [];
+  private botBrain: ArenaBotBrain;
+  private touch: ArenaTouch | null = null;
+  private sprinting = false;
+  private bobTime = 0;
+  private recoil = 0;
+  private damageFlash!: HTMLDivElement;
+  private muzzleFlash!: HTMLDivElement;
   private remoteMeshes = new Map<string, THREE.Group>();
   private room: MultiplayerRoom | null = null;
   private localId = crypto.randomUUID();
@@ -102,6 +103,8 @@ export class ArenaMode {
       </div>
     `;
     this.root.appendChild(hud);
+    this.damageFlash=document.createElement('div');this.damageFlash.style.cssText='position:absolute;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse,transparent 35%,#b52e20aa 100%);z-index:6';
+    this.muzzleFlash=document.createElement('div');this.muzzleFlash.style.cssText='position:absolute;left:50%;top:50%;width:70px;height:70px;transform:translate(-50%,-50%);pointer-events:none;opacity:0;background:radial-gradient(circle,#ffe9a8aa,#f69a3b55 25%,transparent 70%);z-index:5';this.root.append(this.damageFlash,this.muzzleFlash);
     document.body.appendChild(this.root);
 
     this.hudHp = this.root.querySelector('#arenaHp')!;
@@ -128,7 +131,8 @@ export class ArenaMode {
 
     this.map = new ArenaMap();
     this.scene.add(this.map.group);
-
+    this.botBrain=new ArenaBotBrain(this.map);
+    this.touch=new ArenaTouch(this.root,{look:(x,y)=>{this.yaw-=x*.0042;this.pitch=THREE.MathUtils.clamp(this.pitch-y*.0042,-1.35,1.35)},fire:()=>this.tryShoot(),reload:()=>this.startReload(),jump:()=>{if(this.onGround){this.velocity.y=7.5;this.onGround=false}},sprint:v=>this.sprinting=v,swap:()=>{this.weapon=(this.weapon+1)%3;this.updateAmmoHud()}});
     this.bindInput();
   }
 
@@ -146,7 +150,7 @@ export class ArenaMode {
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
 
     this.canvas.addEventListener('click', () => {
-      if (this.running) this.canvas.requestPointerLock();
+      if (this.running && !('ontouchstart' in window)) this.canvas.requestPointerLock();
     });
     document.addEventListener('pointerlockchange', () => {
       if (document.pointerLockElement === this.canvas) {
@@ -160,7 +164,7 @@ export class ArenaMode {
       this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch));
     });
     document.addEventListener('mousedown', (e) => {
-      if (!this.running || e.button !== 0) return;
+      if (!this.running || e.button !== 0 || ('ontouchstart' in window)) return;
       if (document.pointerLockElement !== this.canvas) {
         this.canvas.requestPointerLock();
         return;
@@ -186,6 +190,7 @@ export class ArenaMode {
     this.yaw = s.yaw;
     this.pitch = 0;
     this.velocity.set(0, 0, 0);
+    this.onGround=true;this.reloading=false;
     this.health = 100;
     this.ammo = [15, 6, 30];
     this.reserve = [60, 24, 90];
@@ -224,9 +229,10 @@ export class ArenaMode {
         mesh,
         health: 80,
         yaw: s.yaw,
-        speed: 3.2 + Math.random() * 1.2,
-        nextShot: 1 + Math.random() * 2,
+        speed: 3.4 + Math.random() * .7,
+        nextShot: .8 + Math.random() * 1.2,
         alive: true,
+        strafe: Math.random()<.5?-1:1, strafeTime:Math.random(), aimTime:.3+Math.random()*.5, hitFlash:0,
       });
     }
   }
@@ -247,6 +253,7 @@ export class ArenaMode {
       return;
     }
     this.ammo[this.weapon]--;
+    this.recoil=Math.min(.12,this.recoil+(this.weapon===1?.095:this.weapon===2?.025:.045));this.muzzleFlash.style.opacity='1';requestAnimationFrame(()=>this.muzzleFlash.style.opacity='0');
     this.fireCooldown = this.weapon === 0 ? 0.28 : this.weapon === 1 ? 0.7 : 0.09;
     this.updateAmmoHud();
 
@@ -267,6 +274,7 @@ export class ArenaMode {
       if (matched && matched.alive) {
         const dmg = this.weapon === 0 ? 28 : this.weapon === 1 ? 55 : 18;
         matched.health -= dmg;
+        matched.hitFlash=.12;
         if (matched.health <= 0) {
           matched.alive = false;
           matched.mesh.visible = false;
@@ -291,37 +299,16 @@ export class ArenaMode {
     this.hudAmmo.textContent = `${names[this.weapon]}  ${this.ammo[this.weapon]} / ${this.reserve[this.weapon]}`;
   }
 
-  private updateBots(dt: number) {
-    const playerPos = this.camera.position;
-    for (const bot of this.bots) {
-      if (!bot.alive) continue;
-      const toPlayer = new THREE.Vector3().subVectors(playerPos, bot.mesh.position);
-      toPlayer.y = 0;
-      const dist = toPlayer.length();
-      if (dist > 0.5) {
-        toPlayer.normalize();
-        bot.mesh.position.addScaledVector(toPlayer, bot.speed * dt);
-        bot.yaw = Math.atan2(toPlayer.x, toPlayer.z);
-        bot.mesh.rotation.y = bot.yaw;
-        this.map.resolveCollision(bot.mesh.position, 0.4, 1.7);
-      }
-      bot.nextShot -= dt;
-      if (bot.nextShot <= 0 && dist < 35) {
-        bot.nextShot = 0.9 + Math.random() * 1.2;
-        if (dist < 28 && Math.random() < 0.45) {
-          this.health = Math.max(0, this.health - (8 + Math.random() * 10));
-          this.hudHp.textContent = String(Math.round(this.health));
-          if (this.health <= 0) {
-            this.hudStatus.textContent = 'YOU DIED · respawning';
-            setTimeout(() => this.spawnPlayer(), 1800);
-          }
-        }
+  private updateBots(dt:number) {
+    for(const bot of this.bots){if(!bot.alive)continue;const damage=this.botBrain.update(bot,this.camera.position,this.velocity,dt);bot.hitFlash=Math.max(0,bot.hitFlash-dt);const mat=(bot.mesh.children[0] as THREE.Mesh).material as THREE.MeshStandardMaterial;mat.emissive.setHex(bot.hitFlash>0?0x7a2118:0x000000);
+      if(damage>0){this.health=Math.max(0,this.health-damage);this.hudHp.textContent=String(Math.round(this.health));this.damageFlash.style.opacity='.8';setTimeout(()=>{if(this.running)this.damageFlash.style.opacity='0'},110);
+        if(this.health<=0){this.hudStatus.textContent='DOWN · respawning in 3 seconds';this.room?.sendEvent({type:'death',killer:bot.id,victim:this.localId,t:Date.now()});setTimeout(()=>{if(this.running)this.spawnPlayer()},3000);return}
       }
     }
   }
-
   private updatePlayer(dt: number) {
-    const speed = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 9.5 : 6.2;
+    const sprinting=this.sprinting||this.keys.has('ShiftLeft')||this.keys.has('ShiftRight');
+    const speed=sprinting?10.2:6.4;
     const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
     const wish = new THREE.Vector3();
@@ -329,7 +316,9 @@ export class ArenaMode {
     if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) wish.sub(forward);
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) wish.add(right);
     if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) wish.sub(right);
-    if (wish.lengthSq() > 0) wish.normalize().multiplyScalar(speed);
+    if(this.touch){wish.addScaledVector(forward,this.touch.move.y);wish.addScaledVector(right,this.touch.move.x)}
+    const moving=wish.lengthSq()>.001;
+    if (moving) wish.normalize().multiplyScalar(speed);
 
     this.velocity.x = THREE.MathUtils.damp(this.velocity.x, wish.x, 12, dt);
     this.velocity.z = THREE.MathUtils.damp(this.velocity.z, wish.z, 12, dt);
@@ -355,6 +344,8 @@ export class ArenaMode {
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
+    this.bobTime+=dt*(sprinting?14:9);this.camera.position.y+=moving&&this.onGround?Math.sin(this.bobTime)*(sprinting?.05:.025):0;
+    this.recoil=THREE.MathUtils.damp(this.recoil,0,15,dt);this.camera.rotation.x-=this.recoil;this.camera.fov=THREE.MathUtils.damp(this.camera.fov,sprinting&&moving?81:75,5,dt);this.camera.updateProjectionMatrix();
 
     if (this.fireCooldown > 0) this.fireCooldown -= dt;
     if (this.reloading) {
@@ -473,7 +464,7 @@ export class ArenaMode {
     this.clock.start();
     cancelAnimationFrame(this.raf);
     this.raf = requestAnimationFrame(this.loop);
-    this.canvas.requestPointerLock();
+    if(!('ontouchstart' in window))this.canvas.requestPointerLock();
   }
 
   stop() {
@@ -483,6 +474,7 @@ export class ArenaMode {
     void this.room?.leave();
     this.room = null;
     this.root.style.display = 'none';
+    this.touch?.move.set(0,0);
     this.onExit();
   }
 
