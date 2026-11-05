@@ -12,7 +12,7 @@ export class ArenaBotBrain {
   const origin=b.mesh.position.clone().add(new THREE.Vector3(0,1.4,0)),aim=new THREE.Vector3(p.x-origin.x,p.y-.2-origin.y,p.z-origin.z);let yaw=Math.atan2(aim.x,aim.z),delta=Math.atan2(Math.sin(yaw-b.yaw),Math.cos(yaw-b.yaw));b.yaw+=delta*Math.min(1,dt*5.5);b.mesh.rotation.y=b.yaw;
   this.ray.set(origin,aim.normalize());this.ray.far=Math.max(0,d-1);if(this.ray.intersectObjects(this.blockers,false).length)return 0;
   b.aimTime=Math.max(0,b.aimTime-dt);b.nextShot-=dt;if(d>32||b.nextShot>0)return 0;
-  if(b.aimTime<=0){b.aimTime=.28+Math.random()*.25;b.nextShot=b.aimTime;return 0}
-  b.aimTime=0;b.nextShot=.16+Math.random()*.2;const accuracy=THREE.MathUtils.clamp(.67-d*.01-Math.min(.2,pv.length()*.025),.2,.62);return Math.random()<accuracy?5+Math.random()*4:0;
+  if(b.aimTime>0)return 0;
+  b.aimTime=.2+Math.random()*.16;b.nextShot=.48+Math.random()*.35;const accuracy=THREE.MathUtils.clamp(.67-d*.01-Math.min(.2,pv.length()*.025),.2,.62);return Math.random()<accuracy?5+Math.random()*4:0;
  }
 }
